@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Payment, initMercadoPago } from "@mercadopago/sdk-react";
 import { supabase } from "./supabase";
 import "./App.css";
@@ -17,6 +17,16 @@ function App() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [ageVerified, setAgeVerified] = useState(false);
   const [message, setMessage] = useState("");
+
+  const [toast, setToast] = useState(null);
+const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
+  const [notificationCount, setNotificationCount] = useState({
+    like: 0,
+    message: 0,
+  });
+  const [notifications, setNotifications] = useState([]);
+  const toastTimeoutRef = useRef(null);
+  const processedNotificationIdsRef = useRef(new Set());
 
   const [form, setForm] = useState({
     name: "",
@@ -75,6 +85,8 @@ function App() {
   const [chatConversation, setChatConversation] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatText, setChatText] = useState("");
+  const chatMessagesContainerRef = useRef(null);
+const chatMessagesBottomRef = useRef(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -148,6 +160,211 @@ function App() {
   const [boostPaymentResult, setBoostPaymentResult] = useState(null);
   const [activeBoost, setActiveBoost] = useState(null);
   const [boostSecondsLeft, setBoostSecondsLeft] = useState(0);
+
+  const notificationAudioContextRef = useRef(null);
+
+  function unlockNotificationAudio() {
+    try {
+      const AudioContextClass =
+        window.AudioContext || window.webkitAudioContext;
+
+      if (!AudioContextClass) return;
+
+      if (!notificationAudioContextRef.current) {
+        notificationAudioContextRef.current = new AudioContextClass();
+      }
+
+      if (notificationAudioContextRef.current.state === "suspended") {
+        notificationAudioContextRef.current.resume().catch(() => {});
+      }
+    } catch (error) {
+      console.warn("NÃO FOI POSSÍVEL LIBERAR O ÁUDIO:", error);
+    }
+  }
+
+  function playNotificationSound() {
+  if (!notificationSoundEnabled) {
+    return;
+  }
+
+    try {
+      const audioContext = notificationAudioContextRef.current;
+
+      if (!audioContext || audioContext.state !== "running") {
+        return;
+      }
+
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(740, audioContext.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(
+        520,
+        audioContext.currentTime + 0.12
+      );
+
+      gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.045,
+        audioContext.currentTime + 0.01
+      );
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.0001,
+        audioContext.currentTime + 0.14
+      );
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.15);
+
+      oscillator.addEventListener("ended", () => {
+        oscillator.disconnect();
+        gainNode.disconnect();
+      });
+    } catch (error) {
+      console.warn("NÃO FOI POSSÍVEL REPRODUZIR O SOM:", error);
+    }
+  }
+
+  function showToast({ icon = "✦", title = "", body = "" }) {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+
+    setToast({
+      id: Date.now(),
+      icon,
+      title,
+      body,
+    });
+
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, 3800);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      unlockNotificationAudio();
+    };
+
+    window.addEventListener("pointerdown", unlockAudio, { passive: true });
+    window.addEventListener("keydown", unlockAudio);
+
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setNotifications([]);
+      setNotificationCount({ like: 0, message: 0 });
+      processedNotificationIdsRef.current = new Set();
+      return;
+    }
+
+    let isMounted = true;
+
+    async function startNotificationRealtime() {
+      try {
+        const { data, error } = await supabase
+          .from("notifications")
+          .select("id, user_id, actor_id, type, like_id, message_id, read_at, created_at, is_read")
+          .eq("user_id", currentUserId)
+          .order("created_at", { ascending: false })
+          .limit(100);
+
+        if (error) throw error;
+
+        if (!isMounted) return;
+
+        const rows = data || [];
+        setNotifications(rows);
+        processedNotificationIdsRef.current = new Set(rows.map((item) => item.id));
+
+        const unreadCounts = rows.reduce(
+          (accumulator, item) => {
+            if (!item.is_read && (item.type === "like" || item.type === "message")) {
+              accumulator[item.type] += 1;
+            }
+            return accumulator;
+          },
+          { like: 0, message: 0 }
+        );
+
+        setNotificationCount(unreadCounts);
+      } catch (error) {
+        console.error("ERRO AO CARREGAR NOTIFICACOES:", error);
+      }
+    }
+
+    startNotificationRealtime();
+
+    const channel = supabase
+      .channel(`moon-notifications-${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        (payload) => {
+          const notification = payload.new;
+
+          if (!notification?.id) return;
+          if (processedNotificationIdsRef.current.has(notification.id)) return;
+
+          processedNotificationIdsRef.current.add(notification.id);
+
+          setNotifications((current) => [notification, ...current].slice(0, 100));
+
+          if (notification.type === "like" || notification.type === "message") {
+            setNotificationCount((current) => ({
+              ...current,
+              [notification.type]: current[notification.type] + (notification.is_read ? 0 : 1),
+            }));
+          }
+
+          if (notification.type === "like") {
+            playNotificationSound();
+          showToast({
+              icon: "❤️",
+              title: notification.title || "Nova curtida",
+              body: notification.body || "Alguém curtiu você.",
+            });
+          } else if (notification.type === "message") {
+          playNotificationSound();
+            showToast({
+              icon: "💬",
+              title: notification.title || "Nova mensagem",
+              body: notification.body || "Você recebeu uma nova mensagem.",
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, notificationSoundEnabled]);
 
   async function loadActiveBoost() {
     if (!currentUserId) {
@@ -324,6 +541,14 @@ function App() {
     if (!data) return;
 
     if (data.status === "active") {
+      if (boostPaymentResult?.boost_status !== "active") {
+        showToast({
+          icon: "⚡",
+          title: "Boost ativado",
+          body: "Seu perfil já está em destaque.",
+        });
+      }
+
       setBoostPaymentStatus("BOOST ATIVO. Seu perfil já está em destaque. ⚡");
       setBoostPaymentResult((current) => ({
         ...(current || {}),
@@ -521,6 +746,34 @@ function App() {
     };
   }, [screen, chatConversation?.id, readReceiptsEnabled, currentUserId]);
 
+useEffect(() => {
+  if (screen !== "chat" || !chatConversation?.id || chatMessages.length === 0) {
+    return;
+  }
+
+  const scrollToBottom = () => {
+    chatMessagesBottomRef.current?.scrollIntoView({
+      block: "end",
+      behavior: "auto",
+    });
+  };
+
+  scrollToBottom();
+
+  const frame = requestAnimationFrame(scrollToBottom);
+
+  return () => {
+    cancelAnimationFrame(frame);
+  };
+}, [screen, chatConversation?.id, chatMessages.length]);
+
+
+  useEffect(() => {
+    if (screen !== "chat" || !chatConversation?.id) {
+      return;
+    }
+  }, [screen, chatConversation?.id, chatMessages.length]);
+
   useEffect(() => {
     if (screen !== "conversations" || !currentUserId) {
       return;
@@ -546,8 +799,34 @@ function App() {
           schema: "public",
           table: "messages",
         },
-        async () => {
-          await loadConversations();
+        (payload) => {
+          const newMessage = payload.new;
+
+          if (!newMessage?.id || !newMessage?.conversation_id) {
+            return;
+          }
+
+          setConversations((currentConversations) => {
+            const updatedConversations = currentConversations.map((conversation) =>
+              conversation.id === newMessage.conversation_id
+                ? {
+                    ...conversation,
+                    lastMessage: {
+                      content: newMessage.content,
+                      created_at: newMessage.created_at,
+                      sender_id: newMessage.sender_id,
+                    },
+                  }
+                : conversation
+            );
+
+            return [...updatedConversations].sort((a, b) => {
+              const dateA = new Date(a.lastMessage?.created_at || a.created_at || 0).getTime();
+              const dateB = new Date(b.lastMessage?.created_at || b.created_at || 0).getTime();
+
+              return dateB - dateA;
+            });
+          });
         }
       )
       .subscribe();
@@ -1456,9 +1735,11 @@ function App() {
             longitude
           );
 
-          setMessage(
-            "Localização atualizada! 🌙"
-          );
+          showToast({
+            icon: "📍",
+            title: "Localização atualizada",
+            body: "Sua localização foi atualizada com sucesso.",
+          });
 
         } catch (error) {
           console.error(
@@ -1517,7 +1798,7 @@ function App() {
           true,
         timeout: 15000,
         maximumAge:
-          300000,
+          0,
       }
     );
   }
@@ -1608,7 +1889,7 @@ function App() {
       if (error) throw error;
 
       setBlockedUsers((current) => current.filter((item) => item.id !== profile.id));
-      setMessage("Usuário desbloqueado.");
+      showToast({ icon: "↩", title: "Usuário desbloqueado", body: "O perfil foi desbloqueado." });
       await loadNearbyProfiles(userLocation.latitude, userLocation.longitude);
     } catch (error) {
       console.error("ERRO AO DESBLOQUEAR USUÁRIO:", error);
@@ -1638,7 +1919,7 @@ function App() {
       setNearbyProfiles((currentProfiles) =>
         currentProfiles.filter((item) => item.id !== profile.id)
       );
-      setMessage("Perfil bloqueado.");
+      showToast({ icon: "🚫", title: "Perfil bloqueado", body: "O perfil foi bloqueado." });
     } catch (error) {
       console.error("ERRO AO BLOQUEAR PERFIL:", error);
       setMessage(error.message || "Não foi possível bloquear este perfil.");
@@ -1676,7 +1957,7 @@ function App() {
       setReportTarget(null);
       setReportReason("");
       setReportDescription("");
-      setMessage("Denúncia enviada. Obrigado por ajudar a manter a MOON segura.");
+      showToast({ icon: "⚠️", title: "Denúncia enviada", body: "Obrigado por ajudar a manter a MOON segura." });
     } catch (error) {
       console.error("ERRO AO DENUNCIAR PERFIL:", error);
       setMessage(error.message || "Não foi possível enviar a denúncia.");
@@ -1712,18 +1993,22 @@ function App() {
         if (
           error.code === "23505"
         ) {
-          setMessage(
-            "Você já curtiu este perfil. ❤️"
-          );
+          showToast({
+            icon: "❤️",
+            title: "Você já curtiu este perfil.",
+            body: "Essa curtida já foi registrada.",
+          });
           return;
         }
 
         throw error;
       }
 
-      setMessage(
-        "Perfil curtido. ❤️"
-      );
+      showToast({
+        icon: "❤️",
+        title: "Perfil curtido",
+        body: "Sua curtida foi enviada.",
+      });
 
     } catch (error) {
       console.error(
@@ -1743,16 +2028,30 @@ function App() {
       return;
     }
 
+    const readAt = new Date().toISOString();
+
     const { error } = await supabase
       .from("messages")
-      .update({ read_at: new Date().toISOString() })
+      .update({ read_at: readAt })
       .eq("conversation_id", conversationId)
       .neq("sender_id", currentUserId)
       .is("read_at", null);
 
     if (error) {
       console.error("ERRO AO MARCAR MENSAGENS COMO LIDAS:", error);
+      return;
     }
+
+    setConversations((currentConversations) =>
+      currentConversations.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              unreadCount: 0,
+            }
+          : conversation
+      )
+    );
   }
 
   async function loadMessages(conversationId) {
@@ -1854,6 +2153,13 @@ function App() {
               })
               .limit(1);
 
+            const { count: unreadCount } = await supabase
+              .from("messages")
+              .select("id", { count: "exact", head: true })
+              .eq("conversation_id", conversation.id)
+              .neq("sender_id", user.id)
+              .is("read_at", null);
+
             return {
               ...conversation,
               profile,
@@ -1862,6 +2168,7 @@ function App() {
                 lastMessageData && lastMessageData.length > 0
                   ? lastMessageData[0]
                   : null,
+              unreadCount: unreadCount || 0,
             };
           })
         );
@@ -1948,15 +2255,49 @@ function App() {
     }
   }
 
+  async function markNotificationsAsRead(type) {
+    if (!currentUserId || !type) return;
+
+    const { error } = await supabase
+      .from("notifications")
+      .update({
+        is_read: true,
+        read_at: new Date().toISOString(),
+      })
+      .eq("user_id", currentUserId)
+      .eq("type", type)
+      .eq("is_read", false);
+
+    if (error) {
+      console.error("ERRO AO MARCAR NOTIFICACOES COMO LIDAS:", error);
+      return;
+    }
+
+    setNotifications((current) =>
+      current.map((item) =>
+        item.type === type && !item.is_read
+          ? { ...item, is_read: true, read_at: new Date().toISOString() }
+          : item
+      )
+    );
+
+    setNotificationCount((current) => ({
+      ...current,
+      [type]: 0,
+    }));
+  }
+
   async function handleOpenLikes() {
     setMessage("");
     setScreen("likes");
+    await markNotificationsAsRead("like");
     await loadLikedProfiles();
   }
 
   async function handleOpenConversations() {
     setMessage("");
     setScreen("conversations");
+    await markNotificationsAsRead("message");
     await loadConversations();
   }
 
@@ -2069,6 +2410,11 @@ function App() {
       }
 
       setChatText("");
+      showToast({
+        icon: "💬",
+        title: "Mensagem enviada",
+        body: "Sua mensagem foi enviada.",
+      });
     } catch (error) {
       console.error(
         "ERRO AO ENVIAR MENSAGEM:",
@@ -2897,6 +3243,71 @@ function App() {
 
   return (
     <main className="moon-app">
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: "22px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            width: "min(420px, calc(100% - 30px))",
+            padding: "14px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            background: "rgba(11, 11, 11, 0.97)",
+            border: "1px solid #2a2a2a",
+            boxShadow: "0 14px 40px rgba(0,0,0,0.45)",
+            backdropFilter: "blur(12px)",
+            color: "#f4ead7",
+          }}
+        >
+          <span
+            style={{
+              width: "34px",
+              height: "34px",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "1px solid #2f2f2f",
+              color: "#c9b58a",
+              fontSize: "16px",
+            }}
+          >
+            {toast.icon}
+          </span>
+
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                color: "#f4ead7",
+                fontSize: "12px",
+                letterSpacing: "1.2px",
+                lineHeight: 1.4,
+              }}
+            >
+              {toast.title}
+            </div>
+            {toast.body && (
+              <div
+                style={{
+                  marginTop: "3px",
+                  color: "#77736b",
+                  fontSize: "11px",
+                  lineHeight: 1.5,
+                }}
+              >
+                {toast.body}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* CONFIRMAÇÃO 18+ */}
 
@@ -4444,6 +4855,43 @@ function App() {
               </div>
             </div>
 
+            <div
+              style={{
+                minHeight: "58px",
+                padding: "0 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderBottom: "1px solid #242424",
+              }}
+            >
+              <div>
+                <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px" }}>
+                  SONS DE NOTIFICAÇÃO
+                </div>
+                <div style={{ color: "#77736b", fontSize: "9px", marginTop: "5px" }}>
+                  Curtidas e novas mensagens
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setNotificationSoundEnabled((current) => !current)}
+                style={{
+                  minWidth: "112px",
+                  height: "38px",
+                  border: notificationSoundEnabled ? "1px solid #c9b58a" : "1px solid #292929",
+                  background: notificationSoundEnabled ? "#15130f" : "transparent",
+                  color: notificationSoundEnabled ? "#c9b58a" : "#77736b",
+                  fontSize: "9px",
+                  letterSpacing: "1.5px",
+                  cursor: "pointer",
+                }}
+              >
+                {notificationSoundEnabled ? "ATIVADO" : "DESATIVADO"}
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={() => {
@@ -5337,14 +5785,46 @@ function App() {
                       </div>
                     </div>
 
-                    <span
+                    <div
                       style={{
-                        color: "#c9b58a",
-                        fontSize: "18px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        flexShrink: 0,
                       }}
                     >
-                      ›
-                    </span>
+                      {conversation.unreadCount > 0 && (
+                        <span
+                          style={{
+                            minWidth: "20px",
+                            height: "20px",
+                            padding: "0 6px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderRadius: "999px",
+                            background: "#c9b58a",
+                            color: "#0b0b0b",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            lineHeight: 1,
+                          }}
+                        >
+                          {conversation.unreadCount > 99
+                            ? "99+"
+                            : conversation.unreadCount}
+                        </span>
+                      )}
+
+                      <span
+                        style={{
+                          color: "#c9b58a",
+                          fontSize: "18px",
+                        }}
+                      >
+                        ›
+                      </span>
+                    </div>
                   </button>
                 );
               })}
@@ -5399,11 +5879,15 @@ function App() {
         >
           <div
             style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 100,
               display: "flex",
               alignItems: "center",
               gap: "14px",
-              paddingBottom: "20px",
+              padding: "14px 0 20px",
               borderBottom: "1px solid #202020",
+              background: "#050505",
             }}
           >
             <button
@@ -5535,9 +6019,11 @@ function App() {
           </div>
 
           <div
+            ref={chatMessagesContainerRef}
             style={{
               flex: 1,
-              minHeight: "55vh",
+              minHeight: 0,
+              height: "55vh",
               padding: "25px 0",
               display: "flex",
               flexDirection: "column",
@@ -5590,6 +6076,13 @@ function App() {
                 </div>
               ))
             )}
+            <div
+              ref={chatMessagesBottomRef}
+              style={{
+                height: "1px",
+                flexShrink: 0,
+              }}
+            />
           </div>
 
           <form
@@ -7257,7 +7750,31 @@ function App() {
                 cursor: "pointer",
               }}
             >
-              ♥ &nbsp; CURTIDAS
+              <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                <span>♥</span>
+                <span>CURTIDAS</span>
+                {notificationCount.like > 0 && (
+                  <span
+                    style={{
+                      minWidth: "17px",
+                      height: "17px",
+                      padding: "0 5px",
+                      borderRadius: "999px",
+                      background: "#c9b58a",
+                      color: "#111",
+                      fontSize: "9px",
+                      fontWeight: 700,
+                      letterSpacing: "0",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {notificationCount.like > 99 ? "99+" : notificationCount.like}
+                  </span>
+                )}
+              </span>
             </button>
 
             <button
@@ -7275,7 +7792,31 @@ function App() {
                 cursor: "pointer",
               }}
             >
-              💬 &nbsp; CONVERSAS
+              <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                <span>💬</span>
+                <span>CONVERSAS</span>
+                {notificationCount.message > 0 && (
+                  <span
+                    style={{
+                      minWidth: "17px",
+                      height: "17px",
+                      padding: "0 5px",
+                      borderRadius: "999px",
+                      background: "#c9b58a",
+                      color: "#111",
+                      fontSize: "9px",
+                      fontWeight: 700,
+                      letterSpacing: "0",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {notificationCount.message > 99 ? "99+" : notificationCount.message}
+                  </span>
+                )}
+              </span>
             </button>
           </div>
 
