@@ -43,18 +43,10 @@ function MapCenterController({ center, zoom }) {
   return null;
 }
 
-import { Payment, initMercadoPago } from "@mercadopago/sdk-react";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import { supabase } from "./supabase";
 import "./App.css";
 
-const mercadoPagoPublicKey = import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY;
-
-if (mercadoPagoPublicKey) {
-  initMercadoPago(mercadoPagoPublicKey, {
-    locale: "pt-BR",
-  });
-}
 
 function App() {
   const [screen, setScreen] = useState("home");
@@ -188,6 +180,7 @@ const chatMessagesBottomRef = useRef(null);
 
   const [conversations, setConversations] = useState([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
+  const [conversationFilter, setConversationFilter] = useState("all");
   const [likedProfiles, setLikedProfiles] = useState([]);
   const [likesLoading, setLikesLoading] = useState(false);
   const [likesTab, setLikesTab] = useState("interesses");
@@ -220,21 +213,10 @@ const chatMessagesBottomRef = useRef(null);
     confirmPassword: "",
   });
   const [selectedProfile, setSelectedProfile] = useState(null);
+  const [selectedProfileFromMap, setSelectedProfileFromMap] = useState(false);
   const [selectedProfilePhotos, setSelectedProfilePhotos] = useState([]);
   const [selectedProfileLoading, setSelectedProfileLoading] = useState(false);
   const [matchTarget, setMatchTarget] = useState(null);
-  const [boostOpen, setBoostOpen] = useState(false);
-  const [selectedBoostHours, setSelectedBoostHours] = useState(3);
-  const [boostPaymentOpen, setBoostPaymentOpen] = useState(false);
-  const [boostPaymentLoading, setBoostPaymentLoading] = useState(false);
-  const [boostPaymentSubmitted, setBoostPaymentSubmitted] = useState(false);
-  const [boostPaymentId, setBoostPaymentId] = useState(null);
-  const [boostPaymentAmount, setBoostPaymentAmount] = useState(8);
-  const [boostPaymentEmail, setBoostPaymentEmail] = useState("");
-  const [boostPaymentStatus, setBoostPaymentStatus] = useState("");
-  const [boostPaymentResult, setBoostPaymentResult] = useState(null);
-  const [activeBoost, setActiveBoost] = useState(null);
-  const [boostSecondsLeft, setBoostSecondsLeft] = useState(0);
 
   const notificationAudioContextRef = useRef(null);
 
@@ -653,544 +635,6 @@ const chatMessagesBottomRef = useRef(null);
     };
   }, [currentUserId, notificationSoundEnabled]);
 
-  async function loadActiveBoost() {
-    if (!currentUserId) {
-      setActiveBoost(null);
-      setBoostSecondsLeft(0);
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from("boosts")
-        .select("id, plan_hours, amount, status, starts_at, ends_at")
-        .eq("user_id", currentUserId)
-        .eq("status", "active")
-        .lte("starts_at", new Date().toISOString())
-        .gt("ends_at", new Date().toISOString())
-        .order("ends_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (!data) {
-        setActiveBoost(null);
-        setBoostSecondsLeft(0);
-        return;
-      }
-
-      setActiveBoost(data);
-      setBoostSecondsLeft(Math.max(0, Math.floor((new Date(data.ends_at).getTime() - Date.now()) / 1000)));
-    } catch (error) {
-      console.error("ERRO AO CARREGAR BOOST ATIVO:", error);
-    }
-  }
-
-  function formatBoostTime(totalSeconds) {
-    const safeSeconds = Math.max(0, Number(totalSeconds) || 0);
-    const hours = Math.floor(safeSeconds / 3600);
-    const minutes = Math.floor((safeSeconds % 3600) / 60);
-    const seconds = safeSeconds % 60;
-    return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
-  }
-
-  async function handleCreateBoost() {
-    setMessage("");
-
-    const prices = {
-      1: 5.00,
-      3: 8.00,
-      5: 10.00,
-    };
-
-    const amount = prices[selectedBoostHours];
-
-    if (!mercadoPagoPublicKey) {
-      setMessage("A chave pública do Mercado Pago não foi configurada.");
-      return;
-    }
-
-    try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        setMessage("Sua sessão expirou. Entre novamente para continuar.");
-        return;
-      }
-
-      const { data: boost, error } = await supabase
-        .from("boosts")
-        .insert({
-          user_id: user.id,
-          plan_hours: selectedBoostHours,
-          amount,
-          status: "pending",
-        })
-        .select("id, plan_hours, amount, status")
-        .single();
-
-      if (error || !boost) {
-        console.error("ERRO AO REGISTRAR BOOST:", error);
-        setMessage("Não foi possível registrar o Boost agora.");
-        return;
-      }
-
-      setBoostPaymentId(boost.id);
-      setBoostPaymentAmount(Number(boost.amount));
-      setBoostPaymentEmail(user.email || "");
-      setBoostPaymentSubmitted(false);
-      setBoostPaymentStatus("");
-      setBoostPaymentResult(null);
-      setBoostOpen(false);
-      setBoostPaymentOpen(true);
-    } catch (error) {
-      console.error("ERRO AO CRIAR BOOST:", error);
-      setMessage("Não foi possível iniciar o pagamento do Boost.");
-    }
-  }
-
-  async function handleBoostPaymentSubmit({ selectedPaymentMethod, formData }) {
-    if (!boostPaymentId) {
-      throw new Error("Boost não encontrado.");
-    }
-
-    setBoostPaymentLoading(true);
-    setBoostPaymentSubmitted(true);
-    setBoostPaymentStatus("PROCESSANDO PAGAMENTO...");
-    setMessage("");
-
-    try {
-      const { data, error } = await supabase.functions.invoke(
-        "create-mp-payment",
-        {
-          body: {
-            boost_id: boostPaymentId,
-            selected_payment_method: selectedPaymentMethod,
-            formData,
-          },
-        }
-      );
-
-      if (error) {
-        throw error;
-      }
-
-      if (!data?.success) {
-        throw new Error(
-          data?.message || "Não foi possível processar o pagamento."
-        );
-      }
-
-      setBoostPaymentResult(data);
-
-      if (
-        data.order_status === "processed" ||
-        data.payment_status === "processed" ||
-        data.payment_status === "approved"
-      ) {
-        setBoostPaymentStatus("PAGAMENTO APROVADO. ATIVANDO BOOST...");
-        setTimeout(() => loadActiveBoost(), 1000);
-      } else if (
-        data.pix?.qr_code ||
-        data.pix?.qr_code_base64
-      ) {
-        setBoostPaymentStatus("PIX GERADO. PAGUE PARA ATIVAR O BOOST.");
-      } else {
-        setBoostPaymentStatus("PAGAMENTO ENVIADO. AGUARDANDO CONFIRMAÇÃO...");
-      }
-
-      return;
-    } catch (error) {
-      console.error("ERRO AO PROCESSAR PAGAMENTO DO BOOST:", error);
-      setBoostPaymentSubmitted(false);
-      setBoostPaymentStatus("");
-      throw error;
-    } finally {
-      setBoostPaymentLoading(false);
-    }
-  }
-
-  async function refreshBoostPaymentStatus() {
-    if (!boostPaymentId) return;
-
-    const { data, error } = await supabase
-      .from("boosts")
-      .select("status, starts_at, ends_at, plan_hours, amount")
-      .eq("id", boostPaymentId)
-      .maybeSingle();
-
-    if (error) {
-      console.error("ERRO AO CONSULTAR STATUS DO BOOST:", error);
-      return;
-    }
-
-    if (!data) return;
-
-    if (data.status === "active") {
-      if (boostPaymentResult?.boost_status !== "active") {
-        showToast({
-          title: "Boost ativado",
-          body: "Seu perfil já está em destaque.",
-        });
-      }
-
-      setBoostPaymentStatus("BOOST ATIVO. Seu perfil já está em destaque.");
-      setBoostPaymentResult((current) => ({
-        ...(current || {}),
-        boost_status: "active",
-        starts_at: data.starts_at,
-        ends_at: data.ends_at,
-      }));
-    } else if (data.status === "expired") {
-      setBoostPaymentStatus("Este Boost expirou.");
-    } else if (data.status === "cancelled") {
-      setBoostPaymentStatus("Este Boost foi cancelado.");
-    }
-  }
-
-  useEffect(() => {
-    if (!boostPaymentOpen || !boostPaymentSubmitted || !boostPaymentId) {
-      return;
-    }
-
-    refreshBoostPaymentStatus();
-
-    const interval = setInterval(() => {
-      refreshBoostPaymentStatus();
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [boostPaymentOpen, boostPaymentSubmitted, boostPaymentId]);
-
-  useEffect(() => {
-    if (!currentUserId) return;
-
-    loadActiveBoost();
-
-    const interval = setInterval(() => {
-      loadActiveBoost();
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [currentUserId]);
-
-  useEffect(() => {
-    if (!activeBoost?.ends_at) return;
-
-    const updateTimer = () => {
-      const remaining = Math.max(0, Math.floor((new Date(activeBoost.ends_at).getTime() - Date.now()) / 1000));
-      setBoostSecondsLeft(remaining);
-
-      if (remaining <= 0) {
-        setActiveBoost(null);
-        loadActiveBoost();
-      }
-    };
-
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [activeBoost?.ends_at]);
-
-  useEffect(() => {
-    if (screen === "settings") {
-      loadBlockedUsers();
-    }
-  }, [screen]);
-
-  useEffect(() => {
-    if (screen !== "admin" || !isAdmin) {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      loadAdminStats();
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [screen, isAdmin]);
-
-  useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-    const isRecoveryUrl = hashParams.get("type") === "recovery";
-
-    async function checkSession() {
-      if (isRecoveryUrl) {
-        setScreen("resetPassword");
-        setResetPasswordForm({
-          newPassword: "",
-          confirmPassword: "",
-        });
-        setMessage("");
-        setCheckingSession(false);
-        return;
-      }
-
-      const { data } = await supabase.auth.getSession();
-
-      if (data.session) {
-        setCurrentUserId(data.session.user.id);
-        setProfileEditMode(false);
-        setAgeVerified(true);
-        await checkAdminStatus();
-        await loadProfile(data.session.user.id);
-      } else {
-        setScreen("ageGate");
-      }
-
-      setCheckingSession(false);
-    }
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === "PASSWORD_RECOVERY") {
-          setScreen("resetPassword");
-          setResetPasswordForm({
-            newPassword: "",
-            confirmPassword: "",
-          });
-          setMessage("");
-          return;
-        }
-
-        if (session && !isRecoveryUrl) {
-          setCurrentUserId(session.user.id);
-          setProfileEditMode(false);
-          await checkAdminStatus();
-          await loadProfile(session.user.id);
-        }
-      }
-    );
-
-    checkSession();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!currentUserId) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function updateLastActive() {
-      if (cancelled) {
-        return;
-      }
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          last_active_at: new Date().toISOString(),
-        })
-        .eq("id", currentUserId);
-
-      if (error) {
-        console.error("ERRO AO ATUALIZAR STATUS ATIVO:", error);
-      }
-    }
-
-    updateLastActive();
-
-    const interval = setInterval(updateLastActive, 60000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [currentUserId]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setStatusClock(Date.now());
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (screen !== "chat" || !chatConversation?.id) {
-      return;
-    }
-
-    const conversationId = chatConversation.id;
-
-    async function startChatRealtime() {
-      await loadMessages(conversationId);
-    }
-
-    startChatRealtime();
-
-    const channel = supabase
-      .channel(`moon-chat-${conversationId}`)
-      .on(
-        "broadcast",
-        { event: "typing" },
-        (payload) => {
-          if (payload?.payload?.userId === currentUserId) {
-            return;
-          }
-
-          setChatTyping(Boolean(payload?.payload?.isTyping));
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          setChatMessages((currentMessages) => {
-            const alreadyExists = currentMessages.some(
-              (item) => item.id === payload.new.id
-            );
-
-            if (alreadyExists) {
-              return currentMessages;
-            }
-
-            return [...currentMessages, payload.new];
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          setChatMessages((currentMessages) =>
-            currentMessages.map((item) =>
-              item.id === payload.new.id ? { ...item, ...payload.new } : item
-            )
-          );
-        }
-      )
-      .subscribe();
-
-    chatRealtimeChannelRef.current = channel;
-
-    return () => {
-      if (chatTypingTimeoutRef.current) {
-        clearTimeout(chatTypingTimeoutRef.current);
-        chatTypingTimeoutRef.current = null;
-      }
-      setChatTyping(false);
-      chatRealtimeChannelRef.current = null;
-      supabase.removeChannel(channel);
-    };
-  }, [screen, chatConversation?.id, readReceiptsEnabled, currentUserId]);
-
-useEffect(() => {
-  if (screen !== "chat" || !chatConversation?.id || chatMessages.length === 0) {
-    return;
-  }
-
-  const scrollToBottom = () => {
-    chatMessagesBottomRef.current?.scrollIntoView({
-      block: "end",
-      behavior: "auto",
-    });
-  };
-
-  scrollToBottom();
-
-  const frame = requestAnimationFrame(scrollToBottom);
-
-  return () => {
-    cancelAnimationFrame(frame);
-  };
-}, [screen, chatConversation?.id, chatMessages.length]);
-
-
-  useEffect(() => {
-    if (screen !== "chat" || !chatConversation?.id) {
-      return;
-    }
-  }, [screen, chatConversation?.id, chatMessages.length]);
-
-  useEffect(() => {
-    if (screen !== "conversations" || !currentUserId) {
-      return;
-    }
-
-    const channel = supabase
-      .channel(`moon-conversations-${currentUserId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "conversations",
-        },
-        async () => {
-          await loadConversations();
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const newMessage = payload.new;
-
-          if (!newMessage?.id || !newMessage?.conversation_id) {
-            return;
-          }
-
-          setConversations((currentConversations) => {
-            const updatedConversations = currentConversations.map((conversation) =>
-              conversation.id === newMessage.conversation_id
-                ? {
-                    ...conversation,
-                    lastMessage: {
-                      content: newMessage.content,
-                      created_at: newMessage.created_at,
-                      sender_id: newMessage.sender_id,
-                    },
-                  }
-                : conversation
-            );
-
-            return [...updatedConversations].sort((a, b) => {
-              const dateA = new Date(a.lastMessage?.created_at || a.created_at || 0).getTime();
-              const dateB = new Date(b.lastMessage?.created_at || b.created_at || 0).getTime();
-
-              return dateB - dateA;
-            });
-          });
-        }
-      )
-      .subscribe();
-
-    chatRealtimeChannelRef.current = channel;
-
-    return () => {
-      if (chatTypingTimeoutRef.current) {
-        clearTimeout(chatTypingTimeoutRef.current);
-        chatTypingTimeoutRef.current = null;
-      }
-      setChatTyping(false);
-      chatRealtimeChannelRef.current = null;
-      supabase.removeChannel(channel);
-    };
-  }, [screen, currentUserId]);
-
   async function checkAdminStatus() {
     try {
       const { data, error } = await supabase.rpc("is_admin");
@@ -1559,21 +1003,18 @@ useEffect(() => {
     setAdminLoading(true);
     setMessage("");
     try {
-      const [users, active, likes, conversations, messages, boosts, reports, blocks] = await Promise.all([
+      const [users, active, likes, conversations, messages, reports, blocks] = await Promise.all([
         supabase.from("profiles").select("id", { count: "exact", head: true }),
         supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_active", true),
         supabase.from("likes").select("id", { count: "exact", head: true }),
         supabase.from("conversations").select("id", { count: "exact", head: true }),
         supabase.from("messages").select("id", { count: "exact", head: true }),
-        supabase.from("boosts").select("id, amount, status"),
         supabase.from("reports").select("id", { count: "exact", head: true }),
         supabase.from("blocked_users").select("id", { count: "exact", head: true }),
       ]);
-      const err = [users, active, likes, conversations, messages, boosts, reports, blocks].find(r => r.error)?.error;
+      const err = [users, active, likes, conversations, messages, reports, blocks].find(r => r.error)?.error;
       if (err) throw err;
-      const boostRows = boosts.data || [];
-      const paid = boostRows.filter(b => ["active", "expired"].includes(b.status));
-      setAdminStats({ totalUsers: users.count || 0, activeUsers: active.count || 0, likes: likes.count || 0, conversations: conversations.count || 0, messages: messages.count || 0, boosts: boostRows.length, activeBoosts: boostRows.filter(b => b.status === "active").length, reports: reports.count || 0, blocks: blocks.count || 0, revenue: paid.reduce((sum,b) => sum + Number(b.amount || 0), 0) });
+      setAdminStats({ totalUsers: users.count || 0, activeUsers: active.count || 0, likes: likes.count || 0, conversations: conversations.count || 0, messages: messages.count || 0, reports: reports.count || 0, blocks: blocks.count || 0 });
     } catch (error) { console.error("ERRO AO CARREGAR PAINEL ADMIN:", error); setMessage(error.message || "Não foi possível carregar o painel administrativo."); }
     finally { setAdminLoading(false); }
   }
@@ -1765,18 +1206,6 @@ useEffect(() => {
 
       const profiles = data || [];
 
-      const profileIds = profiles.map((profile) => profile.id);
-      let boostedIds = new Set();
-
-      if (profileIds.length > 0) {
-        const { data: boostedRows, error: boostedError } = await supabase.rpc(
-          "get_active_boosted_profile_ids",
-          { p_user_ids: profileIds }
-        );
-
-        if (boostedError) throw boostedError;
-        boostedIds = new Set((boostedRows || []).map((row) => row.user_id));
-      }
 
       const { data: { user } } = await supabase.auth.getUser();
       const { data: blockedRows, error: blockedError } = await supabase
@@ -1838,7 +1267,6 @@ useEffect(() => {
               ) {
                 return {
                   ...profile,
-                  is_boosted: boostedIds.has(profile.id),
                   photoUrl: null,
                 };
               }
@@ -1858,7 +1286,6 @@ useEffect(() => {
 
               return {
                 ...profile,
-                is_boosted: boostedIds.has(profile.id),
                 photoUrl:
                   publicData.publicUrl,
               };
@@ -2144,10 +1571,20 @@ useEffect(() => {
     setShowMapProfilesPanel(false);
     setSelectedMapProfile(null);
     setSelectedMapProfileLoading(true);
+    setSelectedProfileFromMap(true);
     setScreen("inside");
 
     try {
-      await openProfileDetails(profile);
+      const { data: profileDetails } = await supabase
+        .from("profiles")
+        .select("birth_date")
+        .eq("id", profile.id)
+        .maybeSingle();
+
+      await openProfileDetails({
+        ...profile,
+        ...(profileDetails || {}),
+      });
     } finally {
       setSelectedMapProfileLoading(false);
     }
@@ -2618,6 +2055,56 @@ useEffect(() => {
     );
   }
 
+  useEffect(() => {
+    if (screen !== "chat" || !chatConversation?.id) {
+      return;
+    }
+
+    const conversationId = chatConversation.id;
+    let isMounted = true;
+
+    async function startChatRealtime() {
+      await loadMessages(conversationId);
+    }
+
+    startChatRealtime();
+
+    const channel = supabase
+      .channel(`moon-chat-${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const newMessage = payload.new;
+
+          if (!isMounted || !newMessage?.id) return;
+
+          setChatMessages((currentMessages) => {
+            if (currentMessages.some((message) => message.id === newMessage.id)) {
+              return currentMessages;
+            }
+
+            return [...currentMessages, newMessage];
+          });
+
+          if (newMessage.sender_id !== currentUserId) {
+            markConversationAsRead(conversationId);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [screen, chatConversation?.id, currentUserId]);
+
   async function loadMessages(conversationId) {
     const { data, error } = await supabase
       .from("messages")
@@ -2637,6 +2124,42 @@ useEffect(() => {
 
     setChatMessages(data || []);
     await markConversationAsRead(conversationId);
+  }
+
+  function getConversationDistance(profile) {
+    if (
+      !profile ||
+      profile.latitude === null ||
+      profile.latitude === undefined ||
+      profile.longitude === null ||
+      profile.longitude === undefined ||
+      userLocation.latitude === null ||
+      userLocation.latitude === undefined ||
+      userLocation.longitude === null ||
+      userLocation.longitude === undefined
+    ) {
+      return null;
+    }
+
+    const toRadians = (value) => (value * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+    const dLat = toRadians(
+      profile.latitude - userLocation.latitude
+    );
+    const dLon = toRadians(
+      profile.longitude - userLocation.longitude
+    );
+
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRadians(userLocation.latitude)) *
+        Math.cos(toRadians(profile.latitude)) *
+        Math.sin(dLon / 2) ** 2;
+
+    const c =
+      2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return earthRadiusKm * c;
   }
 
   async function loadConversations() {
@@ -2677,7 +2200,7 @@ useEffect(() => {
               await supabase
                 .from("profiles")
                 .select(
-                  "id, name, city, birth_date, last_active_at"
+                  "id, name, city, birth_date, last_active_at, latitude, longitude"
                 )
                 .eq("id", otherUserId)
                 .maybeSingle();
@@ -3907,6 +3430,98 @@ useEffect(() => {
     return matchesAge && matchesIdentity && matchesSexuality && matchesPosition && matchesAvailability;
   });
 
+const filteredConversations = conversations
+        .map((conversation) => ({
+          ...conversation,
+          distanceKm: getConversationDistance(conversation.profile),
+        }))
+        .filter((conversation) => {
+          if (conversationFilter === "unread") {
+            return conversation.unreadCount > 0;
+          }
+
+          if (conversationFilter === "online") {
+            const status = getOnlineStatus(
+              conversation.profile?.last_active_at
+            );
+            return status === "ATIVO AGORA";
+          }
+
+          return true;
+        })
+        .sort((a, b) => {
+          if (conversationFilter === "distance") {
+            const aDistance =
+              a.distanceKm === null ? Number.POSITIVE_INFINITY : a.distanceKm;
+            const bDistance =
+              b.distanceKm === null ? Number.POSITIVE_INFINITY : b.distanceKm;
+            return aDistance - bDistance;
+          }
+
+          return 0;
+        });
+
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const isRecoveryUrl = hashParams.get("type") === "recovery";
+
+    async function checkSession() {
+      if (isRecoveryUrl) {
+        setScreen("resetPassword");
+        setResetPasswordForm({
+          newPassword: "",
+          confirmPassword: "",
+        });
+        setMessage("");
+        setCheckingSession(false);
+        return;
+      }
+
+      const { data } = await supabase.auth.getSession();
+
+      if (data.session) {
+        setCurrentUserId(data.session.user.id);
+        setProfileEditMode(false);
+        setAgeVerified(true);
+        await checkAdminStatus();
+        await loadProfile(data.session.user.id);
+      } else {
+        setScreen("ageGate");
+      }
+
+      setCheckingSession(false);
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === "PASSWORD_RECOVERY") {
+          setScreen("resetPassword");
+          setResetPasswordForm({
+            newPassword: "",
+            confirmPassword: "",
+          });
+          setMessage("");
+          return;
+        }
+
+        if (session && !isRecoveryUrl) {
+          setCurrentUserId(session.user.id);
+          setProfileEditMode(false);
+          await checkAdminStatus();
+          await loadProfile(session.user.id);
+        }
+      }
+    );
+
+    checkSession();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   if (checkingSession) {
     return (
       <main className="moon-app">
@@ -4993,7 +4608,7 @@ useEffect(() => {
             {adminLoading ? <p>Carregando dados do painel...</p> : adminStats ? (
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px" }}>
-                  {[["USUÁRIOS",adminStats.totalUsers],["ATIVOS",adminStats.activeUsers],["CURTIDAS",adminStats.likes],["CONVERSAS",adminStats.conversations],["MENSAGENS",adminStats.messages],["BOOSTS",adminStats.boosts],["BOOSTS ATIVOS",adminStats.activeBoosts],["DENÚNCIAS",adminStats.reports],["BLOQUEIOS",adminStats.blocks],["FATURAMENTO",`R$ ${adminStats.revenue.toFixed(2).replace(".",",")}`]].map(([label,value]) => (
+                  {[["USUÁRIOS",adminStats.totalUsers],["ATIVOS",adminStats.activeUsers],["CURTIDAS",adminStats.likes],["CONVERSAS",adminStats.conversations],["MENSAGENS",adminStats.messages],["DENÚNCIAS",adminStats.reports],["BLOQUEIOS",adminStats.blocks]].map(([label,value]) => (
                     <div
                       key={label}
                       onClick={label === "DENÚNCIAS" ? async () => {
@@ -5663,7 +5278,7 @@ useEffect(() => {
 
                         <div style={{
                           display: "grid",
-                          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
                           gap: "8px",
                         }}>
                           {[
@@ -6425,7 +6040,7 @@ useEffect(() => {
                         <option value="">Todas</option><option value="Ativo">Ativo</option><option value="Passivo">Passivo</option><option value="Versátil">Versátil</option>
                       </select></label>
                       <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px", gridColumn: "1 / -1" }}>DISPONIBILIDADE<select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
-                        <option value="">Todas</option><option value="Agora">Agora</option><option value="Mais tarde">Mais tarde</option><option value="Outro dia">Outro dia</option><option value="Só conversar">Só conversar</option>
+                        <option value="">Todas</option><option value="Agora">Agora</option><option value="Mais tarde">Mais tarde</option><option value="Outro dia">Outro dia</option><option value="Conversar">Conversar</option>
                       </select></label>
                     </div>
                   </div>
@@ -6485,7 +6100,7 @@ useEffect(() => {
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ color: "#f4ead7", fontSize: "14px", fontWeight: 600, marginBottom: "5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {selectedMapProfile.name || "Perfil"}
+                        {selectedMapProfile.name || "Perfil"}{selectedMapProfile.birth_date ? ` · ${calculateAge(selectedMapProfile.birth_date)} anos` : ""}
                       </div>
                       <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1px", marginBottom: "8px" }}>
                         {selectedMapProfile.distance_km != null ? `${Number(selectedMapProfile.distance_km).toFixed(1).replace(".", ",")} KM` : "PERFIL PRÓXIMO"}
@@ -6641,21 +6256,6 @@ useEffect(() => {
                         {profileForm.availability && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.availability}</span></div>}
                       </div>
 
-                      {activeBoost && boostSecondsLeft > 0 && (
-                        <div style={{
-                          marginTop: "22px",
-                          padding: "16px 18px",
-                          border: "1px solid rgba(201,181,138,.35)",
-                          background: "linear-gradient(135deg, rgba(201,181,138,.07), rgba(201,181,138,.015))",
-                          textAlign: "center",
-                        }}>
-                          <div style={{ color: "#c9b58a", fontSize: "8px", letterSpacing: "2px", marginBottom: "8px" }}>BOOST ATIVO</div>
-                          <div style={{ color: "#f4ead7", fontSize: "28px", letterSpacing: "3px", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-                            {formatBoostTime(boostSecondsLeft)}
-                          </div>
-                          <div style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.4px", marginTop: "8px" }}>TEMPO RESTANTE</div>
-                        </div>
-                      )}
 
                       <button
                         type="button"
@@ -6702,8 +6302,47 @@ useEffect(() => {
                 );
               })()}
 
-              <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
-                <button className="back-button" onClick={() => { setScreen("inside"); setMessage(""); }}>VOLTAR
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  gap: "10px",
+                  marginTop: "28px",
+                }}
+              >
+                <button
+                  className="back-button"
+                  onClick={() => { setScreen("inside"); setMessage(""); }}
+                >
+                  VOLTAR
+                </button>
+
+                <span
+                  style={{
+                    color: "#5f5a52",
+                    fontSize: "10px",
+                    userSelect: "none",
+                  }}
+                >
+                  ·
+                </span>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  style={{
+                    height: "36px",
+                    padding: "0 14px",
+                    border: "1px solid #292929",
+                    background: "transparent",
+                    color: "#c9b58a",
+                    fontSize: "9px",
+                    letterSpacing: "1.4px",
+                    cursor: "pointer",
+                  }}
+                >
+                  SAIR
                 </button>
               </div>
             </>
@@ -6780,7 +6419,7 @@ useEffect(() => {
                 <div style={{ marginBottom: "22px" }}>
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>DISPONIBILIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
-                    {["Agora", "Mais tarde", "Outro dia", "Só conversar"].map((option) => (
+                    {["Agora", "Mais tarde", "Outro dia", "Conversar"].map((option) => (
                       <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, availability: option })} style={{ height: "44px", border: profileForm.availability === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.availability === option ? "#15130f" : "#0b0b0b", color: profileForm.availability === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
                     ))}
                   </div>
@@ -7027,9 +6666,76 @@ useEffect(() => {
             </p>
           </div>
 
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-start",
+              marginBottom: "18px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setScreen("inside")}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#c9b58a",
+                fontSize: "10px",
+                letterSpacing: "1.8px",
+                cursor: "pointer",
+                padding: "4px 0",
+              }}
+            >
+              ← VOLTAR
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            {[
+              ["all", "TODAS"],
+              ["unread", "NÃO LIDAS"],
+              ["online", "ONLINE"],
+              ["distance", "DISTÂNCIA"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setConversationFilter(value)}
+                style={{
+                  minHeight: "38px",
+                  border:
+                    conversationFilter === value
+                      ? "1px solid #c9b58a"
+                      : "1px solid #2a2722",
+                  background:
+                    conversationFilter === value
+                      ? "#15130f"
+                      : "#0b0b0b",
+                  color:
+                    conversationFilter === value
+                      ? "#f4ead7"
+                      : "#c9b58a",
+                  fontSize: "9px",
+                  letterSpacing: "1.2px",
+                  cursor: "pointer",
+                  padding: "8px 5px",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {conversationsLoading ? (
             <MoonSkeleton rows={4} />
-          ) : conversations.length === 0 ? (
+          ) : filteredConversations.length === 0 ? (
             <div
               style={{
                 textAlign: "center",
@@ -7070,7 +6776,7 @@ useEffect(() => {
                 gap: "10px",
               }}
             >
-              {conversations.map((conversation) => {
+              {filteredConversations.map((conversation) => {
                 const profile = conversation.profile;
 
                 return (
@@ -7182,6 +6888,36 @@ useEffect(() => {
                         {conversation.lastMessage?.content ||
                           "Inicie a conversa"}
                       </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          marginTop: "6px",
+                          fontSize: "8px",
+                          letterSpacing: "0.8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            color:
+                              getOnlineStatus(
+                                profile.last_active_at
+                              ) === "ATIVO AGORA"
+                                ? "#c9b58a"
+                                : "#77736b",
+                          }}
+                        >
+                          ● {getOnlineStatus(profile.last_active_at)}
+                        </span>
+
+                        {conversation.distanceKm !== null && (
+                          <span style={{ color: "#77736b" }}>
+                            · {formatDistance(conversation.distanceKm)}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div
@@ -7243,23 +6979,6 @@ useEffect(() => {
             </p>
           )}
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              marginTop: "35px",
-            }}
-          >
-            <button
-              className="back-button"
-              onClick={() => {
-                setScreen("inside");
-                setMessage("");
-              }}
-            >
-              VOLTAR
-            </button>
-          </div>
         </section>
       )}
 
@@ -7763,40 +7482,6 @@ useEffect(() => {
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setBoostOpen(true);
-              setMessage("");
-            }}
-            title={activeBoost ? "Boost ativo" : "Ativar Boost"}
-            style={{
-              position: "fixed",
-              right: "18px",
-              bottom: "92px",
-              zIndex: 900,
-              minWidth: activeBoost ? "132px" : "104px",
-              height: activeBoost ? "52px" : "42px",
-              padding: "0 14px",
-              border: "1px solid #c9b58a",
-              background: "#0b0b0b",
-              color: "#c9b58a",
-              fontSize: "9px",
-              letterSpacing: "1.4px",
-              cursor: "pointer",
-              boxShadow: "0 8px 28px rgba(0,0,0,0.45)",
-            }}
-          >
-            {activeBoost ? (
-              <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                <span style={{ fontSize: "8px", letterSpacing: "1.6px" }}>BOOST ATIVO</span>
-                <span style={{ fontSize: "15px", letterSpacing: "1.5px", lineHeight: 1 }}>{formatBoostTime(boostSecondsLeft)}</span>
-              </span>
-            ) : (
-              "BOOST"
-            )}
-          </button>
-
           <div
             style={{
               display: "flex",
@@ -7912,7 +7597,7 @@ useEffect(() => {
 
           {showAvailabilityFilter && (
             <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px" }}>
-              {["Agora", "Mais tarde", "Outro dia", "Só conversar"].map((option) => (
+              {["Agora", "Mais tarde", "Outro dia", "Conversar"].map((option) => (
                 <button key={option} type="button" onClick={() => setAvailabilityFilter(availabilityFilter === option ? "" : option)} style={{ height: "44px", border: availabilityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: availabilityFilter === option ? "#15130f" : "#0b0b0b", color: availabilityFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
               ))}
             </div>
@@ -8087,7 +7772,7 @@ useEffect(() => {
                         background:
                           "#0b0b0b",
                         border:
-                          profile.is_boosted ? "1px solid #c9b58a" : "1px solid #202020",
+                          "1px solid #202020",
                         overflow:
                           "hidden",
                         cursor:
@@ -8113,25 +7798,6 @@ useEffect(() => {
                             "hidden",
                         }}
                       >
-
-                        {profile.is_boosted && (
-                          <span
-                            style={{
-                              position: "absolute",
-                              top: "10px",
-                              left: "10px",
-                              zIndex: 2,
-                              background: "rgba(5,5,5,0.92)",
-                              border: "1px solid #c9b58a",
-                              color: "#c9b58a",
-                              padding: "6px 9px",
-                              fontSize: "8px",
-                              letterSpacing: "1.6px",
-                            }}
-                          >
-                            EM DESTAQUE
-                          </span>
-                        )}
 
                         {profile.photoUrl ? (
 
@@ -8182,33 +7848,6 @@ useEffect(() => {
 
                         )}
 
-                        {status && (
-                          <span
-                            style={{
-                              position:
-                                "absolute",
-                              left:
-                                "10px",
-                              bottom:
-                                "10px",
-                              background:
-                                "#050505",
-                              border:
-                                "1px solid #c9b58a",
-                              color:
-                                "#c9b58a",
-                              padding:
-                                "5px 8px",
-                              fontSize:
-                                "8px",
-                              letterSpacing:
-                                "1.5px",
-                            }}
-                          >
-                            {status}
-                          </span>
-                        )}
-
                       </div>
 
                       {/* INFORMAÇÕES */}
@@ -8216,221 +7855,65 @@ useEffect(() => {
                       <div
                         style={{
                           padding:
-                            "16px",
+                            "10px",
                         }}
                       >
 
                         <div
                           style={{
-                            display:
-                              "flex",
-                            justifyContent:
-                              "space-between",
-                            alignItems:
-                              "center",
-                            gap:
-                              "10px",
-                            marginBottom:
-                              "8px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            marginBottom: "2px",
                           }}
                         >
-
                           <h2
+                            className="moon-discovery-name"
                             style={{
-                              margin:
-                                "0",
-                              color:
-                                "#f4ead7",
-                              fontSize:
-                                "17px",
-                              fontWeight:
-                                "400",
-                              letterSpacing:
-                                "1px",
+                              margin: "0",
+                              color: "#f4ead7",
+                              fontSize: "17px",
+                              fontWeight: "400",
+                              letterSpacing: "1px",
                             }}
                           >
-                            {profile.name ||
-                              "Sem nome"}
-                            {profile.birth_date &&
-                              `, ${calculateAge(
-                                profile.birth_date
-                              )}`}
+                            {(profile.name || "Sem nome").split(" ")[0]}
                           </h2>
 
-                          <span
-                            style={{
-                              color:
-                                "#c9b58a",
-                              fontSize:
-                                "10px",
-                              whiteSpace:
-                                "nowrap",
-                            }}
-                          >
-                            {formatDistance(
-                              profile.distance_km
-                            )}
-                          </span>
-
+                          {profile.birth_date && (
+                            <>
+                              <span
+                                style={{
+                                  color: "#8e877c",
+                                  fontSize: "10px",
+                                }}
+                              >
+                                ·
+                              </span>
+                              <span
+                                style={{
+                                  color: "#c9b58a",
+                                  fontSize: "11px",
+                                  fontWeight: "500",
+                                }}
+                              >
+                                {calculateAge(profile.birth_date)} anos
+                              </span>
+                            </>
+                          )}
                         </div>
 
-                        {profile.bio && (
-                          <p
+                        {status && (
+                          <div
                             style={{
-                              margin:
-                                "10px 0 0",
-                              color:
-                                "#8e877c",
-                              fontSize:
-                                "11px",
-                              lineHeight:
-                                "1.5",
-                              display:
-                                "-webkit-box",
-                              WebkitLineClamp:
-                                2,
-                              WebkitBoxOrient:
-                                "vertical",
-                              overflow:
-                                "hidden",
+                              color: "#c9b58a",
+                              fontSize: "8px",
+                              letterSpacing: "1.5px",
                             }}
                           >
-                            {profile.bio}
-                          </p>
+                            ● {status}
+                          </div>
                         )}
-
-                        <div
-  style={{
-    display: "flex",
-    gap: "8px",
-    width: "100%",
-    marginTop: "14px",
-  }}
->
-  <button
-    type="button"
-    onClick={(event) => {
-      event.stopPropagation();
-      handleLike(profile.id, profile);
-    }}
-    style={{
-      flex: 1,
-      height: "42px",
-      border: "1px solid #c9b58a",
-      background: "transparent",
-      color: "#c9b58a",
-      cursor: "pointer",
-      fontSize: "18px",
-      letterSpacing: "2px",
-      transition: "all 0.25s ease",
-    }}
-    onMouseEnter={(event) => {
-      event.currentTarget.style.background =
-        "#c9b58a";
-      event.currentTarget.style.color =
-        "#050505";
-    }}
-    onMouseLeave={(event) => {
-      event.currentTarget.style.background =
-        "transparent";
-      event.currentTarget.style.color =
-        "#f4ead7";
-    }}
-    aria-label={`Curtir ${
-      profile.name || "perfil"
-    }`}
-    title="Curtir perfil"
-  >
-    CURTIR
-  </button>
-
-  <button
-    type="button"
-    onClick={(event) => {
-      event.stopPropagation();
-      handleChat(profile, "inside");
-    }}
-    disabled={chatLoading}
-    style={{
-      flex: 1,
-      height: "42px",
-      border: "1px solid #c9b58a",
-      background: "transparent",
-      color: "#c9b58a",
-      cursor: chatLoading ? "wait" : "pointer",
-      fontSize: "18px",
-      letterSpacing: "2px",
-      transition: "all 0.25s ease",
-      opacity: chatLoading ? 0.6 : 1,
-    }}
-    onMouseEnter={(event) => {
-      if (!chatLoading) {
-        event.currentTarget.style.background =
-          "#c9b58a";
-        event.currentTarget.style.color =
-          "#050505";
-      }
-    }}
-    onMouseLeave={(event) => {
-      event.currentTarget.style.background =
-        "transparent";
-      event.currentTarget.style.color =
-        "#f4ead7";
-    }}
-    aria-label={`Conversar com ${
-      profile.name || "perfil"
-    }`}
-    title="Conversar"
-  >
-    MENSAGEM
-  </button>
-</div>
-
-<button
-  type="button"
-  onClick={(event) => {
-    event.stopPropagation();
-    handleBlock(profile);
-  }}
-  style={{
-    width: "100%",
-    marginTop: "8px",
-    height: "28px",
-    border: "1px solid #c9b58a",
-    background: "transparent",
-    color: "#c9b58a",
-    cursor: "pointer",
-    fontSize: "8px",
-    fontWeight: "500",
-    letterSpacing: "1.5px",
-  }}
->
-  BLOQUEAR
-</button>
-
-<button
-  type="button"
-  onClick={(event) => {
-    event.stopPropagation();
-    setReportTarget(profile);
-    setReportReason("");
-    setMessage("");
-  }}
-  style={{
-    width: "100%",
-    marginTop: "6px",
-    height: "28px",
-    border: "1px solid #c9b58a",
-    background: "transparent",
-    color: "#c9b58a",
-    cursor: "pointer",
-    fontSize: "8px",
-    fontWeight: "500",
-    letterSpacing: "1.5px",
-  }}
->
-  DENUNCIAR
-</button>
 
                       </div>
 
@@ -8651,7 +8134,22 @@ useEffect(() => {
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px" }}>PERFIL MOON</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    {selectedProfileFromMap && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProfile(null);
+                          setSelectedProfileFromMap(false);
+                          setScreen("map");
+                        }}
+                        style={{ height: "30px", padding: "0 10px", border: "1px solid #c9b58a", background: "transparent", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.2px", cursor: "pointer" }}
+                      >
+                        VOLTAR AO MAPA
+                      </button>
+                    )}
+                    <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px" }}>PERFIL MOON</div>
+                  </div>
                   <div style={{ position: "relative", display: "flex", gap: "7px", alignItems: "center" }}>
                     <button
                       type="button"
@@ -8757,22 +8255,6 @@ useEffect(() => {
                         {getOnlineStatus(selectedProfile.last_active_at) || "OFFLINE"}
                         {selectedProfile.distance_km !== undefined && selectedProfile.distance_km !== null ? ` · ${formatDistance(selectedProfile.distance_km)}` : ""}
                       </div>
-                      {selectedProfile.is_boosted && (
-                        <div
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            marginTop: "12px",
-                            padding: "7px 10px",
-                            border: "1px solid #c9b58a",
-                            color: "#c9b58a",
-                            fontSize: "8px",
-                            letterSpacing: "1.7px",
-                          }}
-                        >
-                          EM DESTAQUE
-                        </div>
-                      )}
                     </div>
 
                     {selectedProfile.bio && (
@@ -8937,441 +8419,150 @@ useEffect(() => {
             </div>
           )}
 
-          {boostOpen && (
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 1000,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "20px",
-                background: "rgba(0,0,0,0.82)",
-                backdropFilter: "blur(8px)",
-              }}
-            >
-              <div
-                style={{
-                  width: "100%",
-                  maxWidth: "460px",
-                  border: "1px solid #292929",
-                  background: "#080808",
-                  padding: "28px",
-                  boxShadow: "0 20px 70px rgba(0,0,0,0.5)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "15px" }}>
-                  <div style={{ flex: 1, textAlign: "center" }}>
-                    <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px", marginBottom: "10px" }}>
-                      MOON / DESTAQUE
-                    </div>
-                    <h2 style={{ color: "#f4ead7", fontSize: "24px", fontWeight: "400", letterSpacing: "1px", margin: 0, textAlign: "center" }}>
-                      BOOST
-                    </h2>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setBoostOpen(false)}
-                    style={{ border: "none", background: "transparent", color: "#77736b", fontSize: "22px", cursor: "pointer", padding: 0 }}
-                  >
-                    ×
-                  </button>
-                </div>
-
-                <p style={{ color: "#aaa59b", fontSize: "12px", lineHeight: "1.7", margin: "20px 0 24px", textAlign: "center" }}>
-                  Coloque seu perfil em destaque na descoberta e aumente sua visibilidade para pessoas próximas.
-                </p>
-
-                <div style={{ display: "grid", gap: "8px" }}>
-                  {[
-                    { hours: 1, price: "R$ 5,00" },
-                    { hours: 3, price: "R$ 8,00", popular: true },
-                    { hours: 5, price: "R$ 10,00" },
-                  ].map((plan) => (
-                    <button
-                      key={plan.hours}
-                      type="button"
-                      onClick={() => setSelectedBoostHours(plan.hours)}
-                      style={{
-                        width: "100%",
-                        minHeight: "64px",
-                        padding: "12px 14px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "12px",
-                        border: selectedBoostHours === plan.hours ? "1px solid #c9b58a" : "1px solid #292929",
-                        background: selectedBoostHours === plan.hours ? "#15130f" : "#0b0b0b",
-                        color: "#f4ead7",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
-                    >
-                      <span>
-                        <span style={{ display: "block", fontSize: "10px", letterSpacing: "1.6px" }}>
-                          {plan.hours} {plan.hours === 1 ? "HORA" : "HORAS"}
-                        </span>
-                        {plan.popular && (
-                          <span style={{ display: "block", marginTop: "5px", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.4px" }}>
-                            MAIS POPULAR
-                          </span>
-                        )}
-                      </span>
-                      <strong style={{ color: "#c9b58a", fontSize: "15px", fontWeight: "500" }}>
-                        {plan.price}
-                      </strong>
-                    </button>
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleCreateBoost}
-                  disabled={!mercadoPagoPublicKey}
-                  style={{
-                    width: "100%",
-                    height: "50px",
-                    marginTop: "18px",
-                    border: "1px solid #c9b58a",
-                    background: "#c9b58a",
-                    color: "#050505",
-                    fontSize: "10px",
-                    letterSpacing: "2px",
-                    cursor: "pointer",
-                    opacity: mercadoPagoPublicKey ? 1 : 0.5,
-                  }}
-                >
-                  ATIVAR BOOST · {selectedBoostHours === 1 ? "R$ 5,00" : selectedBoostHours === 3 ? "R$ 8,00" : "R$ 10,00"}
-                </button>
-
-                <p style={{ color: "#555149", fontSize: "9px", lineHeight: "1.6", textAlign: "center", margin: "13px 0 0" }}>
-                  Pagamento seguro via Mercado Pago.
-                </p>
-
-                {message && (
-                  <p style={{ color: "#c9b58a", fontSize: "10px", lineHeight: "1.5", textAlign: "center", margin: "15px 0 0" }}>
-                    {message}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {boostPaymentOpen && (
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 1100,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "20px",
-                background: "rgba(0,0,0,0.88)",
-                backdropFilter: "blur(10px)",
-                overflowY: "auto",
-              }}
-            >
-              <div
-                style={{
-                  width: "100%",
-                  maxWidth: "520px",
-                  maxHeight: "92vh",
-                  overflowY: "auto",
-                  border: "1px solid #292929",
-                  background: "#080808",
-                  padding: "24px",
-                  boxShadow: "0 20px 70px rgba(0,0,0,0.55)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "15px", marginBottom: "18px" }}>
-                  <div style={{ flex: 1, textAlign: "center" }}>
-                    <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px", marginBottom: "9px" }}>
-                      MOON / PAGAMENTO
-                    </div>
-                    <h2 style={{ color: "#f4ead7", fontSize: "22px", fontWeight: "400", letterSpacing: "1px", margin: 0 }}>
-                      BOOST
-                    </h2>
-                    <div style={{ color: "#c9b58a", fontSize: "11px", letterSpacing: "1.5px", marginTop: "8px" }}>
-                      {selectedBoostHours} {selectedBoostHours === 1 ? "HORA" : "HORAS"} · R$ {boostPaymentAmount.toFixed(2).replace(".", ",")}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={boostPaymentLoading}
-                    onClick={() => {
-                      if (!boostPaymentLoading) {
-                        setBoostPaymentOpen(false);
-                        setBoostPaymentSubmitted(false);
-                        setBoostPaymentStatus("");
-                      }
-                    }}
-                    style={{ border: "none", background: "transparent", color: "#77736b", fontSize: "22px", cursor: boostPaymentLoading ? "not-allowed" : "pointer", padding: 0 }}
-                  >
-                    ×
-                  </button>
-                </div>
-
-                {!mercadoPagoPublicKey ? (
-                  <div style={{ border: "1px solid #3a3030", background: "#110b0b", padding: "18px", color: "#c99a9a", fontSize: "11px", lineHeight: "1.7", textAlign: "center" }}>
-                    A chave pública do Mercado Pago não foi encontrada no ambiente do MOON.
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", textAlign: "center", marginBottom: "15px" }}>
-                      ESCOLHA PIX OU CARTÃO
-                    </div>
-
-                    {!boostPaymentSubmitted && (
-                      <Payment
-                        initialization={{
-                          amount: boostPaymentAmount,
-                          payer: {
-                            email: boostPaymentEmail,
-                          },
-                        }}
-                        customization={{
-                          paymentMethods: {
-                            creditCard: "all",
-                            debitCard: "all",
-                            prepaidCard: "all",
-                            bankTransfer: "all",
-                          },
-                        }}
-                        onSubmit={handleBoostPaymentSubmit}
-                        onReady={() => {
-                          setBoostPaymentStatus("");
-                        }}
-                        onError={(error) => {
-                          console.error("ERRO NO PAYMENT BRICK:", error);
-                          setBoostPaymentStatus("");
-                          setMessage("Não foi possível carregar o pagamento. Tente novamente.");
-                        }}
-                      />
-                    )}
-
-                    {boostPaymentSubmitted && boostPaymentResult?.pix?.qr_code_base64 && (
-                      <div style={{ marginTop: "18px", border: "1px solid #292929", background: "#0b0b0b", padding: "20px", textAlign: "center" }}>
-                        <div style={{ color: "#f4ead7", fontSize: "12px", letterSpacing: "1.5px", marginBottom: "14px" }}>
-                          PAGUE COM PIX
-                        </div>
-                        <img
-                          src={`data:image/png;base64,${boostPaymentResult.pix.qr_code_base64}`}
-                          alt="QR Code Pix"
-                          style={{ width: "210px", height: "210px", objectFit: "contain", background: "#ffffff", padding: "8px" }}
-                        />
-                        {boostPaymentResult.pix.qr_code && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                await navigator.clipboard.writeText(boostPaymentResult.pix.qr_code);
-                                setMessage("Pix Copia e Cola copiado.");
-                              } catch {
-                                setMessage("Não foi possível copiar o Pix.");
-                              }
+          {!selectedProfile && (
+            <>
+                        {/* NAVEGAÇÃO INFERIOR */}
+                        <div
+                          style={{
+                            position: "fixed",
+                            left: "50%",
+                            bottom: "14px",
+                            transform: "translateX(-50%)",
+                            width: "min(760px, calc(100vw - 20px))",
+                            zIndex: 2000,
+                            padding: "5px",
+                            background: "rgba(8,8,8,0.95)",
+                            border: "1px solid rgba(201,181,138,0.24)",
+                            borderRadius: "18px",
+                            backdropFilter: "blur(18px)",
+                            boxShadow: "0 18px 50px rgba(0,0,0,0.62)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                              gap: "3px",
                             }}
-                            style={{ width: "100%", height: "44px", marginTop: "14px", border: "1px solid #c9b58a", background: "transparent", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer" }}
                           >
-                            COPIAR PIX COPIA E COLA
-                          </button>
-                        )}
-                      </div>
-                    )}
+                            {[
+                              ["DISCOVERY", "inside"],
+                              ["PERFIL", "profile"],
+                              ["MAPA", "map"],
+                              ["CURTIDAS", "likes"],
+                              ["CONVERSAS", "conversations"],
+                            ].map(([label, target]) => {
+                              const active =
+                                (target === "inside" && screen === "inside" && !selectedProfile) ||
+                                (target === "profile" && screen === "profile") ||
+                                (target === "map" && screen === "map") ||
+                                (target === "likes" && screen === "likes") ||
+                                (target === "conversations" && screen === "conversations");
 
-                    {boostPaymentStatus && (
-                      <div style={{ marginTop: "16px", color: boostPaymentStatus.includes("ATIVO") ? "#c9b58a" : "#77736b", fontSize: "10px", lineHeight: "1.6", textAlign: "center", letterSpacing: "0.8px" }}>
-                        {boostPaymentStatus}
-                      </div>
-                    )}
-
-                    {boostPaymentSubmitted && (
-                      <button
-                        type="button"
-                        disabled={boostPaymentLoading}
-                        onClick={() => {
-                          setBoostPaymentOpen(false);
-                          setBoostPaymentSubmitted(false);
-                          setBoostPaymentStatus("");
-                          setBoostPaymentResult(null);
-                          setMessage("");
-                        }}
-                        style={{ width: "100%", height: "44px", marginTop: "18px", border: "1px solid #292929", background: "transparent", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", cursor: boostPaymentLoading ? "not-allowed" : "pointer" }}
-                      >
-                        FECHAR
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+                              return (
+                                <button
+                                  key={target}
+                                  type="button"
+                                  onClick={() => {
+                                    setMessage("");
+                                    if (target === "inside") {
+                                      setSelectedProfile(null);
+                                      setScreen("inside");
+                                    } else if (target === "profile") {
+                                      setSelectedProfile(null);
+                                      setProfileEditMode(false);
+                                      setScreen("profile");
+                                    } else if (target === "map") {
+                                      setSelectedProfile(null);
+                                      setScreen("map");
+                                    } else if (target === "likes") {
+                                      handleOpenLikes();
+                                    } else {
+                                      handleOpenConversations();
+                                    }
+                                  }}
+                                  style={{
+                                    position: "relative",
+                                    width: "100%",
+                                    minWidth: 0,
+                                    height: "48px",
+                                    border: active
+                                      ? "1px solid rgba(201,181,138,0.5)"
+                                      : "1px solid transparent",
+                                    borderRadius: "14px",
+                                    background: active
+                                      ? "rgba(201,181,138,0.12)"
+                                      : "transparent",
+                                    color: active ? "#f4ead7" : "#8f897f",
+                                    fontSize: "8px",
+                                    fontWeight: active ? 700 : 600,
+                                    letterSpacing: "1.35px",
+                                    cursor: "pointer",
+                                    transition: "all 0.28s ease",
+                                    boxShadow: active
+                                      ? "0 0 22px rgba(201,181,138,0.08)"
+                                      : "none",
+                                  }}
+                                >
+                                  <span>{label}</span>
+                                  {target === "likes" && notificationCount.like > 0 && (
+                                    <span style={{
+                                      marginLeft: "5px",
+                                      minWidth: "16px",
+                                      height: "16px",
+                                      padding: "0 4px",
+                                      borderRadius: "999px",
+                                      background: "#c9b58a",
+                                      color: "#111",
+                                      fontSize: "8px",
+                                      fontWeight: 700,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}>
+                                      {notificationCount.like > 99 ? "99+" : notificationCount.like}
+                                    </span>
+                                  )}
+                                  {target === "conversations" && notificationCount.message > 0 && (
+                                    <span style={{
+                                      marginLeft: "5px",
+                                      minWidth: "16px",
+                                      height: "16px",
+                                      padding: "0 4px",
+                                      borderRadius: "999px",
+                                      background: "#c9b58a",
+                                      color: "#111",
+                                      fontSize: "8px",
+                                      fontWeight: 700,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}>
+                                      {notificationCount.message > 99 ? "99+" : notificationCount.message}
+                                    </span>
+                                  )}
+                                  {active && (
+                                    <span
+                                      style={{
+                                        position: "absolute",
+                                        left: "50%",
+                                        bottom: "4px",
+                                        width: "18px",
+                                        height: "2px",
+                                        borderRadius: "999px",
+                                        transform: "translateX(-50%)",
+                                        background: "#c9b58a",
+                                        boxShadow: "0 0 10px rgba(201,181,138,0.45)",
+                                      }}
+                                    />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+            </>
           )}
-
-          {/* NAVEGAÇÃO INFERIOR */}
-
-          <div
-            style={{
-              position: "sticky",
-              bottom: "14px",
-              display: "flex",
-              justifyContent: "center",
-              gap: "8px",
-              marginTop: "35px",
-              padding: "8px",
-              background: "rgba(5,5,5,0.94)",
-              border: "1px solid #202020",
-              backdropFilter: "blur(10px)",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setMessage("");
-                setScreen("map");
-              }}
-              style={{
-                flex: 1,
-                maxWidth: "180px",
-                height: "42px",
-                border: "1px solid #c9b58a",
-                background: "transparent",
-                color: "#f4ead7",
-                fontSize: "10px",
-                letterSpacing: "1.8px",
-                cursor: "pointer",
-              }}
-            >
-              MAPA
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setProfileEditMode(false);
-                setScreen("profile");
-                setMessage("");
-              }}
-              style={{
-                flex: 1,
-                maxWidth: "180px",
-                height: "42px",
-                border: "1px solid #292929",
-                background: "transparent",
-                color: "#f4ead7",
-                fontSize: "10px",
-                letterSpacing: "1.8px",
-                cursor: "pointer",
-              }}
-            >
-              MEU PERFIL
-            </button>
-
-            <button
-              type="button"
-              onClick={handleOpenLikes}
-              style={{
-                flex: 1,
-                maxWidth: "180px",
-                height: "42px",
-                border: "1px solid #c9b58a",
-                background: "transparent",
-                color: "#f4ead7",
-                fontSize: "10px",
-                letterSpacing: "1.8px",
-                cursor: "pointer",
-              }}
-            >
-              <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                <span></span>
-                <span>CURTIDAS</span>
-                {notificationCount.like > 0 && (
-                  <span
-                    style={{
-                      minWidth: "17px",
-                      height: "17px",
-                      padding: "0 5px",
-                      borderRadius: "999px",
-                      background: "#c9b58a",
-                      color: "#111",
-                      fontSize: "9px",
-                      fontWeight: 700,
-                      letterSpacing: "0",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {notificationCount.like > 99 ? "99+" : notificationCount.like}
-                  </span>
-                )}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleOpenConversations}
-              style={{
-                flex: 1,
-                maxWidth: "180px",
-                height: "42px",
-                border: "1px solid #c9b58a",
-                background: "transparent",
-                color: "#f4ead7",
-                fontSize: "10px",
-                letterSpacing: "1.8px",
-                cursor: "pointer",
-              }}
-            >
-              <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                <span></span>
-                <span>CONVERSAS</span>
-                {notificationCount.message > 0 && (
-                  <span
-                    style={{
-                      minWidth: "17px",
-                      height: "17px",
-                      padding: "0 5px",
-                      borderRadius: "999px",
-                      background: "#c9b58a",
-                      color: "#111",
-                      fontSize: "9px",
-                      fontWeight: 700,
-                      letterSpacing: "0",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {notificationCount.message > 99 ? "99+" : notificationCount.message}
-                  </span>
-                )}
-              </span>
-            </button>
-          </div>
-
-          {/* SAIR */}
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              marginTop: "20px",
-            }}
-          >
-
-            <button
-              className="back-button"
-              onClick={
-                handleLogout
-              }
-            >
-              SAIR
-            </button>
-
-          </div>
 
         </section>
       )}
