@@ -1,5 +1,50 @@
 import { useEffect, useRef, useState } from "react";
+import { Circle, CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+
+function MoonSkeleton({ rows = 3, compact = false }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: compact ? "8px" : "12px", padding: compact ? "8px 0" : "20px 0" }}>
+      {Array.from({ length: rows }).map((_, index) => (
+        <div key={index} style={{ display: "flex", alignItems: "center", gap: "10px", padding: compact ? "0" : "6px 0" }}>
+          <div style={{ width: compact ? "28px" : "46px", height: compact ? "28px" : "46px", borderRadius: "50%", background: "linear-gradient(90deg, #151515 25%, #222 50%, #151515 75%)", backgroundSize: "200% 100%", animation: "moonSkeleton 1.4s ease-in-out infinite", flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ width: index % 2 === 0 ? "48%" : "38%", height: "8px", borderRadius: "2px", marginBottom: "7px", background: "linear-gradient(90deg, #151515 25%, #222 50%, #151515 75%)", backgroundSize: "200% 100%", animation: "moonSkeleton 1.4s ease-in-out infinite" }} />
+            <div style={{ width: index % 2 === 0 ? "72%" : "58%", height: "6px", borderRadius: "2px", background: "linear-gradient(90deg, #151515 25%, #222 50%, #151515 75%)", backgroundSize: "200% 100%", animation: "moonSkeleton 1.4s ease-in-out infinite" }} />
+          </div>
+        </div>
+      ))}
+      <style>{`@keyframes moonSkeleton { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }`}</style>
+    </div>
+  );
+}
+
+function MapClickHandler({ onSelect }) {
+  useMapEvents({
+    click(event) {
+      onSelect({
+        latitude: event.latlng.lat,
+        longitude: event.latlng.lng,
+      });
+    },
+  });
+
+  return null;
+}
+
+function MapCenterController({ center, zoom }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!center || center.length !== 2) return;
+    map.flyTo(center, zoom, { duration: 0.7 });
+  }, [center, zoom, map]);
+
+  return null;
+}
+
 import { Payment, initMercadoPago } from "@mercadopago/sdk-react";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import { supabase } from "./supabase";
 import "./App.css";
 
@@ -13,6 +58,9 @@ if (mercadoPagoPublicKey) {
 
 function App() {
   const [screen, setScreen] = useState("home");
+  const [mapRadius, setMapRadius] = useState(50);
+  const [selectedMapPoint, setSelectedMapPoint] = useState(null);
+  const [mapCenterRequest, setMapCenterRequest] = useState(null);
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [ageVerified, setAgeVerified] = useState(false);
@@ -23,6 +71,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [notificationCount, setNotificationCount] = useState({
     like: 0,
     message: 0,
+    match: 0,
   });
   const [notifications, setNotifications] = useState([]);
   const toastTimeoutRef = useRef(null);
@@ -35,6 +84,17 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     password: "",
     terms: false,
   });
+
+  const verificationVideoRef = useRef(null);
+  const verificationStreamRef = useRef(null);
+  const [verificationCameraLoading, setVerificationCameraLoading] = useState(false);
+  const [verificationFaceDetected, setVerificationFaceDetected] = useState(false);
+  const [verificationLivenessPassed, setVerificationLivenessPassed] = useState(false);
+  const verificationFaceDetectorRef = useRef(null);
+  const verificationDetectionFrameRef = useRef(null);
+  const verificationLastDetectionTimeRef = useRef(0);
+  const verificationBlinkStateRef = useRef("open");
+  const verificationBlinkDetectedRef = useRef(false);
 
   const [loginForm, setLoginForm] = useState({
     email: "",
@@ -67,6 +127,12 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   });
 
   const [nearbyProfiles, setNearbyProfiles] = useState([]);
+  const [mapProfiles, setMapProfiles] = useState([]);
+  const [mapProfilesLoading, setMapProfilesLoading] = useState(false);
+  const [selectedMapProfile, setSelectedMapProfile] = useState(null);
+  const [selectedMapProfileLoading, setSelectedMapProfileLoading] = useState(false);
+  const [showMapProfilesPanel, setShowMapProfilesPanel] = useState(false);
+  const [showMapFilters, setShowMapFilters] = useState(false);
   const [activeAdvertisements, setActiveAdvertisements] = useState([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [showAgeFilter, setShowAgeFilter] = useState(false);
@@ -85,10 +151,14 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [chatConversation, setChatConversation] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatText, setChatText] = useState("");
+  const [chatTyping, setChatTyping] = useState(false);
+  const chatTypingTimeoutRef = useRef(null);
+  const chatRealtimeChannelRef = useRef(null);
   const chatMessagesContainerRef = useRef(null);
 const chatMessagesBottomRef = useRef(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [statusClock, setStatusClock] = useState(Date.now());
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminStats, setAdminStats] = useState(null);
@@ -120,6 +190,9 @@ const chatMessagesBottomRef = useRef(null);
   const [conversationsLoading, setConversationsLoading] = useState(false);
   const [likedProfiles, setLikedProfiles] = useState([]);
   const [likesLoading, setLikesLoading] = useState(false);
+  const [likesTab, setLikesTab] = useState("interesses");
+  const [viewedProfiles, setViewedProfiles] = useState([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(false);
   const [chatOrigin, setChatOrigin] = useState("inside");
   const [reportTarget, setReportTarget] = useState(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
@@ -128,6 +201,7 @@ const chatMessagesBottomRef = useRef(null);
   const [reportReason, setReportReason] = useState("");
   const [reportDescription, setReportDescription] = useState("");
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true);
+  const [isProfileHidden, setIsProfileHidden] = useState(false);
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [blockedUsersLoading, setBlockedUsersLoading] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
@@ -148,6 +222,7 @@ const chatMessagesBottomRef = useRef(null);
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [selectedProfilePhotos, setSelectedProfilePhotos] = useState([]);
   const [selectedProfileLoading, setSelectedProfileLoading] = useState(false);
+  const [matchTarget, setMatchTarget] = useState(null);
   const [boostOpen, setBoostOpen] = useState(false);
   const [selectedBoostHours, setSelectedBoostHours] = useState(3);
   const [boostPaymentOpen, setBoostPaymentOpen] = useState(false);
@@ -229,14 +304,13 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
-  function showToast({ icon = "✦", title = "", body = "" }) {
+  function showToast({ title = "", body = "" }) {
     if (toastTimeoutRef.current) {
       clearTimeout(toastTimeoutRef.current);
     }
 
     setToast({
       id: Date.now(),
-      icon,
       title,
       body,
     });
@@ -254,6 +328,215 @@ const chatMessagesBottomRef = useRef(null);
     };
   }, []);
 
+  useEffect(() => {
+    if (screen !== "verificationCamera") {
+      if (verificationStreamRef.current) {
+        verificationStreamRef.current.getTracks().forEach((track) => track.stop());
+        verificationStreamRef.current = null;
+      }
+
+      if (verificationVideoRef.current) {
+        verificationVideoRef.current.srcObject = null;
+      }
+
+      return;
+    }
+
+    let cancelled = false;
+
+    async function startVerificationCamera() {
+      setVerificationCameraLoading(true);
+      setMessage("");
+
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Seu navegador não permite acesso à câmera.");
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+          },
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        verificationStreamRef.current = stream;
+
+        if (verificationVideoRef.current) {
+          verificationVideoRef.current.srcObject = stream;
+          await verificationVideoRef.current.play().catch(() => {});
+        }
+      } catch (error) {
+        console.error("ERRO AO ABRIR CÂMERA DE VERIFICAÇÃO:", error);
+
+        if (!cancelled) {
+          setMessage(
+            error?.name === "NotAllowedError"
+              ? "Permita o acesso à câmera para continuar a verificação."
+              : error?.message || "Não foi possível acessar a câmera."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setVerificationCameraLoading(false);
+        }
+      }
+    }
+
+    startVerificationCamera();
+
+    return () => {
+      cancelled = true;
+
+      if (verificationStreamRef.current) {
+        verificationStreamRef.current.getTracks().forEach((track) => track.stop());
+        verificationStreamRef.current = null;
+      }
+
+      if (verificationVideoRef.current) {
+        verificationVideoRef.current.srcObject = null;
+      }
+    };
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen !== "verificationCamera") {
+      setVerificationFaceDetected(false);
+      setVerificationLivenessPassed(false);
+      verificationFaceDetectorRef.current = null;
+      verificationLastDetectionTimeRef.current = 0;
+      verificationBlinkStateRef.current = "open";
+      verificationBlinkDetectedRef.current = false;
+
+      if (verificationDetectionFrameRef.current) {
+        cancelAnimationFrame(verificationDetectionFrameRef.current);
+        verificationDetectionFrameRef.current = null;
+      }
+
+      return;
+    }
+
+    let cancelled = false;
+
+    async function startFaceDetection() {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+
+        const landmarker = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "GPU",
+          },
+          runningMode: "VIDEO",
+          numFaces: 1,
+          minFaceDetectionConfidence: 0.6,
+          minFacePresenceConfidence: 0.6,
+          minTrackingConfidence: 0.6,
+          outputFaceBlendshapes: false,
+        });
+
+        if (cancelled) {
+          landmarker.close();
+          return;
+        }
+
+        verificationFaceDetectorRef.current = landmarker;
+
+        const distance = (a, b) =>
+          Math.hypot(a.x - b.x, a.y - b.y);
+
+        const eyeAspectRatio = (landmarks, indices) => {
+          const p1 = landmarks[indices[0]];
+          const p2 = landmarks[indices[1]];
+          const p3 = landmarks[indices[2]];
+          const p4 = landmarks[indices[3]];
+          const p5 = landmarks[indices[4]];
+          const p6 = landmarks[indices[5]];
+
+          return (
+            (distance(p2, p6) + distance(p3, p5)) /
+            (2 * distance(p1, p4))
+          );
+        };
+
+        const detectFace = () => {
+          if (cancelled) return;
+
+          const video = verificationVideoRef.current;
+          const faceLandmarker = verificationFaceDetectorRef.current;
+
+          if (video && faceLandmarker && video.readyState >= 2 && video.videoWidth > 0) {
+            const now = performance.now();
+
+            if (now - verificationLastDetectionTimeRef.current >= 120) {
+              verificationLastDetectionTimeRef.current = now;
+
+              try {
+                const result = faceLandmarker.detectForVideo(video, now);
+                const landmarks = result?.faceLandmarks?.[0];
+                const hasFace = Boolean(landmarks?.length);
+
+                setVerificationFaceDetected(hasFace);
+
+                if (hasFace && !verificationBlinkDetectedRef.current) {
+                  const leftEar = eyeAspectRatio(landmarks, [33, 160, 158, 133, 153, 144]);
+                  const rightEar = eyeAspectRatio(landmarks, [362, 385, 387, 263, 373, 380]);
+                  const averageEar = (leftEar + rightEar) / 2;
+
+                  if (averageEar < 0.20) {
+                    verificationBlinkStateRef.current = "closed";
+                  } else if (
+                    averageEar > 0.24 &&
+                    verificationBlinkStateRef.current === "closed"
+                  ) {
+                    verificationBlinkStateRef.current = "open";
+                    verificationBlinkDetectedRef.current = true;
+                    setVerificationLivenessPassed(true);
+                    setMessage("Verificação concluída. Você pode continuar.");
+                  }
+                }
+              } catch (error) {
+                console.error("ERRO NA VERIFICAÇÃO FACIAL:", error);
+              }
+            }
+          }
+
+          verificationDetectionFrameRef.current = requestAnimationFrame(detectFace);
+        };
+
+        verificationDetectionFrameRef.current = requestAnimationFrame(detectFace);
+      } catch (error) {
+        console.error("ERRO AO INICIAR VERIFICAÇÃO FACIAL:", error);
+        setVerificationFaceDetected(false);
+        setVerificationLivenessPassed(false);
+        setMessage("Não foi possível iniciar a verificação facial neste navegador.");
+      }
+    }
+
+    startFaceDetection();
+
+    return () => {
+      cancelled = true;
+
+      if (verificationDetectionFrameRef.current) {
+        cancelAnimationFrame(verificationDetectionFrameRef.current);
+        verificationDetectionFrameRef.current = null;
+      }
+
+      if (verificationFaceDetectorRef.current) {
+        verificationFaceDetectorRef.current.close();
+        verificationFaceDetectorRef.current = null;
+      }
+    };
+  }, [screen]);
 
   useEffect(() => {
     const unlockAudio = () => {
@@ -272,7 +555,7 @@ const chatMessagesBottomRef = useRef(null);
   useEffect(() => {
     if (!currentUserId) {
       setNotifications([]);
-      setNotificationCount({ like: 0, message: 0 });
+      setNotificationCount({ like: 0, message: 0, match: 0 });
       processedNotificationIdsRef.current = new Set();
       return;
     }
@@ -334,7 +617,7 @@ const chatMessagesBottomRef = useRef(null);
 
           setNotifications((current) => [notification, ...current].slice(0, 100));
 
-          if (notification.type === "like" || notification.type === "message") {
+          if (notification.type === "like" || notification.type === "message" || notification.type === "match") {
             setNotificationCount((current) => ({
               ...current,
               [notification.type]: current[notification.type] + (notification.is_read ? 0 : 1),
@@ -344,16 +627,20 @@ const chatMessagesBottomRef = useRef(null);
           if (notification.type === "like") {
             playNotificationSound();
           showToast({
-              icon: "❤️",
               title: notification.title || "Nova curtida",
               body: notification.body || "Alguém curtiu você.",
             });
           } else if (notification.type === "message") {
           playNotificationSound();
             showToast({
-              icon: "💬",
               title: notification.title || "Nova mensagem",
               body: notification.body || "Você recebeu uma nova mensagem.",
+            });
+          } else if (notification.type === "match") {
+            playNotificationSound();
+            showToast({
+              title: "Vocês se conectaram",
+              body: "Você tem um novo Match na MOON.",
             });
           }
         }
@@ -543,13 +830,12 @@ const chatMessagesBottomRef = useRef(null);
     if (data.status === "active") {
       if (boostPaymentResult?.boost_status !== "active") {
         showToast({
-          icon: "⚡",
           title: "Boost ativado",
           body: "Seu perfil já está em destaque.",
         });
       }
 
-      setBoostPaymentStatus("BOOST ATIVO. Seu perfil já está em destaque. ⚡");
+      setBoostPaymentStatus("BOOST ATIVO. Seu perfil já está em destaque.");
       setBoostPaymentResult((current) => ({
         ...(current || {}),
         boost_status: "active",
@@ -687,6 +973,48 @@ const chatMessagesBottomRef = useRef(null);
   }, []);
 
   useEffect(() => {
+    if (!currentUserId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function updateLastActive() {
+      if (cancelled) {
+        return;
+      }
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          last_active_at: new Date().toISOString(),
+        })
+        .eq("id", currentUserId);
+
+      if (error) {
+        console.error("ERRO AO ATUALIZAR STATUS ATIVO:", error);
+      }
+    }
+
+    updateLastActive();
+
+    const interval = setInterval(updateLastActive, 60000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStatusClock(Date.now());
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     if (screen !== "chat" || !chatConversation?.id) {
       return;
     }
@@ -701,6 +1029,17 @@ const chatMessagesBottomRef = useRef(null);
 
     const channel = supabase
       .channel(`moon-chat-${conversationId}`)
+      .on(
+        "broadcast",
+        { event: "typing" },
+        (payload) => {
+          if (payload?.payload?.userId === currentUserId) {
+            return;
+          }
+
+          setChatTyping(Boolean(payload?.payload?.isTyping));
+        }
+      )
       .on(
         "postgres_changes",
         {
@@ -741,7 +1080,15 @@ const chatMessagesBottomRef = useRef(null);
       )
       .subscribe();
 
+    chatRealtimeChannelRef.current = channel;
+
     return () => {
+      if (chatTypingTimeoutRef.current) {
+        clearTimeout(chatTypingTimeoutRef.current);
+        chatTypingTimeoutRef.current = null;
+      }
+      setChatTyping(false);
+      chatRealtimeChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [screen, chatConversation?.id, readReceiptsEnabled, currentUserId]);
@@ -831,7 +1178,15 @@ useEffect(() => {
       )
       .subscribe();
 
+    chatRealtimeChannelRef.current = channel;
+
     return () => {
+      if (chatTypingTimeoutRef.current) {
+        clearTimeout(chatTypingTimeoutRef.current);
+        chatTypingTimeoutRef.current = null;
+      }
+      setChatTyping(false);
+      chatRealtimeChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [screen, currentUserId]);
@@ -1247,9 +1602,17 @@ useEffect(() => {
       return;
     }
 
+    if (data.is_verified !== true && !import.meta.env.DEV) {
+      setProfileDisplayName(data.name || "");
+      setProfileBirthDate(data.birth_date || "");
+      setScreen("verification");
+      return;
+    }
+
     setProfileDisplayName(data.name || "");
     setProfileBirthDate(data.birth_date || "");
     setReadReceiptsEnabled(data.read_receipts_enabled !== false);
+    setIsProfileHidden(data.is_hidden === true);
 
     setProfileForm({
       city: "",
@@ -1339,7 +1702,14 @@ useEffect(() => {
     setSelectedProfile(profile);
     setShowSelectedProfileMenu(false);
     setSelectedProfilePhotos([]);
-    setSelectedProfileLoading(true);
+    setSelectedProfileLoading(false);
+
+    if (user?.id && profile?.id && user.id !== profile.id) {
+      supabase.from("profile_views").insert({
+        viewer_id: user.id,
+        profile_id: profile.id,
+      });
+    }
 
     const { data, error } = await supabase
       .from("profile_photos")
@@ -1417,7 +1787,7 @@ useEffect(() => {
       if (blockedError) throw blockedError;
 
       const blockedIds = new Set((blockedRows || []).map((row) => row.blocked_user_id));
-      const visibleProfiles = profiles.filter((profile) => !blockedIds.has(profile.id));
+      const visibleProfiles = profiles.filter((profile) => !blockedIds.has(profile.id) && profile.is_hidden !== true);
 
       const { data: advertisementData, error: advertisementError } = await supabase
         .from("advertisements")
@@ -1557,7 +1927,7 @@ useEffect(() => {
     lastActiveAt
   ) {
     if (!lastActiveAt) {
-      return "RECENTE";
+      return "OFFLINE";
     }
 
     const lastActive =
@@ -1565,25 +1935,31 @@ useEffect(() => {
         lastActiveAt
       ).getTime();
 
-    const now =
-      Date.now();
-
+    const now = statusClock;
     const difference =
-      now - lastActive;
+      Math.max(0, now - lastActive);
 
-    const minutes =
-      difference /
-      (1000 * 60);
+    const minutes = Math.floor(
+      difference / (1000 * 60)
+    );
 
-    if (minutes <= 5) {
-      return "ONLINE";
+    if (minutes < 1) {
+      return "ATIVO AGORA";
     }
 
-    if (minutes <= 60) {
-      return "RECENTE";
+    if (minutes < 60) {
+      return `ONLINE HÁ ${minutes} ${minutes === 1 ? "MINUTO" : "MINUTOS"}`;
     }
 
-    return "";
+    const hours = Math.floor(minutes / 60);
+
+    if (hours < 24) {
+      return `ONLINE HÁ ${hours} ${hours === 1 ? "HORA" : "HORAS"}`;
+    }
+
+    const days = Math.floor(hours / 24);
+
+    return `ONLINE HÁ ${days} ${days === 1 ? "DIA" : "DIAS"}`;
   }
 
   function formatDistance(
@@ -1664,6 +2040,119 @@ useEffect(() => {
     setMessage("");
   }
 
+  async function loadMapProfiles(latitude, longitude, radiusKm) {
+    if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
+      setMapProfiles([]);
+      return;
+    }
+
+    setMapProfilesLoading(true);
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "get_nearby_profiles",
+        {
+          user_lat: latitude,
+          user_lng: longitude,
+          max_distance_km: radiusKm,
+        }
+      );
+
+      if (error) throw error;
+
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { data: blockedRows, error: blockedError } = await supabase
+        .from("blocked_users")
+        .select("blocked_user_id")
+        .eq("user_id", currentUser?.id);
+
+      if (blockedError) throw blockedError;
+
+      const blockedIds = new Set((blockedRows || []).map((row) => row.blocked_user_id));
+      const visibleProfiles = (data || []).filter((profile) =>
+        profile.id !== currentUser?.id &&
+        !blockedIds.has(profile.id) &&
+        profile.is_hidden !== true &&
+        profile.latitude !== null &&
+        profile.latitude !== undefined &&
+        profile.longitude !== null &&
+        profile.longitude !== undefined
+      );
+
+      setMapProfiles(visibleProfiles);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR PERFIS DO MAPA:", error);
+      setMapProfiles([]);
+    } finally {
+      setMapProfilesLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (screen !== "map") return;
+
+    const center = selectedMapPoint || (
+      userLocation.latitude !== null && userLocation.longitude !== null
+        ? { latitude: userLocation.latitude, longitude: userLocation.longitude }
+        : null
+    );
+
+    if (!center) {
+      setMapProfiles([]);
+      return;
+    }
+
+    loadMapProfiles(center.latitude, center.longitude, mapRadius);
+  }, [screen, selectedMapPoint, userLocation.latitude, userLocation.longitude, mapRadius]);
+
+  async function handleMapProfileSelect(profile) {
+    setSelectedMapProfileLoading(true);
+    setSelectedMapProfile({ ...profile, photoUrl: null });
+
+    try {
+      const { data: photoData, error: photoError } = await supabase
+        .from("profile_photos")
+        .select("storage_path, is_primary")
+        .eq("user_id", profile.id)
+        .order("is_primary", { ascending: false })
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      if (photoError) throw photoError;
+
+      let photoUrl = null;
+      if (photoData && photoData.length > 0) {
+        const { data: publicData } = supabase.storage
+          .from("profile-photos")
+          .getPublicUrl(photoData[0].storage_path);
+        photoUrl = publicData?.publicUrl || null;
+      }
+
+      setSelectedMapProfile((current) =>
+        current?.id === profile.id ? { ...current, photoUrl } : current
+      );
+    } catch (error) {
+      console.error("ERRO AO CARREGAR FOTO DO PERFIL NO MAPA:", error);
+    } finally {
+      setSelectedMapProfileLoading(false);
+    }
+  }
+
+  async function handleViewMapProfile(profile) {
+    if (!profile?.id) return;
+
+    setShowMapProfilesPanel(false);
+    setSelectedMapProfile(null);
+    setSelectedMapProfileLoading(true);
+    setScreen("inside");
+
+    try {
+      await openProfileDetails(profile);
+    } finally {
+      setSelectedMapProfileLoading(false);
+    }
+  }
+
   async function handleUseLocation() {
     setMessage("");
     setLocationLoading(true);
@@ -1736,7 +2225,6 @@ useEffect(() => {
           );
 
           showToast({
-            icon: "📍",
             title: "Localização atualizada",
             body: "Sua localização foi atualizada com sucesso.",
           });
@@ -1823,6 +2311,11 @@ useEffect(() => {
       userLocation.latitude,
       userLocation.longitude
     );
+
+    showToast({
+      title: "Descoberta atualizada",
+      body: "Os perfis próximos foram atualizados.",
+    });
   }
 
 
@@ -1919,7 +2412,7 @@ useEffect(() => {
       setNearbyProfiles((currentProfiles) =>
         currentProfiles.filter((item) => item.id !== profile.id)
       );
-      showToast({ icon: "🚫", title: "Perfil bloqueado", body: "O perfil foi bloqueado." });
+      showToast({ title: "Perfil bloqueado", body: "O perfil foi bloqueado." });
     } catch (error) {
       console.error("ERRO AO BLOQUEAR PERFIL:", error);
       setMessage(error.message || "Não foi possível bloquear este perfil.");
@@ -1957,14 +2450,14 @@ useEffect(() => {
       setReportTarget(null);
       setReportReason("");
       setReportDescription("");
-      showToast({ icon: "⚠️", title: "Denúncia enviada", body: "Obrigado por ajudar a manter a MOON segura." });
+      showToast({ title: "Denúncia enviada", body: "Obrigado por ajudar a manter a MOON segura." });
     } catch (error) {
       console.error("ERRO AO DENUNCIAR PERFIL:", error);
       setMessage(error.message || "Não foi possível enviar a denúncia.");
     }
   }
 
-  async function handleLike(profileId) {
+  async function handleLike(profileId, profile = null) {
     setMessage("");
 
     try {
@@ -1989,13 +2482,85 @@ useEffect(() => {
           liked_user_id: profileId,
         });
 
+      if (!error) {
+        const { data: reciprocalLike, error: reciprocalError } = await supabase
+          .from("likes")
+          .select("id")
+          .eq("user_id", profileId)
+          .eq("liked_user_id", user.id)
+          .maybeSingle();
+
+        if (reciprocalError) {
+          console.error("ERRO AO VERIFICAR MATCH:", reciprocalError);
+        }
+
+        if (reciprocalLike) {
+          const [userOneId, userTwoId] = [user.id, profileId].sort();
+
+          const { error: matchError } = await supabase
+            .from("matches")
+            .upsert(
+              {
+                user_one_id: userOneId,
+                user_two_id: userTwoId,
+              },
+              {
+                onConflict: "user_one_id,user_two_id",
+                ignoreDuplicates: true,
+              }
+            );
+
+          if (matchError) {
+            console.error("ERRO AO REGISTRAR MATCH:", matchError);
+          } else {
+            const { error: matchNotificationError } = await supabase
+              .from("notifications")
+              .insert({
+                user_id: profileId,
+                actor_id: user.id,
+                type: "match",
+                is_read: false,
+              });
+
+            if (matchNotificationError) {
+              console.error("ERRO AO CRIAR NOTIFICACAO DE MATCH:", matchNotificationError);
+            }
+          }
+
+          const matchedProfile =
+            profile ||
+            nearbyProfiles.find((item) => item.id === profileId) ||
+            likedProfiles.find((item) => item.id === profileId) ||
+            viewedProfiles.find((item) => item.id === profileId) ||
+            selectedProfile;
+
+          const targetPhoto =
+            matchedProfile?.photoUrl ||
+            selectedProfilePhotos.find((photo) => photo.is_primary)?.publicUrl ||
+            selectedProfilePhotos[0]?.publicUrl ||
+            null;
+
+          const ownPhoto =
+            photos.find((photo) => photo.is_primary)?.publicUrl ||
+            photos[0]?.publicUrl ||
+            null;
+
+          setMatchTarget({
+            profile: matchedProfile || { id: profileId, name: "Perfil" },
+            targetPhoto,
+            ownPhoto,
+          });
+
+          return;
+        }
+      }
+
       if (error) {
         if (
           error.code === "23505"
         ) {
           showToast({
-            icon: "❤️",
-            title: "Você já curtiu este perfil.",
+                title: "Você já curtiu este perfil.",
             body: "Essa curtida já foi registrada.",
           });
           return;
@@ -2005,7 +2570,6 @@ useEffect(() => {
       }
 
       showToast({
-        icon: "❤️",
         title: "Perfil curtido",
         body: "Sua curtida foi enviada.",
       });
@@ -2255,6 +2819,76 @@ useEffect(() => {
     }
   }
 
+  async function loadMatchedProfiles() {
+    setConnectionsLoading(true);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("Usuário não encontrado.");
+      }
+
+      const { data, error } = await supabase
+        .from("matches")
+        .select("user_one_id, user_two_id, created_at")
+        .or(`user_one_id.eq.${user.id},user_two_id.eq.${user.id}`)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      const matchedUserIds = (data || []).map((match) =>
+        match.user_one_id === user.id
+          ? match.user_two_id
+          : match.user_one_id
+      );
+
+      const profiles = await Promise.all(
+        matchedUserIds.map(async (profileId) => {
+          const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .select("id, name, city, birth_date, last_active_at")
+            .eq("id", profileId)
+            .maybeSingle();
+
+          if (profileError || !profile) {
+            return null;
+          }
+
+          const { data: photoData } = await supabase
+            .from("profile_photos")
+            .select("storage_path, is_primary")
+            .eq("user_id", profile.id)
+            .order("is_primary", { ascending: false })
+            .order("created_at", { ascending: true })
+            .limit(1);
+
+          let photoUrl = null;
+
+          if (photoData && photoData.length > 0) {
+            const { data: publicData } = supabase.storage
+              .from("profile-photos")
+              .getPublicUrl(photoData[0].storage_path);
+            photoUrl = publicData.publicUrl;
+          }
+
+          return { ...profile, photoUrl };
+        })
+      );
+
+      setViewedProfiles(profiles.filter(Boolean));
+    } catch (error) {
+      console.error("ERRO AO CARREGAR MATCHES:", error);
+      setMessage(error.message || "Não foi possível carregar suas conexões.");
+    } finally {
+      setConnectionsLoading(false);
+    }
+  }
+
   async function markNotificationsAsRead(type) {
     if (!currentUserId || !type) return;
 
@@ -2291,7 +2925,7 @@ useEffect(() => {
     setMessage("");
     setScreen("likes");
     await markNotificationsAsRead("like");
-    await loadLikedProfiles();
+    await Promise.all([loadLikedProfiles(), loadMatchedProfiles()]);
   }
 
   async function handleOpenConversations() {
@@ -2379,6 +3013,50 @@ useEffect(() => {
     }
   }
 
+  async function handleDeleteMessageForEveryone(messageId) {
+    if (!messageId || !currentUserId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Excluir esta mensagem para todos?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("messages")
+        .update({
+          deleted_for_everyone: true,
+          content: "Mensagem excluída.",
+        })
+        .eq("id", messageId)
+        .eq("sender_id", currentUserId);
+
+      if (error) {
+        throw error;
+      }
+
+      showToast({
+        title: "Mensagem excluída",
+        body: "A mensagem foi excluída para todos.",
+      });
+    } catch (error) {
+      console.error(
+        "ERRO AO EXCLUIR MENSAGEM PARA TODOS:",
+        error
+      );
+
+      setMessage(
+        error.message ||
+        "Não foi possível excluir a mensagem."
+      );
+    }
+  }
+
   async function handleSendMessage(event) {
     event.preventDefault();
 
@@ -2411,7 +3089,6 @@ useEffect(() => {
 
       setChatText("");
       showToast({
-        icon: "💬",
         title: "Mensagem enviada",
         body: "Sua mensagem foi enviada.",
       });
@@ -2584,7 +3261,7 @@ useEffect(() => {
       );
 
       setMessage(
-        "Foto adicionada com sucesso! 🌙"
+        "Foto adicionada com sucesso!"
       );
 
     } catch (error) {
@@ -2666,7 +3343,7 @@ useEffect(() => {
       );
 
       setMessage(
-        "Foto principal atualizada! 🌙"
+        "Foto principal atualizada!"
       );
 
     } catch (error) {
@@ -2844,9 +3521,8 @@ useEffect(() => {
         throw profileError;
       }
 
-      setMessage(
-        "Conta criada! Bem-vindo à MOON."
-      );
+      setMessage("");
+      setScreen("verification");
 
       setForm({
         name: "",
@@ -3221,6 +3897,16 @@ useEffect(() => {
     setChatText("");
   }
 
+  const filteredMapProfiles = mapProfiles.filter((profile) => {
+    const age = calculateAge(profile.birth_date);
+    const matchesAge = age >= minAge && age <= maxAge;
+    const matchesIdentity = !identityFilter || profile.gender === identityFilter;
+    const matchesSexuality = !sexualityFilter || profile.sexuality === sexualityFilter;
+    const matchesPosition = !positionFilter || profile.position === positionFilter;
+    const matchesAvailability = !availabilityFilter || profile.availability === availabilityFilter;
+    return matchesAge && matchesIdentity && matchesSexuality && matchesPosition && matchesAvailability;
+  });
+
   if (checkingSession) {
     return (
       <main className="moon-app">
@@ -3266,22 +3952,6 @@ useEffect(() => {
             color: "#f4ead7",
           }}
         >
-          <span
-            style={{
-              width: "34px",
-              height: "34px",
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "1px solid #2f2f2f",
-              color: "#c9b58a",
-              fontSize: "16px",
-            }}
-          >
-            {toast.icon}
-          </span>
-
           <div style={{ minWidth: 0, flex: 1 }}>
             <div
               style={{
@@ -3328,6 +3998,222 @@ useEffect(() => {
       )}
 
       {/* TELA INICIAL */}
+
+      {matchTarget && (
+        <>
+          <style>{`
+            @keyframes moonMatchBackdrop {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            @keyframes moonMatchCard {
+              0% { opacity: 0; transform: translateY(24px) scale(0.96); }
+              100% { opacity: 1; transform: translateY(0) scale(1); }
+            }
+            @keyframes moonMatchPhotoLeft {
+              0% { opacity: 0; transform: translateX(-24px) rotate(-6deg); }
+              100% { opacity: 1; transform: translateX(0) rotate(-6deg); }
+            }
+            @keyframes moonMatchPhotoRight {
+              0% { opacity: 0; transform: translateX(24px) rotate(6deg); }
+              100% { opacity: 1; transform: translateX(0) rotate(6deg); }
+            }
+            @media (max-width: 600px) {
+              .moon-match-overlay { padding: 20px; }
+              .moon-match-card { width: min(100%, 360px) !important; padding: 30px 20px !important; }
+              .moon-match-photos { height: 230px !important; }
+              .moon-match-photo { width: 150px !important; height: 205px !important; }
+            }
+          `}</style>
+
+          <div
+            className="moon-match-overlay"
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "30px",
+              background: "rgba(0, 0, 0, 0.88)",
+              backdropFilter: "blur(12px)",
+              animation: "moonMatchBackdrop 0.35s ease-out",
+            }}
+          >
+            <div
+              className="moon-match-card"
+              style={{
+                width: "min(100%, 430px)",
+                padding: "38px 30px 30px",
+                border: "1px solid #2a2a2a",
+                background: "#090909",
+                textAlign: "center",
+                boxSizing: "border-box",
+                animation: "moonMatchCard 0.45s cubic-bezier(.2,.8,.2,1)",
+              }}
+            >
+              <div
+                style={{
+                  color: "#c9b58a",
+                  fontSize: "9px",
+                  letterSpacing: "3px",
+                  marginBottom: "14px",
+                }}
+              >
+                MOON
+              </div>
+
+              <h2
+                style={{
+                  margin: 0,
+                  color: "#f4ead7",
+                  fontSize: "25px",
+                  fontWeight: 400,
+                  letterSpacing: "1px",
+                }}
+              >
+                VOCÊS SE CONECTARAM
+              </h2>
+
+              <p
+                style={{
+                  margin: "10px 0 26px",
+                  color: "#8d887e",
+                  fontSize: "11px",
+                  lineHeight: 1.6,
+                }}
+              >
+                Agora vocês podem começar uma conversa.
+              </p>
+
+              <div
+                className="moon-match-photos"
+                style={{
+                  position: "relative",
+                  height: "270px",
+                  margin: "0 auto 30px",
+                  maxWidth: "340px",
+                }}
+              >
+                <div
+                  className="moon-match-photo"
+                  style={{
+                    position: "absolute",
+                    left: "14px",
+                    top: "24px",
+                    width: "175px",
+                    height: "235px",
+                    overflow: "hidden",
+                    border: "2px solid #171717",
+                    background: "#111",
+                    transform: "rotate(-6deg)",
+                    animation: "moonMatchPhotoLeft 0.55s 0.12s both cubic-bezier(.2,.8,.2,1)",
+                    zIndex: 1,
+                  }}
+                >
+                  {matchTarget.ownPhoto ? (
+                    <img
+                      src={matchTarget.ownPhoto}
+                      alt="Sua foto"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontSize: "9px", letterSpacing: "1px" }}>
+                      SUA FOTO
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  className="moon-match-photo"
+                  style={{
+                    position: "absolute",
+                    right: "14px",
+                    top: "10px",
+                    width: "175px",
+                    height: "235px",
+                    overflow: "hidden",
+                    border: "2px solid #c9b58a",
+                    background: "#111",
+                    transform: "rotate(6deg)",
+                    animation: "moonMatchPhotoRight 0.55s 0.18s both cubic-bezier(.2,.8,.2,1)",
+                    zIndex: 2,
+                  }}
+                >
+                  {matchTarget.targetPhoto ? (
+                    <img
+                      src={matchTarget.targetPhoto}
+                      alt={matchTarget.profile?.name || "Perfil"}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontSize: "9px", letterSpacing: "1px" }}>
+                      FOTO
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  color: "#f4ead7",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  letterSpacing: "0.5px",
+                  marginBottom: "22px",
+                }}
+              >
+                {matchTarget.profile?.name || "Nova conexão"}
+              </div>
+
+              <div style={{ display: "grid", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const profile = matchTarget.profile;
+                    setMatchTarget(null);
+                    if (profile?.id) {
+                      await handleChat(profile, "inside");
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    height: "46px",
+                    border: "1px solid #c9b58a",
+                    background: "#c9b58a",
+                    color: "#090909",
+                    fontSize: "10px",
+                    fontWeight: 600,
+                    letterSpacing: "1.2px",
+                    cursor: "pointer",
+                  }}
+                >
+                  ENVIAR MENSAGEM
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMatchTarget(null)}
+                  style={{
+                    width: "100%",
+                    height: "44px",
+                    border: "1px solid #333",
+                    background: "transparent",
+                    color: "#c9b58a",
+                    fontSize: "10px",
+                    fontWeight: 500,
+                    letterSpacing: "1.2px",
+                    cursor: "pointer",
+                  }}
+                >
+                  AGORA NÃO
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {screen === "home" && (
         <section className="home-screen">
@@ -3495,6 +4381,189 @@ useEffect(() => {
             VOLTAR
           </button>
 
+        </section>
+      )}
+
+      {/* VERIFICAÇÃO DE PERFIL */}
+
+      {screen === "verification" && (
+        <section className="form-screen">
+          <div className="moon-logo">
+            MOON
+          </div>
+
+          <h1>
+            Verifique seu perfil
+          </h1>
+
+          <p className="form-subtitle">
+            Para manter a MOON mais segura, precisamos confirmar que existe uma pessoa real por trás desta conta.
+          </p>
+
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "430px",
+              margin: "25px auto 0",
+              padding: "25px",
+              border: "1px solid #292929",
+              borderRadius: "2px",
+              textAlign: "center",
+              boxSizing: "border-box",
+            }}
+          >
+            <div
+              style={{
+                color: "#c9b58a",
+                fontSize: "12px",
+                letterSpacing: "2px",
+                fontWeight: "600",
+                marginBottom: "15px",
+              }}
+            >
+              VERIFICAÇÃO MOON
+            </div>
+
+            <p
+              className="form-subtitle"
+              style={{
+                marginTop: "0",
+                marginBottom: "0",
+              }}
+            >
+              Na próxima etapa, sua câmera será usada para realizar uma verificação facial diretamente no navegador.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMessage("");
+              setScreen("verificationCamera");
+            }}
+            style={{
+              marginTop: "25px",
+            }}
+          >
+            COMEÇAR VERIFICAÇÃO
+          </button>
+
+          {message && (
+            <p className="form-subtitle">
+              {message}
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* ESTRUTURA DA CÂMERA DE VERIFICAÇÃO */}
+
+      {screen === "verificationCamera" && (
+        <section className="form-screen">
+          <div className="moon-logo">
+            MOON
+          </div>
+
+          <h1>
+            Verificação
+          </h1>
+
+          <p className="form-subtitle">
+            {verificationCameraLoading
+              ? "Solicitando acesso à câmera..."
+              : verificationLivenessPassed
+                ? "Verificação concluída. Você pode continuar."
+                : verificationFaceDetected
+                  ? "Rosto detectado. Pisque uma vez para continuar."
+                  : "Posicione seu rosto no centro da câmera."}
+          </p>
+
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "430px",
+              aspectRatio: "4 / 5",
+              margin: "25px auto 0",
+              border: "1px solid #292929",
+              borderRadius: "2px",
+              overflow: "hidden",
+              background: "#090909",
+              position: "relative",
+            }}
+          >
+            <video
+              ref={verificationVideoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                transform: "scaleX(-1)",
+                display: "block",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              marginTop: "18px",
+              fontSize: "12px",
+              letterSpacing: "0.08em",
+              fontWeight: 600,
+              color: verificationFaceDetected ? "#f4ead7" : "#777777",
+              textAlign: "center",
+            }}
+          >
+            {verificationLivenessPassed
+              ? "VERIFICAÇÃO CONCLUÍDA"
+              : verificationFaceDetected
+                ? "PIQUE UMA VEZ"
+                : "AGUARDANDO ROSTO"}
+          </div>
+
+          <button
+            type="button"
+            disabled={!verificationLivenessPassed}
+            onClick={async () => {
+              if (!user?.id) {
+                setMessage("Não foi possível concluir a verificação.");
+                return;
+              }
+
+              const { error: verificationError } = await supabase
+                .from("profiles")
+                .update({ is_verified: true })
+                .eq("id", user.id);
+
+              if (verificationError) {
+                console.error("ERRO AO SALVAR VERIFICAÇÃO:", verificationError);
+                setMessage("Não foi possível salvar sua verificação. Tente novamente.");
+                return;
+              }
+
+              setMessage("Perfil verificado com sucesso.");
+              setScreen("profile");
+            }}
+            style={{
+              marginTop: "22px",
+              opacity: verificationLivenessPassed ? 1 : 0.45,
+            }}
+          >
+            CONTINUAR
+          </button>
+
+          {message && (
+            <p
+              className="form-subtitle"
+              style={{
+                marginTop: "18px",
+              }}
+            >
+              {message}
+            </p>
+          )}
         </section>
       )}
 
@@ -3675,6 +4744,10 @@ useEffect(() => {
             .legal-document p { margin: 0 0 16px; }
             .legal-document h2 { color: #d6b97d; font-size: 10px; font-weight: 500; letter-spacing: 1.4px; margin: 28px 0 10px; }
             .legal-document strong { color: #d8d0c1; font-weight: 500; }
+            .back-button {
+              border: 1px solid #c9b58a !important;
+              color: #c9b58a !important;
+            }
           `}</style>
 
           <div style={{ border: "1px solid #242424", background: "#0b0b0b", padding: "28px" }}>
@@ -3955,7 +5028,7 @@ useEffect(() => {
                       cursor: "pointer",
                     }}
                   >
-                    ↻ &nbsp; ATUALIZAR DADOS
+                    ↻ ATUALIZAR DADOS
                   </button>
                 </div>
               </>
@@ -4722,7 +5795,7 @@ useEffect(() => {
                   opacity: adminReportsLoading ? 0.55 : 1,
                 }}
               >
-                ↻ &nbsp; ATUALIZAR DENÚNCIAS
+                ↻ ATUALIZAR DENÚNCIAS
               </button>
             </div>
           </section>
@@ -4772,7 +5845,7 @@ useEffect(() => {
                           boxShadow: "none",
                         }}
                       >
-                        ♙ &nbsp; PAINEL ADMINISTRATIVO
+                        PAINEL ADMINISTRATIVO
                       </button>
 
                       <button
@@ -4799,7 +5872,7 @@ useEffect(() => {
                           boxShadow: "none",
                         }}
                       >
-                        📢 &nbsp; PUBLICIDADE
+                        PUBLICIDADE
                       </button>
               </>
             )}
@@ -4830,7 +5903,7 @@ useEffect(() => {
             <div style={{ padding: "18px", borderBottom: "1px solid #242424" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "18px" }}>
                 <div>
-                  <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px", marginBottom: "7px" }}>
+                  <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px", marginBottom: "7px", textAlign: "left" }}>
                     STATUS DE LEITURA
                   </div>
                   <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6" }}>
@@ -4855,6 +5928,53 @@ useEffect(() => {
               </div>
             </div>
 
+            <div style={{ padding: "18px", borderBottom: "1px solid #242424" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "18px" }}>
+                <div>
+                  <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px", marginBottom: "7px", textAlign: "left" }}>
+                    OCULTAR PERFIL
+                  </div>
+                  <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6" }}>
+                    Seu perfil não aparecerá na descoberta nem no mapa enquanto estiver oculto.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const nextValue = !isProfileHidden;
+                    setIsProfileHidden(nextValue);
+                    setMessage("");
+
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (!user) return;
+
+                    const { error } = await supabase
+                      .from("profiles")
+                      .update({ is_hidden: nextValue, updated_at: new Date().toISOString() })
+                      .eq("id", user.id);
+
+                    if (error) {
+                      setIsProfileHidden(!nextValue);
+                      setMessage("Não foi possível atualizar a visibilidade do perfil.");
+                      console.error("ERRO AO ATUALIZAR VISIBILIDADE:", error);
+                    }
+                  }}
+                  style={{
+                    minWidth: "112px",
+                    height: "38px",
+                    border: isProfileHidden ? "1px solid #c9b58a" : "1px solid #292929",
+                    background: isProfileHidden ? "#15130f" : "transparent",
+                    color: isProfileHidden ? "#c9b58a" : "#77736b",
+                    fontSize: "9px",
+                    letterSpacing: "1.5px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {isProfileHidden ? "OCULTO" : "VISÍVEL"}
+                </button>
+              </div>
+            </div>
+
             <div
               style={{
                 minHeight: "58px",
@@ -4869,7 +5989,7 @@ useEffect(() => {
                 <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px" }}>
                   SONS DE NOTIFICAÇÃO
                 </div>
-                <div style={{ color: "#77736b", fontSize: "9px", marginTop: "5px" }}>
+                <div style={{ color: "#77736b", fontSize: "9px", marginTop: "5px", textAlign: "left" }}>
                   Curtidas e novas mensagens
                 </div>
               </div>
@@ -4927,9 +6047,7 @@ useEffect(() => {
               </div>
 
               {blockedUsersLoading ? (
-                <div style={{ color: "#77736b", fontSize: "10px", letterSpacing: "1px" }}>
-                  CARREGANDO...
-                </div>
+                <MoonSkeleton rows={2} compact />
               ) : blockedUsers.length === 0 ? (
                 <div style={{ color: "#55524d", fontSize: "10px", letterSpacing: "1px" }}>
                   NENHUM USUÁRIO BLOQUEADO
@@ -5264,6 +6382,192 @@ useEffect(() => {
         </section>
       )}
 
+      {/* MAPA MOON */}
+
+      {screen === "map" && (
+        <section style={{ width: "100%", maxWidth: "1000px", minHeight: "100vh", padding: "35px 20px" }}>
+          <div style={{ textAlign: "center", marginBottom: "28px" }}>
+            <div className="moon-logo">MOON</div>
+            <p className="moon-tagline">FIND YOUR NIGHT.</p>
+            <p style={{ color: "#77736b", fontSize: "11px", letterSpacing: "2px", marginTop: "20px" }}>MAPA / DESCUBRIR</p>
+          </div>
+
+          {(() => {
+            const defaultCenter = [-15.793889, -47.882778];
+            const currentCenter = userLocation.latitude !== null && userLocation.longitude !== null
+              ? [userLocation.latitude, userLocation.longitude]
+              : defaultCenter;
+            const mapCenter = mapCenterRequest || currentCenter;
+
+            return (
+              <div>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "12px" }}>
+                  <button type="button" onClick={() => setShowMapFilters((current) => !current)} style={{ height: "36px", padding: "0 16px", border: "1px solid #c9b58a", background: showMapFilters ? "#15130f" : "#0b0b0b", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.6px", cursor: "pointer" }}>
+                    FILTROS{(identityFilter || sexualityFilter || positionFilter || availabilityFilter || minAge !== 18 || maxAge !== 65) ? " · ATIVOS" : ""}
+                  </button>
+                </div>
+                {showMapFilters && (
+                  <div style={{ maxWidth: "760px", margin: "0 auto 14px", padding: "14px", border: "1px solid #292929", background: "#0b0b0b" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px" }}>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>IDADE<select value={`${minAge}-${maxAge}`} onChange={(event) => { const [min, max] = event.target.value.split("-").map(Number); setMinAge(min); setMaxAge(max); }} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                        <option value="18-65">18 - 65+</option><option value="18-25">18 - 25</option><option value="26-35">26 - 35</option><option value="36-45">36 - 45</option><option value="46-55">46 - 55</option><option value="56-65">56 - 65+</option>
+                      </select></label>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>IDENTIDADE<select value={identityFilter} onChange={(event) => setIdentityFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                        <option value="">Todas</option><option value="Homem cis">Homem cis</option><option value="Homem trans">Homem trans</option><option value="Não binário">Não binário</option>
+                      </select></label>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>SEXUALIDADE<select value={sexualityFilter} onChange={(event) => setSexualityFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                        <option value="">Todas</option><option value="Gay">Gay</option><option value="Bissexual">Bissexual</option><option value="Pansexual">Pansexual</option><option value="Outra">Outra</option>
+                      </select></label>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>POSIÇÃO<select value={positionFilter} onChange={(event) => setPositionFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                        <option value="">Todas</option><option value="Ativo">Ativo</option><option value="Passivo">Passivo</option><option value="Versátil">Versátil</option>
+                      </select></label>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px", gridColumn: "1 / -1" }}>DISPONIBILIDADE<select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                        <option value="">Todas</option><option value="Agora">Agora</option><option value="Mais tarde">Mais tarde</option><option value="Outro dia">Outro dia</option><option value="Só conversar">Só conversar</option>
+                      </select></label>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ position: "relative", width: "100%", height: "min(68vh, 620px)", minHeight: "430px", overflow: "hidden", border: "1px solid #292929", background: "#090909" }}>
+                <MapContainer center={currentCenter} zoom={12} scrollWheelZoom style={{ width: "100%", height: "100%", background: "#090909" }}>
+                  <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <MapClickHandler onSelect={(point) => { setSelectedMapPoint(point); setMapCenterRequest([point.latitude, point.longitude]); }} />
+                  <MapCenterController center={mapCenterRequest} zoom={14} />
+
+                  {userLocation.latitude !== null && userLocation.longitude !== null && (
+                    <>
+                      <CircleMarker center={[userLocation.latitude, userLocation.longitude]} radius={13} pathOptions={{ color: "#ffffff", fillColor: "#c9b58a", fillOpacity: 1, weight: 3 }} />
+                      <CircleMarker center={[userLocation.latitude, userLocation.longitude]} radius={5} pathOptions={{ color: "#090909", fillColor: "#090909", fillOpacity: 1, weight: 1 }} />
+                      <Circle center={[userLocation.latitude, userLocation.longitude]} radius={mapRadius * 1000} pathOptions={{ color: "#c9b58a", fillColor: "#c9b58a", fillOpacity: 0.05, weight: 1 }} />
+                    </>
+                  )}
+
+                  {filteredMapProfiles.map((profile, index) => {
+                    const baseLat = Number(profile.latitude);
+                    const baseLng = Number(profile.longitude);
+                    const seed = String(profile.id || index).split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+                    const offsetLat = (((seed % 17) - 8) * 0.0009);
+                    const offsetLng = ((((Math.floor(seed / 17)) % 17) - 8) * 0.0009);
+
+                    return (
+                      <CircleMarker
+                        key={profile.id}
+                        center={[baseLat + offsetLat, baseLng + offsetLng]}
+                        radius={11}
+                        pathOptions={{ color: "#f4ead7", fillColor: "#c9b58a", fillOpacity: 1, weight: 3 }}
+                        eventHandlers={{ click: () => handleMapProfileSelect(profile) }}
+                      />
+                    );
+                  })}
+
+                  {selectedMapPoint && (
+                    <>
+                      <Circle center={[selectedMapPoint.latitude, selectedMapPoint.longitude]} radius={180} pathOptions={{ color: "#f4ead7", fillColor: "#f4ead7", fillOpacity: 0.08, weight: 2 }} />
+                      <CircleMarker center={[selectedMapPoint.latitude, selectedMapPoint.longitude]} radius={15} pathOptions={{ color: "#ffffff", fillColor: "#f4ead7", fillOpacity: 1, weight: 4 }} />
+                      <CircleMarker center={[selectedMapPoint.latitude, selectedMapPoint.longitude]} radius={5} pathOptions={{ color: "#090909", fillColor: "#090909", fillOpacity: 1, weight: 1 }} />
+                    </>
+                  )}
+                </MapContainer>
+
+                {selectedMapProfile && (
+                  <div style={{ position: "absolute", zIndex: 1200, left: "50%", bottom: "16px", transform: "translateX(-50%)", width: "min(360px, calc(100% - 32px))", padding: "12px", border: "1px solid #c9b58a", background: "rgba(5,5,5,0.97)", display: "flex", alignItems: "center", gap: "12px", boxSizing: "border-box" }}>
+                    <div style={{ width: "64px", height: "64px", flexShrink: 0, overflow: "hidden", border: "1px solid #292929", background: "#111" }}>
+                      {selectedMapProfile.photoUrl ? (
+                        <img src={selectedMapProfile.photoUrl} alt={selectedMapProfile.name || "Perfil"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#77736b", fontSize: "18px" }}>
+                          {selectedMapProfile.name?.charAt(0)?.toUpperCase() || "M"}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: "#f4ead7", fontSize: "14px", fontWeight: 600, marginBottom: "5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {selectedMapProfile.name || "Perfil"}
+                      </div>
+                      <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1px", marginBottom: "8px" }}>
+                        {selectedMapProfile.distance_km != null ? `${Number(selectedMapProfile.distance_km).toFixed(1).replace(".", ",")} KM` : "PERFIL PRÓXIMO"}
+                      </div>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); handleViewMapProfile(selectedMapProfile); }} style={{ height: "30px", padding: "0 12px", border: "1px solid #c9b58a", background: "transparent", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.3px", cursor: "pointer" }}>
+                        {selectedMapProfileLoading ? "CARREGANDO..." : "VER PERFIL"}
+                      </button>
+                    </div>
+                    <button type="button" onClick={() => setSelectedMapProfile(null)} aria-label="Fechar" style={{ alignSelf: "flex-start", width: "24px", height: "24px", padding: 0, border: "1px solid #292929", background: "transparent", color: "#77736b", fontSize: "12px", cursor: "pointer" }}>×</button>
+                  </div>
+                )}
+
+                <div style={{ position: "absolute", zIndex: 1000, top: "16px", left: "16px", right: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", pointerEvents: "none" }}>
+                  <span style={{ padding: "9px 11px", border: "1px solid #292929", background: "rgba(5,5,5,0.9)", color: "#77736b", fontSize: "8px", letterSpacing: "1.5px" }}>
+                    {selectedMapPoint ? "PONTO SELECIONADO" : "SELECIONE UM PONTO NO MAPA"}
+                  </span>
+                  <button type="button" onClick={() => {
+                    if (userLocation.latitude === null || userLocation.longitude === null) { handleUseLocation(); return; }
+                    setMapCenterRequest([userLocation.latitude, userLocation.longitude]);
+                  }} style={{ height: "34px", padding: "0 12px", border: "1px solid #c9b58a", background: "rgba(5,5,5,0.92)", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.4px", cursor: "pointer", pointerEvents: "auto" }}>
+                    {locationLoading ? "LOCALIZANDO..." : "MINHA LOCALIZAÇÃO"}
+                  </button>
+                </div>
+
+                {selectedMapPoint && (
+                  <div style={{ position: "absolute", zIndex: 1000, top: "64px", left: "16px", padding: "10px 12px", border: "1px solid #292929", background: "rgba(5,5,5,0.92)", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.2px" }}>
+                    {selectedMapPoint.latitude.toFixed(5)}, {selectedMapPoint.longitude.toFixed(5)}
+                  </div>
+                )}
+
+                <div style={{ position: "absolute", zIndex: 1000, left: "16px", bottom: "16px", padding: "13px 14px", border: "1px solid #292929", background: "rgba(5,5,5,0.94)", minWidth: "210px" }}>
+                  <div style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.5px", marginBottom: "9px" }}>RAIO DE BUSCA</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <input type="range" min="1" max="100" value={mapRadius} onChange={(event) => setMapRadius(Number(event.target.value))} style={{ flex: 1, accentColor: "#c9b58a" }} />
+                    <span style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1px", minWidth: "40px", textAlign: "right" }}>{mapRadius} KM</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => !mapProfilesLoading && setShowMapProfilesPanel((current) => !current)}
+                  style={{ position: "absolute", zIndex: 1000, right: "16px", bottom: "16px", padding: "11px 13px", border: "1px solid #c9b58a", background: "rgba(5,5,5,0.96)", color: "#f4ead7", fontSize: "8px", letterSpacing: "1.1px", cursor: mapProfilesLoading ? "default" : "pointer", fontWeight: 600 }}
+                >
+                  {mapProfilesLoading ? "BUSCANDO PERFIS..." : `${filteredMapProfiles.length} ${filteredMapProfiles.length === 1 ? "PERFIL ENCONTRADO" : "PERFIS ENCONTRADOS"}`}
+                </button>
+
+                {showMapProfilesPanel && !mapProfilesLoading && (
+                  <div style={{ position: "absolute", zIndex: 1100, right: "16px", bottom: "62px", width: "min(300px, calc(100% - 32px))", maxHeight: "320px", overflowY: "auto", border: "1px solid #c9b58a", background: "rgba(5,5,5,0.98)", padding: "12px", boxSizing: "border-box" }}>
+                    <div style={{ color: "#c9b58a", fontSize: "8px", letterSpacing: "1.5px", marginBottom: "10px" }}>PERFIS ENCONTRADOS</div>
+                    {filteredMapProfiles.length === 0 ? (
+                      <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.6" }}>Nenhum perfil encontrado neste raio.</div>
+                    ) : (
+                      filteredMapProfiles.map((profile) => (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          onClick={(event) => { event.stopPropagation(); handleViewMapProfile(profile); }}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: "10px", padding: "9px 0", border: 0, borderBottom: "1px solid #202020", background: "transparent", color: "#f4ead7", textAlign: "left", cursor: "pointer" }}
+                        >
+                          <div style={{ width: "38px", height: "38px", flexShrink: 0, border: "1px solid #c9b58a", background: "#111", display: "flex", alignItems: "center", justifyContent: "center", color: "#c9b58a", fontSize: "13px" }}>
+                            {profile.name?.charAt(0)?.toUpperCase() || "M"}
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ color: "#f4ead7", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{profile.name || "Perfil"}</div>
+                            <div style={{ color: "#c9b58a", fontSize: "8px", letterSpacing: "0.8px", marginTop: "4px" }}>{profile.distance_km != null ? `${Number(profile.distance_km).toFixed(1).replace(".", ",")} KM` : "PERFIL PRÓXIMO"}</div>
+                          </div>
+                          <span style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1px" }}>VER</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              </div>
+            );
+          })()}
+
+          <div style={{ display: "flex", justifyContent: "center", marginTop: "20px" }}>
+            <button className="back-button" type="button" onClick={() => { setScreen("inside"); setMessage(""); setSelectedMapPoint(null); setMapCenterRequest(null); setSelectedMapProfile(null); }}>VOLTAR PARA DESCOBERTA</button>
+          </div>
+
+          {message && <p style={{ color: "#c9b58a", fontSize: "10px", textAlign: "center", marginTop: "14px" }}>{message}</p>}
+        </section>
+      )}
+
       {/* PERFIL */}
 
       {screen === "profile" && (
@@ -5328,10 +6632,10 @@ useEffect(() => {
                       )}
 
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", marginTop: "22px", background: "#242424", border: "1px solid #242424" }}>
-                        {profileForm.gender && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.gender}</span></div>}
-                        {profileForm.sexuality && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.sexuality}</span></div>}
-                        {profileForm.position && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.position}</span></div>}
-                        {profileForm.availability && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.availability}</span></div>}
+                        {profileForm.gender && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.gender}</span></div>}
+                        {profileForm.sexuality && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.sexuality}</span></div>}
+                        {profileForm.position && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.position}</span></div>}
+                        {profileForm.availability && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.availability}</span></div>}
                       </div>
 
                       {activeBoost && boostSecondsLeft > 0 && (
@@ -5342,7 +6646,7 @@ useEffect(() => {
                           background: "linear-gradient(135deg, rgba(201,181,138,.07), rgba(201,181,138,.015))",
                           textAlign: "center",
                         }}>
-                          <div style={{ color: "#c9b58a", fontSize: "8px", letterSpacing: "2px", marginBottom: "8px" }}>✦ BOOST ATIVO</div>
+                          <div style={{ color: "#c9b58a", fontSize: "8px", letterSpacing: "2px", marginBottom: "8px" }}>BOOST ATIVO</div>
                           <div style={{ color: "#f4ead7", fontSize: "28px", letterSpacing: "3px", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
                             {formatBoostTime(boostSecondsLeft)}
                           </div>
@@ -5368,7 +6672,7 @@ useEffect(() => {
                           boxShadow: "none"
                         }}
                       >
-                        ✦ EDITAR PERFIL
+                        EDITAR PERFIL
                       </button>
 
                       <button
@@ -5379,16 +6683,16 @@ useEffect(() => {
                           width: "100%",
                           height: "48px",
                           background: "transparent",
-                          border: "1px solid #292929",
+                          border: "1px solid #c9b58a",
                           borderRadius: "2px",
-                          color: "#77736b",
+                          color: "#c9b58a",
                           fontSize: "10px",
                           letterSpacing: "2px",
                           fontWeight: "500",
                           cursor: "pointer",
                         }}
                       >
-                        ⚙ CONFIGURAÇÕES
+                        CONFIGURAÇÕES
                       </button>
                     </div>
                   </div>
@@ -5414,7 +6718,7 @@ useEffect(() => {
                     <div key={photo.id} className="photo-card">
                       <img src={photo.publicUrl} alt="Foto de perfil" />
                       {photo.is_primary && <span className="primary-label">PRINCIPAL</span>}
-                      <button type="button" className="photo-star" onClick={() => handleSetPrimary(photo.id)} disabled={photoLoading || photo.is_primary}>★</button>
+                      <button type="button" className="photo-star" onClick={() => handleSetPrimary(photo.id)} disabled={photoLoading || photo.is_primary}></button>
                       <button type="button" className="photo-delete" onClick={() => handleDeletePhoto(photo)} disabled={photoLoading}>×</button>
                     </div>
                   ))}
@@ -5447,7 +6751,7 @@ useEffect(() => {
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>IDENTIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                     {["Homem cis", "Homem trans", "Não binário"].map((option) => (
-                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, gender: option })} style={{ height: "44px", border: profileForm.gender === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.gender === option ? "#15130f" : "#0b0b0b", color: profileForm.gender === option ? "#f4ead7" : "#77736b", fontSize: "10px", letterSpacing: "0.7px", cursor: "pointer" }}>{option}</button>
+                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, gender: option })} style={{ height: "44px", border: profileForm.gender === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.gender === option ? "#15130f" : "#0b0b0b", color: profileForm.gender === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "0.7px", cursor: "pointer" }}>{option}</button>
                     ))}
                   </div>
                 </div>
@@ -5456,7 +6760,7 @@ useEffect(() => {
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>SEXUALIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
                     {["Gay", "Bissexual", "Pansexual", "Outra"].map((option) => (
-                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, sexuality: option })} style={{ height: "44px", border: profileForm.sexuality === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.sexuality === option ? "#15130f" : "#0b0b0b", color: profileForm.sexuality === option ? "#f4ead7" : "#77736b", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, sexuality: option })} style={{ height: "44px", border: profileForm.sexuality === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.sexuality === option ? "#15130f" : "#0b0b0b", color: profileForm.sexuality === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
                     ))}
                   </div>
                 </div>
@@ -5465,7 +6769,7 @@ useEffect(() => {
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>POSIÇÃO</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                     {["Ativo", "Passivo", "Versátil"].map((option) => (
-                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, position: option })} style={{ height: "44px", border: profileForm.position === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.position === option ? "#15130f" : "#0b0b0b", color: profileForm.position === option ? "#f4ead7" : "#77736b", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, position: option })} style={{ height: "44px", border: profileForm.position === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.position === option ? "#15130f" : "#0b0b0b", color: profileForm.position === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
                     ))}
                   </div>
                 </div>
@@ -5474,7 +6778,7 @@ useEffect(() => {
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>DISPONIBILIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
                     {["Agora", "Mais tarde", "Outro dia", "Só conversar"].map((option) => (
-                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, availability: option })} style={{ height: "44px", border: profileForm.availability === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.availability === option ? "#15130f" : "#0b0b0b", color: profileForm.availability === option ? "#f4ead7" : "#77736b", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, availability: option })} style={{ height: "44px", border: profileForm.availability === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.availability === option ? "#15130f" : "#0b0b0b", color: profileForm.availability === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
                     ))}
                   </div>
                 </div>
@@ -5513,7 +6817,7 @@ useEffect(() => {
         </section>
       )}
 
-            {/* CURTIDAS */}
+            {/* CONEXÕES / INTERESSES */}
 
       {screen === "likes" && (
         <section
@@ -5524,52 +6828,154 @@ useEffect(() => {
             padding: "30px 20px",
           }}
         >
-          <div style={{ textAlign: "center", marginBottom: "35px" }}>
+          <div style={{ textAlign: "center", marginBottom: "30px" }}>
             <div className="moon-logo">MOON</div>
             <p className="moon-tagline">FIND YOUR NIGHT.</p>
-            <p style={{ color: "#77736b", fontSize: "11px", letterSpacing: "2px", marginTop: "20px" }}>
-              CURTIDAS
+            <p style={{ color: "#c9b58a", fontSize: "11px", letterSpacing: "2px", marginTop: "20px" }}>
+              INTERAÇÕES
             </p>
           </div>
 
-          {likesLoading ? (
-            <div style={{ textAlign: "center", padding: "70px 20px", color: "#77736b", letterSpacing: "2px", fontSize: "11px" }}>
-              CARREGANDO CURTIDAS...
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "24px" }}>
+            {[
+              ["conexoes", "CONEXÕES"],
+              ["interesses", "INTERESSES"],
+            ].map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => {
+                  setLikesTab(tab);
+                  if (tab === "conexoes") {
+                    markNotificationsAsRead("match");
+                  }
+                }}
+                style={{
+                  height: "42px",
+                  border: `1px solid ${likesTab === tab ? "#c9b58a" : "#292929"}`,
+                  background: likesTab === tab ? "#15130f" : "#0b0b0b",
+                  color: likesTab === tab ? "#c9b58a" : "#77736b",
+                  fontSize: "10px",
+                  letterSpacing: "1.8px",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                  <span>{label}</span>
+                  {tab === "conexoes" && notificationCount.match > 0 && (
+                    <span
+                      style={{
+                        minWidth: "17px",
+                        height: "17px",
+                        padding: "0 5px",
+                        borderRadius: "999px",
+                        background: "#c9b58a",
+                        color: "#111",
+                        fontSize: "9px",
+                        fontWeight: 700,
+                        letterSpacing: "0",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {notificationCount.match > 99 ? "99+" : notificationCount.match}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {likesTab === "conexoes" ? (
+            connectionsLoading ? (
+              <MoonSkeleton rows={3} />
+            ) : viewedProfiles.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b" }}>
+                <p style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px", marginBottom: "15px" }}>
+                  NENHUMA CONEXÃO
+                </p>
+                <p style={{ color: "#77736b", fontSize: "12px", lineHeight: "1.7", maxWidth: "400px", margin: "0 auto" }}>
+                  Quando houver uma conexão mútua, ela aparecerá aqui.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "8px" }}>
+                {viewedProfiles.map((profile) => (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    onClick={() => handleChat(profile, "likes")}
+                    style={{
+                      width: "100%",
+                      padding: 0,
+                      border: "1px solid #202020",
+                      background: "#0b0b0b",
+                      cursor: "pointer",
+                      overflow: "hidden",
+                      textAlign: "left",
+                    }}
+                  >
+                    <div style={{ aspectRatio: "1 / 1", background: "#111", overflow: "hidden" }}>
+                      {profile.photoUrl ? (
+                        <img src={profile.photoUrl} alt={profile.name || "Perfil"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#77736b", fontSize: "10px", letterSpacing: "1px" }}>
+                          SEM FOTO
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ padding: "10px" }}>
+                      <div style={{ color: "#f4ead7", fontSize: "13px", fontWeight: "600", letterSpacing: "0.5px" }}>
+                        {profile.name || "Usuário"}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : likesLoading ? (
+            <MoonSkeleton rows={3} />
           ) : likedProfiles.length === 0 ? (
             <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b" }}>
               <p style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px", marginBottom: "15px" }}>
-                NENHUMA CURTIDA
+                NENHUM INTERESSE
               </p>
               <p style={{ color: "#77736b", fontSize: "12px", lineHeight: "1.7", maxWidth: "400px", margin: "0 auto" }}>
-                Aqui aparecem as pessoas que curtiram você.
+                Aqui aparecem as pessoas que demonstraram interesse em você.
               </p>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "8px" }}>
               {likedProfiles.map((profile) => (
                 <button
                   key={profile.id}
                   type="button"
                   onClick={() => handleChat(profile, "likes")}
                   style={{
-                    width: "100%", display: "flex", alignItems: "center", gap: "14px", padding: "12px",
-                    border: "1px solid #202020", background: "#0b0b0b", color: "#f4ead7", cursor: "pointer", textAlign: "left"
+                    width: "100%",
+                    padding: "0",
+                    border: "1px solid #202020",
+                    background: "#0b0b0b",
+                    color: "#f4ead7",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    overflow: "hidden",
                   }}
                 >
-                  <div style={{ width: "58px", height: "58px", flexShrink: 0, overflow: "hidden", background: "#101010", border: "1px solid #292929" }}>
+                  <div style={{ width: "100%", aspectRatio: "1 / 1", overflow: "hidden", background: "#101010" }}>
                     {profile.photoUrl ? (
                       <img src={profile.photoUrl} alt={profile.name || "Perfil MOON"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : (
                       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#3b3832", fontSize: "9px", letterSpacing: "1px" }}>MOON</div>
                     )}
                   </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ color: "#f4ead7", fontSize: "14px", letterSpacing: "1px" }}>
+                  <div style={{ padding: "10px" }}>
+                    <div style={{ color: "#f4ead7", fontSize: "12px", letterSpacing: "0.7px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {profile.name || "Sem nome"}{profile.birth_date ? `, ${calculateAge(profile.birth_date)}` : ""}
                     </div>
                   </div>
-                  <span style={{ color: "#c9b58a", fontSize: "18px" }}>›</span>
                 </button>
               ))}
             </div>
@@ -5619,17 +7025,7 @@ useEffect(() => {
           </div>
 
           {conversationsLoading ? (
-            <div
-              style={{
-                textAlign: "center",
-                padding: "70px 20px",
-                color: "#77736b",
-                letterSpacing: "2px",
-                fontSize: "11px",
-              }}
-            >
-              CARREGANDO CONVERSAS...
-            </div>
+            <MoonSkeleton rows={4} />
           ) : conversations.length === 0 ? (
             <div
               style={{
@@ -5987,7 +7383,7 @@ useEffect(() => {
                     }}
                     style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
                   >
-                    🚫 &nbsp; BLOQUEAR USUÁRIO
+                    BLOQUEAR USUÁRIO
                   </button>
 
                   <button
@@ -6000,7 +7396,7 @@ useEffect(() => {
                     }}
                     style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
                   >
-                    ⚠️ &nbsp; DENUNCIAR USUÁRIO
+                    DENUNCIAR USUÁRIO
                   </button>
 
                   <button
@@ -6011,7 +7407,7 @@ useEffect(() => {
                     }}
                     style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
                   >
-                    🔒 &nbsp; PRIVACIDADE
+                    PRIVACIDADE
                   </button>
                 </div>
               )}
@@ -6054,11 +7450,14 @@ useEffect(() => {
                         : "flex-start",
                     maxWidth: "75%",
                     padding: "11px 14px",
-                    border: "1px solid #292929",
+                    border:
+                      chatMessage.sender_id === currentUserId
+                        ? "1px solid #d8c69f"
+                        : "1px solid #3a352d",
                     background:
                       chatMessage.sender_id === currentUserId
-                        ? "#c9b58a"
-                        : "#0b0b0b",
+                        ? "#d6c08f"
+                        : "#151515",
                     color:
                       chatMessage.sender_id === currentUserId
                         ? "#050505"
@@ -6067,10 +7466,57 @@ useEffect(() => {
                     lineHeight: "1.5",
                   }}
                 >
-                  <div>{chatMessage.content}</div>
+                  <div
+                    style={{
+                      fontStyle: chatMessage.deleted_for_everyone ? "italic" : "normal",
+                      opacity: chatMessage.deleted_for_everyone ? 0.65 : 1,
+                    }}
+                  >
+                    {chatMessage.deleted_for_everyone
+                      ? "Mensagem excluída."
+                      : chatMessage.content}
+                  </div>
                   {chatMessage.sender_id === currentUserId && (
-                    <div style={{ marginTop: "5px", textAlign: "right", fontSize: "9px", letterSpacing: "0.5px", opacity: 0.7 }}>
-                      {chatMessage.read_at ? "✓✓" : "✓"}
+                    <div
+                      style={{
+                        marginTop: "5px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "flex-end",
+                        gap: "8px",
+                      }}
+                    >
+                      {!chatMessage.deleted_for_everyone && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDeleteMessageForEveryone(chatMessage.id)
+                          }
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            color: "#050505",
+                            padding: 0,
+                            fontSize: "9px",
+                            letterSpacing: "0.5px",
+                            cursor: "pointer",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          EXCLUIR
+                        </button>
+                      )}
+                      {!chatMessage.deleted_for_everyone && (
+                        <div
+                          style={{
+                            fontSize: "9px",
+                            letterSpacing: "0.5px",
+                            opacity: 0.7,
+                          }}
+                        >
+                          {chatMessage.read_at ? "✓✓" : "✓"}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -6085,6 +7531,21 @@ useEffect(() => {
             />
           </div>
 
+          {chatTyping && (
+            <div
+              style={{
+                minHeight: "16px",
+                paddingTop: "8px",
+                color: "#c9b58a",
+                fontSize: "10px",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+              }}
+            >
+              Digitando...
+            </div>
+          )}
+
           <form
             onSubmit={handleSendMessage}
             style={{
@@ -6097,9 +7558,44 @@ useEffect(() => {
             <input
               type="text"
               value={chatText}
-              onChange={(event) =>
-                setChatText(event.target.value)
-              }
+              onChange={(event) => {
+                const value = event.target.value;
+                setChatText(value);
+
+                const channel = chatRealtimeChannelRef.current;
+
+                if (channel && currentUserId) {
+                  channel.send({
+                    type: "broadcast",
+                    event: "typing",
+                    payload: {
+                      userId: currentUserId,
+                      isTyping: Boolean(value.trim()),
+                    },
+                  });
+                }
+
+                if (chatTypingTimeoutRef.current) {
+                  clearTimeout(chatTypingTimeoutRef.current);
+                }
+
+                if (value.trim()) {
+                  chatTypingTimeoutRef.current = setTimeout(() => {
+                    const activeChannel = chatRealtimeChannelRef.current;
+
+                    if (activeChannel && currentUserId) {
+                      activeChannel.send({
+                        type: "broadcast",
+                        event: "typing",
+                        payload: {
+                          userId: currentUserId,
+                          isTyping: false,
+                        },
+                      });
+                    }
+                  }, 1500);
+                }
+              }}
               placeholder="Escreva uma mensagem..."
               style={{
                 flex: 1,
@@ -6290,11 +7786,11 @@ useEffect(() => {
           >
             {activeBoost ? (
               <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                <span style={{ fontSize: "8px", letterSpacing: "1.6px" }}>✦ BOOST ATIVO</span>
+                <span style={{ fontSize: "8px", letterSpacing: "1.6px" }}>BOOST ATIVO</span>
                 <span style={{ fontSize: "15px", letterSpacing: "1.5px", lineHeight: 1 }}>{formatBoostTime(boostSecondsLeft)}</span>
               </span>
             ) : (
-              "⚡ BOOST"
+              "BOOST"
             )}
           </button>
 
@@ -6330,7 +7826,7 @@ useEffect(() => {
                   padding: "0 12px",
                   background: "#0b0b0b",
                   border: "1px solid #292929",
-                  color: activeValue ? "#f4ead7" : "#c9b58a",
+                  color: activeValue ? "#ffffff" : "#e9dfcd",
                   fontSize: "8px",
                   letterSpacing: "1.4px",
                   cursor: "pointer",
@@ -6381,7 +7877,7 @@ useEffect(() => {
               <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", marginBottom: "12px" }}>IDENTIDADE</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                 {["Homem cis", "Homem trans", "Não binário"].map((option) => (
-                  <button key={option} type="button" onClick={() => setIdentityFilter(identityFilter === option ? "" : option)} style={{ height: "44px", border: identityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: identityFilter === option ? "#15130f" : "#0b0b0b", color: identityFilter === option ? "#f4ead7" : "#77736b", fontSize: "9px", letterSpacing: "0.7px", cursor: "pointer" }}>{option}</button>
+                  <button key={option} type="button" onClick={() => setIdentityFilter(identityFilter === option ? "" : option)} style={{ height: "44px", border: identityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: identityFilter === option ? "#15130f" : "#0b0b0b", color: identityFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "9px", letterSpacing: "0.7px", cursor: "pointer" }}>{option}</button>
                 ))}
               </div>
             </div>
@@ -6393,7 +7889,7 @@ useEffect(() => {
               <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", marginBottom: "12px" }}>SEXUALIDADE</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
                 {["Gay", "Bissexual", "Pansexual", "Outra"].map((option) => (
-                  <button key={option} type="button" onClick={() => setSexualityFilter(sexualityFilter === option ? "" : option)} style={{ height: "44px", border: sexualityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: sexualityFilter === option ? "#15130f" : "#0b0b0b", color: sexualityFilter === option ? "#f4ead7" : "#77736b", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                  <button key={option} type="button" onClick={() => setSexualityFilter(sexualityFilter === option ? "" : option)} style={{ height: "44px", border: sexualityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: sexualityFilter === option ? "#15130f" : "#0b0b0b", color: sexualityFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
                 ))}
               </div>
             </div>
@@ -6405,7 +7901,7 @@ useEffect(() => {
               <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", marginBottom: "12px" }}>POSIÇÃO</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                 {["Ativo", "Passivo", "Versátil"].map((option) => (
-                  <button key={option} type="button" onClick={() => setPositionFilter(positionFilter === option ? "" : option)} style={{ height: "44px", border: positionFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: positionFilter === option ? "#15130f" : "#0b0b0b", color: positionFilter === option ? "#f4ead7" : "#77736b", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                  <button key={option} type="button" onClick={() => setPositionFilter(positionFilter === option ? "" : option)} style={{ height: "44px", border: positionFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: positionFilter === option ? "#15130f" : "#0b0b0b", color: positionFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
                 ))}
               </div>
             </div>
@@ -6414,7 +7910,7 @@ useEffect(() => {
           {showAvailabilityFilter && (
             <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px" }}>
               {["Agora", "Mais tarde", "Outro dia", "Só conversar"].map((option) => (
-                <button key={option} type="button" onClick={() => setAvailabilityFilter(availabilityFilter === option ? "" : option)} style={{ height: "44px", border: availabilityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: availabilityFilter === option ? "#15130f" : "#0b0b0b", color: availabilityFilter === option ? "#f4ead7" : "#77736b", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                <button key={option} type="button" onClick={() => setAvailabilityFilter(availabilityFilter === option ? "" : option)} style={{ height: "44px", border: availabilityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: availabilityFilter === option ? "#15130f" : "#0b0b0b", color: availabilityFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
               ))}
             </div>
           )}
@@ -6428,11 +7924,13 @@ useEffect(() => {
               padding: 10px;
             }
             .moon-discovery-name {
-              font-size: 12px !important;
+              font-size: 13px !important;
+              font-weight: 600 !important;
               letter-spacing: 0.5px !important;
             }
             .moon-discovery-distance {
-              font-size: 8px !important;
+              font-size: 9px !important;
+              font-weight: 500 !important;
             }
             .moon-discovery-bio {
               display: none !important;
@@ -6448,18 +7946,20 @@ useEffect(() => {
             }
             @media (min-width: 700px) {
               .moon-discovery-grid {
-                grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
                 gap: 18px;
               }
               .moon-discovery-card-info {
                 padding: 16px;
               }
               .moon-discovery-name {
-                font-size: 17px !important;
+                font-size: 18px !important;
+                font-weight: 600 !important;
                 letter-spacing: 1px !important;
               }
               .moon-discovery-distance {
-                font-size: 10px !important;
+                font-size: 11px !important;
+                font-weight: 500 !important;
               }
               .moon-discovery-bio {
                 display: -webkit-box !important;
@@ -6555,9 +8055,9 @@ useEffect(() => {
                 display:
                   "grid",
                 gridTemplateColumns:
-                  "repeat(auto-fill, minmax(220px, 1fr))",
+                  "repeat(3, minmax(0, 1fr))",
                 gap:
-                  "18px",
+                  "8px",
               }}
             >
 
@@ -6626,7 +8126,7 @@ useEffect(() => {
                               letterSpacing: "1.6px",
                             }}
                           >
-                            ✦ EM DESTAQUE
+                            EM DESTAQUE
                           </span>
                         )}
 
@@ -6808,14 +8308,14 @@ useEffect(() => {
     type="button"
     onClick={(event) => {
       event.stopPropagation();
-      handleLike(profile.id);
+      handleLike(profile.id, profile);
     }}
     style={{
       flex: 1,
       height: "42px",
       border: "1px solid #c9b58a",
       background: "transparent",
-      color: "#f4ead7",
+      color: "#c9b58a",
       cursor: "pointer",
       fontSize: "18px",
       letterSpacing: "2px",
@@ -6838,7 +8338,7 @@ useEffect(() => {
     }`}
     title="Curtir perfil"
   >
-    ♥
+    CURTIR
   </button>
 
   <button
@@ -6853,7 +8353,7 @@ useEffect(() => {
       height: "42px",
       border: "1px solid #c9b58a",
       background: "transparent",
-      color: "#f4ead7",
+      color: "#c9b58a",
       cursor: chatLoading ? "wait" : "pointer",
       fontSize: "18px",
       letterSpacing: "2px",
@@ -6879,7 +8379,7 @@ useEffect(() => {
     }`}
     title="Conversar"
   >
-    💬
+    MENSAGEM
   </button>
 </div>
 
@@ -6893,11 +8393,12 @@ useEffect(() => {
     width: "100%",
     marginTop: "8px",
     height: "28px",
-    border: "1px solid #292929",
+    border: "1px solid #c9b58a",
     background: "transparent",
-    color: "#77736b",
+    color: "#c9b58a",
     cursor: "pointer",
     fontSize: "8px",
+    fontWeight: "500",
     letterSpacing: "1.5px",
   }}
 >
@@ -6916,11 +8417,12 @@ useEffect(() => {
     width: "100%",
     marginTop: "6px",
     height: "28px",
-    border: "1px solid #292929",
+    border: "1px solid #c9b58a",
     background: "transparent",
-    color: "#77736b",
+    color: "#c9b58a",
     cursor: "pointer",
     fontSize: "8px",
+    fontWeight: "500",
     letterSpacing: "1.5px",
   }}
 >
@@ -7179,7 +8681,7 @@ useEffect(() => {
                           }}
                           style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
                         >
-                          🚫 &nbsp; BLOQUEAR USUÁRIO
+                          BLOQUEAR USUÁRIO
                         </button>
 
                         <button
@@ -7192,7 +8694,7 @@ useEffect(() => {
                           }}
                           style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
                         >
-                          ⚠️ &nbsp; DENUNCIAR USUÁRIO
+                          DENUNCIAR USUÁRIO
                         </button>
 
                         <button
@@ -7204,7 +8706,7 @@ useEffect(() => {
                           }}
                           style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
                         >
-                          🔒 &nbsp; PRIVACIDADE
+                          PRIVACIDADE
                         </button>
                       </div>
                     )}
@@ -7220,23 +8722,29 @@ useEffect(() => {
                 </div>
 
                 {selectedProfileLoading ? (
-                  <div style={{ textAlign: "center", padding: "50px 20px", color: "#77736b", fontSize: "10px", letterSpacing: "2px" }}>
-                    CARREGANDO PERFIL...
-                  </div>
+                  <MoonSkeleton rows={2} />
                 ) : (
                   <>
-                    {selectedProfilePhotos.length > 0 && (
+                    {selectedProfilePhotos.length > 0 ? (
                       <div style={{ display: "grid", gridTemplateColumns: selectedProfilePhotos.length === 1 ? "1fr" : "repeat(2, 1fr)", gap: "6px", marginBottom: "18px" }}>
                         {selectedProfilePhotos.map((photo) => (
                           <img
                             key={photo.id}
                             src={photo.publicUrl}
                             alt={selectedProfile.name || "Perfil MOON"}
-                            style={{ width: "100%", aspectRatio: selectedProfilePhotos.length === 1 ? "1 / 1" : "1 / 1", objectFit: "cover", display: "block" }}
+                            style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
                           />
                         ))}
                       </div>
-                    )}
+                    ) : selectedProfile.photoUrl ? (
+                      <div style={{ marginBottom: "18px" }}>
+                        <img
+                          src={selectedProfile.photoUrl}
+                          alt={selectedProfile.name || "Perfil MOON"}
+                          style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
+                        />
+                      </div>
+                    ) : null}
 
                     <div style={{ marginBottom: "18px" }}>
                       <h2 style={{ margin: 0, color: "#f4ead7", fontSize: "24px", fontWeight: "400", letterSpacing: "1px" }}>
@@ -7259,7 +8767,7 @@ useEffect(() => {
                             letterSpacing: "1.7px",
                           }}
                         >
-                          ✦ EM DESTAQUE
+                          EM DESTAQUE
                         </div>
                       )}
                     </div>
@@ -7272,15 +8780,15 @@ useEffect(() => {
                     )}
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", marginBottom: "18px" }}>
-                      {selectedProfile.gender && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.gender}</span></div>}
-                      {selectedProfile.sexuality && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.sexuality}</span></div>}
-                      {selectedProfile.position && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.position}</span></div>}
-                      {selectedProfile.availability && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.availability}</span></div>}
+                      {selectedProfile.gender && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.gender}</span></div>}
+                      {selectedProfile.sexuality && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.sexuality}</span></div>}
+                      {selectedProfile.position && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.position}</span></div>}
+                      {selectedProfile.availability && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.availability}</span></div>}
                     </div>
 
                     <div style={{ display: "flex", gap: "8px" }}>
-                      <button type="button" onClick={() => { handleLike(selectedProfile.id); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "17px" }}>♥</button>
-                      <button type="button" onClick={() => { setSelectedProfile(null); handleChat(selectedProfile, "inside"); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "17px" }}>💬</button>
+                      <button type="button" onClick={() => { handleLike(selectedProfile.id, selectedProfile); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>CURTIR</button>
+                      <button type="button" onClick={() => { setSelectedProfile(null); handleChat(selectedProfile, "inside"); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>MENSAGEM</button>
                     </div>
                   </>
                 )}
@@ -7456,7 +8964,7 @@ useEffect(() => {
                       MOON / DESTAQUE
                     </div>
                     <h2 style={{ color: "#f4ead7", fontSize: "24px", fontWeight: "400", letterSpacing: "1px", margin: 0, textAlign: "center" }}>
-                      ⚡ BOOST
+                      BOOST
                     </h2>
                   </div>
                   <button
@@ -7580,7 +9088,7 @@ useEffect(() => {
                       MOON / PAGAMENTO
                     </div>
                     <h2 style={{ color: "#f4ead7", fontSize: "22px", fontWeight: "400", letterSpacing: "1px", margin: 0 }}>
-                      ⚡ BOOST
+                      BOOST
                     </h2>
                     <div style={{ color: "#c9b58a", fontSize: "11px", letterSpacing: "1.5px", marginTop: "8px" }}>
                       {selectedBoostHours} {selectedBoostHours === 1 ? "HORA" : "HORAS"} · R$ {boostPaymentAmount.toFixed(2).replace(".", ",")}
@@ -7716,6 +9224,27 @@ useEffect(() => {
             <button
               type="button"
               onClick={() => {
+                setMessage("");
+                setScreen("map");
+              }}
+              style={{
+                flex: 1,
+                maxWidth: "180px",
+                height: "42px",
+                border: "1px solid #c9b58a",
+                background: "transparent",
+                color: "#f4ead7",
+                fontSize: "10px",
+                letterSpacing: "1.8px",
+                cursor: "pointer",
+              }}
+            >
+              MAPA
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 setProfileEditMode(false);
                 setScreen("profile");
                 setMessage("");
@@ -7732,7 +9261,7 @@ useEffect(() => {
                 cursor: "pointer",
               }}
             >
-              ♙ &nbsp; MEU PERFIL
+              MEU PERFIL
             </button>
 
             <button
@@ -7751,7 +9280,7 @@ useEffect(() => {
               }}
             >
               <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                <span>♥</span>
+                <span></span>
                 <span>CURTIDAS</span>
                 {notificationCount.like > 0 && (
                   <span
@@ -7793,7 +9322,7 @@ useEffect(() => {
               }}
             >
               <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                <span>💬</span>
+                <span></span>
                 <span>CONVERSAS</span>
                 {notificationCount.message > 0 && (
                   <span
