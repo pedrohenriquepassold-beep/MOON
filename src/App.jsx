@@ -4527,7 +4527,10 @@ useEffect(() => {
             type="button"
             disabled={!verificationLivenessPassed}
             onClick={async () => {
-              if (!user?.id) {
+              const { data: { user: currentUser }, error: userError } =
+                await supabase.auth.getUser();
+
+              if (userError || !currentUser?.id) {
                 setMessage("Não foi possível concluir a verificação.");
                 return;
               }
@@ -4535,7 +4538,7 @@ useEffect(() => {
               const { error: verificationError } = await supabase
                 .from("profiles")
                 .update({ is_verified: true })
-                .eq("id", user.id);
+                .eq("id", currentUser.id);
 
               if (verificationError) {
                 console.error("ERRO AO SALVAR VERIFICAÇÃO:", verificationError);
