@@ -95,6 +95,8 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
   const [profileDisplayName, setProfileDisplayName] = useState("");
   const [profileBirthDate, setProfileBirthDate] = useState("");
+  const [profileNameChangedAt, setProfileNameChangedAt] = useState(null);
+  const [profileOriginalName, setProfileOriginalName] = useState("");
   const [profileEditMode, setProfileEditMode] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
@@ -181,6 +183,7 @@ const chatMessagesBottomRef = useRef(null);
   const [conversations, setConversations] = useState([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
   const [conversationFilter, setConversationFilter] = useState("all");
+  const [pinnedConversationIds, setPinnedConversationIds] = useState([]);
   const [likedProfiles, setLikedProfiles] = useState([]);
   const [likesLoading, setLikesLoading] = useState(false);
   const [likesTab, setLikesTab] = useState("interesses");
@@ -1051,7 +1054,9 @@ const chatMessagesBottomRef = useRef(null);
     }
 
     setProfileDisplayName(data.name || "");
+    setProfileOriginalName(data.name || "");
     setProfileBirthDate(data.birth_date || "");
+    setProfileNameChangedAt(data.name_changed_at || null);
     setReadReceiptsEnabled(data.read_receipts_enabled !== false);
     setIsProfileHidden(data.is_hidden === true);
 
@@ -1139,39 +1144,131 @@ const chatMessagesBottomRef = useRef(null);
     setPhotos(photosWithUrl);
   }
 
+  async function openChatProfile(profile) {
+    if (!profile?.id) {
+      setMessage("Não foi possível abrir o perfil desta conversa.");
+      return;
+    }
+
+    setSelectedProfile(profile);
+    setShowSelectedProfileMenu(false);
+    setSelectedProfileLoading(true);
+    setSelectedProfilePhotos([]);
+
+    try {
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", profile.id)
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+      if (profileData) {
+        setSelectedProfile((current) => ({
+          ...current,
+          ...profileData,
+        }));
+      }
+
+      const { data: photoData, error: photoError } = await supabase
+        .from("profile_photos")
+        .select("id, storage_path, is_primary, created_at")
+        .eq("user_id", profile.id)
+        .order("is_primary", { ascending: false })
+        .order("created_at", { ascending: true });
+
+      if (photoError) throw photoError;
+
+      const photosWithUrl = (photoData || []).map((photo) => {
+        const { data: publicData } = supabase.storage
+          .from("profile-photos")
+          .getPublicUrl(photo.storage_path);
+
+        return {
+          ...photo,
+          publicUrl: publicData?.publicUrl || null,
+        };
+      });
+
+      setSelectedProfilePhotos(photosWithUrl);
+
+      if (user?.id && user.id !== profile.id) {
+        supabase.from("profile_views").insert({
+          viewer_id: user.id,
+          profile_id: profile.id,
+        });
+      }
+    } catch (error) {
+      console.error("ERRO AO ABRIR PERFIL DO CHAT:", error);
+      setMessage(error.message || "Não foi possível carregar o perfil.");
+    } finally {
+      setSelectedProfileLoading(false);
+    }
+  }
+
   async function openProfileDetails(profile) {
+    if (!profile?.id) return;
+
+    // O perfil já vem completo da descoberta/mapa. Abrimos imediatamente,
+    // enquanto carregamos apenas as fotos adicionais.
     setSelectedProfile(profile);
     setShowSelectedProfileMenu(false);
     setSelectedProfilePhotos([]);
     setSelectedProfileLoading(false);
 
-    if (user?.id && profile?.id && user.id !== profile.id) {
+    if (user?.id && user.id !== profile.id) {
       supabase.from("profile_views").insert({
         viewer_id: user.id,
         profile_id: profile.id,
       });
     }
 
-    const { data, error } = await supabase
-      .from("profile_photos")
-      .select("id, storage_path, is_primary")
-      .eq("user_id", profile.id)
-      .order("is_primary", { ascending: false })
-      .order("created_at", { ascending: true });
+    try {
+      // Carrega os dados completos do usuário separadamente, sem bloquear a abertura do modal.
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", profile.id)
+        .maybeSingle();
 
-    if (!error) {
-      const photosWithUrl = (data || []).map((photo) => {
+      if (profileError) {
+        console.error("ERRO AO CARREGAR DADOS DO PERFIL:", profileError);
+      }
+
+      if (profileData) {
+        setSelectedProfile((current) => ({
+          ...current,
+          ...profileData,
+        }));
+      }
+
+      const { data: photoData, error: photoError } = await supabase
+        .from("profile_photos")
+        .select("id, storage_path, is_primary")
+        .eq("user_id", profile.id)
+        .order("is_primary", { ascending: false })
+        .order("created_at", { ascending: true });
+
+      if (photoError) {
+        console.error("ERRO AO CARREGAR FOTOS DO PERFIL:", photoError);
+        return;
+      }
+
+      const photosWithUrl = (photoData || []).map((photo) => {
         const { data: publicData } = supabase.storage
           .from("profile-photos")
           .getPublicUrl(photo.storage_path);
 
-        return { ...photo, publicUrl: publicData.publicUrl };
+        return {
+          ...photo,
+          publicUrl: publicData?.publicUrl || null,
+        };
       });
 
       setSelectedProfilePhotos(photosWithUrl);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR PERFIL:", error);
     }
-
-    setSelectedProfileLoading(false);
   }
 
   async function loadNearbyProfiles(
@@ -2097,10 +2194,36 @@ const chatMessagesBottomRef = useRef(null);
           }
         }
       )
-      .subscribe();
+      .on(
+        "broadcast",
+        {
+          event: "typing",
+        },
+        (payload) => {
+          const typingUserId = payload?.payload?.userId;
+
+          if (!isMounted || !typingUserId || typingUserId === currentUserId) {
+            return;
+          }
+
+          setChatTyping(Boolean(payload?.payload?.isTyping));
+        }
+      );
+
+    chatRealtimeChannelRef.current = channel;
+
+    channel.subscribe();
 
     return () => {
       isMounted = false;
+
+      if (chatTypingTimeoutRef.current) {
+        clearTimeout(chatTypingTimeoutRef.current);
+        chatTypingTimeoutRef.current = null;
+      }
+
+      setChatTyping(false);
+      chatRealtimeChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [screen, chatConversation?.id, currentUserId]);
@@ -2533,6 +2656,110 @@ const chatMessagesBottomRef = useRef(null);
       );
     } finally {
       setChatLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setPinnedConversationIds([]);
+      return;
+    }
+
+    try {
+      const storedPins = window.localStorage.getItem(
+        `moon_pinned_conversations_${currentUserId}`
+      );
+      const parsedPins = storedPins ? JSON.parse(storedPins) : [];
+      setPinnedConversationIds(
+        Array.isArray(parsedPins) ? parsedPins : []
+      );
+    } catch (error) {
+      console.error("ERRO AO CARREGAR CONVERSAS FIXADAS:", error);
+      setPinnedConversationIds([]);
+    }
+  }, [currentUserId]);
+
+  function handleTogglePinnedConversation(conversationId) {
+    if (!conversationId || !currentUserId) return;
+
+    setPinnedConversationIds((currentIds) => {
+      const isPinned = currentIds.includes(conversationId);
+      const nextIds = isPinned
+        ? currentIds.filter((id) => id !== conversationId)
+        : [...currentIds, conversationId];
+
+      try {
+        window.localStorage.setItem(
+          `moon_pinned_conversations_${currentUserId}`,
+          JSON.stringify(nextIds)
+        );
+      } catch (error) {
+        console.error("ERRO AO SALVAR CONVERSA FIXADA:", error);
+      }
+
+      showToast({
+        title: isPinned ? "Conversa desafixada" : "Conversa fixada",
+        body: isPinned
+          ? "A conversa foi retirada do topo."
+          : "A conversa ficará no topo da sua lista.",
+      });
+
+      return nextIds;
+    });
+  }
+
+  async function handleDeleteConversation(conversationId) {
+    if (!conversationId) return;
+
+    const confirmed = window.confirm(
+      "Excluir esta conversa? Todas as mensagens desta conversa serão apagadas."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from("conversations")
+        .delete()
+        .eq("id", conversationId);
+
+      if (error) {
+        throw error;
+      }
+
+      setConversations((current) =>
+        current.filter((conversation) => conversation.id !== conversationId)
+      );
+
+      setPinnedConversationIds((currentIds) => {
+        const nextIds = currentIds.filter((id) => id !== conversationId);
+        try {
+          window.localStorage.setItem(
+            `moon_pinned_conversations_${currentUserId}`,
+            JSON.stringify(nextIds)
+          );
+        } catch (error) {
+          console.error("ERRO AO ATUALIZAR CONVERSAS FIXADAS:", error);
+        }
+        return nextIds;
+      });
+
+      if (chatConversation?.id === conversationId) {
+        setChatTarget(null);
+        setChatConversation(null);
+        setChatMessages([]);
+        setChatText("");
+      }
+
+      showToast({
+        title: "Conversa excluída",
+        body: "A conversa foi removida.",
+      });
+    } catch (error) {
+      console.error("ERRO AO EXCLUIR CONVERSA:", error);
+      setMessage(
+        error.message || "Não foi possível excluir a conversa."
+      );
     }
   }
 
@@ -3218,6 +3445,22 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
+    const normalizedName = profileDisplayName.trim();
+    const nameChanged = normalizedName !== profileOriginalName.trim();
+    if (!normalizedName) {
+      setMessage("Informe seu nome.");
+      return;
+    }
+
+    if (nameChanged && profileNameChangedAt) {
+      const nextNameChangeAt = new Date(profileNameChangedAt).getTime() + 30 * 24 * 60 * 60 * 1000;
+      if (Date.now() < nextNameChangeAt) {
+        const daysRemaining = Math.max(1, Math.ceil((nextNameChangeAt - Date.now()) / (24 * 60 * 60 * 1000)));
+        setMessage(`Você poderá alterar seu nome novamente em ${daysRemaining} ${daysRemaining === 1 ? "dia" : "dias"}.`);
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -3240,6 +3483,9 @@ const chatMessagesBottomRef = useRef(null);
         await supabase
           .from("profiles")
           .update({
+            ...(profileDisplayName.trim() !== profileOriginalName.trim()
+              ? { name: profileDisplayName.trim(), name_changed_at: new Date().toISOString() }
+              : {}),
             bio:
               profileForm.bio,
             gender:
@@ -3262,6 +3508,12 @@ const chatMessagesBottomRef = useRef(null);
 
       if (error) {
         throw error;
+      }
+
+      if (profileDisplayName.trim() !== profileOriginalName.trim()) {
+        const changedAt = new Date().toISOString();
+        setProfileOriginalName(profileDisplayName.trim());
+        setProfileNameChangedAt(changedAt);
       }
 
       setScreen("inside");
@@ -3450,6 +3702,13 @@ const filteredConversations = conversations
           return true;
         })
         .sort((a, b) => {
+          const aPinned = pinnedConversationIds.includes(a.id);
+          const bPinned = pinnedConversationIds.includes(b.id);
+
+          if (aPinned !== bPinned) {
+            return aPinned ? -1 : 1;
+          }
+
           if (conversationFilter === "distance") {
             const aDistance =
               a.distanceKm === null ? Number.POSITIVE_INFINITY : a.distanceKm;
@@ -3873,6 +4132,20 @@ const filteredConversations = conversations
       {screen === "register" && (
         <section className="form-screen">
 
+          <button
+            className="back-button"
+            onClick={() => {
+              setScreen(
+                "home"
+              );
+
+              setMessage("");
+            }}
+          >
+            VOLTAR
+          </button>
+
+
           <div className="moon-logo">
             MOON
           </div>
@@ -3983,18 +4256,6 @@ const filteredConversations = conversations
             </p>
           )}
 
-          <button
-            className="back-button"
-            onClick={() => {
-              setScreen(
-                "home"
-              );
-
-              setMessage("");
-            }}
-          >
-            VOLTAR
-          </button>
 
         </section>
       )}
@@ -4263,6 +4524,15 @@ const filteredConversations = conversations
             </p>
           )}
 
+
+        </section>
+      )}
+
+      {/* REDEFINIR SENHA */}
+
+      {screen === "resetPassword" && (
+        <section className="form-screen">
+
           <button
             className="back-button"
             onClick={() => {
@@ -4276,13 +4546,6 @@ const filteredConversations = conversations
             VOLTAR
           </button>
 
-        </section>
-      )}
-
-      {/* REDEFINIR SENHA */}
-
-      {screen === "resetPassword" && (
-        <section className="form-screen">
 
           <div className="moon-logo">MOON</div>
 
@@ -4352,6 +4615,17 @@ const filteredConversations = conversations
             padding: "30px 20px 50px",
           }}
         >
+
+          <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
+            <button
+              className="back-button"
+              type="button"
+              onClick={() => { setLegalPage(null); setMessage(""); }}
+            >
+              VOLTAR
+            </button>
+          </div>
+
           <div style={{ textAlign: "center", marginBottom: "34px" }}>
             <div className="moon-logo">MOON</div>
             <p className="moon-tagline">FIND YOUR NIGHT.</p>
@@ -4568,15 +4842,6 @@ const filteredConversations = conversations
             )}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
-            <button
-              className="back-button"
-              type="button"
-              onClick={() => { setLegalPage(null); setMessage(""); }}
-            >
-              VOLTAR
-            </button>
-          </div>
         </section>
       )}
 
@@ -5429,6 +5694,17 @@ const filteredConversations = conversations
             padding: "30px 20px 50px",
           }}
         >
+
+          <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
+            <button
+              className="back-button"
+              type="button"
+              onClick={() => { setScreen("profile"); setMessage(""); }}
+            >
+              VOLTAR
+            </button>
+          </div>
+
           <div style={{ textAlign: "center", marginBottom: "38px" }}>
             <div className="moon-logo">MOON</div>
             <p className="moon-tagline">FIND YOUR NIGHT.</p>
@@ -5988,15 +6264,6 @@ const filteredConversations = conversations
             </p>
           )}
 
-          <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
-            <button
-              className="back-button"
-              type="button"
-              onClick={() => { setScreen("profile"); setMessage(""); }}
-            >
-              VOLTAR
-            </button>
-          </div>
         </section>
       )}
 
@@ -6004,6 +6271,31 @@ const filteredConversations = conversations
 
       {screen === "map" && (
         <section style={{ width: "100%", maxWidth: "1000px", minHeight: "100vh", padding: "35px 20px" }}>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-start",
+              marginBottom: "18px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => { setScreen("inside"); setMessage(""); setSelectedMapPoint(null); setMapCenterRequest(null); setSelectedMapProfile(null); }}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#c9b58a",
+                fontSize: "10px",
+                letterSpacing: "1.8px",
+                cursor: "pointer",
+                padding: "4px 0",
+              }}
+            >
+              ← VOLTAR PARA DESCOBERTA
+            </button>
+          </div>
+
           <div style={{ textAlign: "center", marginBottom: "28px" }}>
             <div className="moon-logo">MOON</div>
             <p className="moon-tagline">FIND YOUR NIGHT.</p>
@@ -6178,9 +6470,6 @@ const filteredConversations = conversations
             );
           })()}
 
-          <div style={{ display: "flex", justifyContent: "center", marginTop: "20px" }}>
-            <button className="back-button" type="button" onClick={() => { setScreen("inside"); setMessage(""); setSelectedMapPoint(null); setMapCenterRequest(null); setSelectedMapProfile(null); }}>VOLTAR PARA DESCOBERTA</button>
-          </div>
 
           {message && <p style={{ color: "#c9b58a", fontSize: "10px", textAlign: "center", marginTop: "14px" }}>{message}</p>}
         </section>
@@ -6390,6 +6679,67 @@ const filteredConversations = conversations
 
               <form onSubmit={handleProfileSubmit}>
                 <div style={{ marginBottom: "22px" }}>
+                  <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>NOME</p>
+                  <input
+                    type="text"
+                    value={profileDisplayName}
+                    onChange={(event) => setProfileDisplayName(event.target.value.slice(0, 10))}
+                    maxLength={10}
+                    style={{
+                      width: "100%",
+                      height: "48px",
+                      boxSizing: "border-box",
+                      background: "rgba(201, 181, 138, 0.035)",
+                      border: "1px solid #292929",
+                      borderRadius: "2px",
+                      color: "#f4ead7",
+                      padding: "0 14px",
+                      outline: "none",
+                      fontFamily: "inherit",
+                      fontSize: "13px",
+                    }}
+                  />
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "10px",
+                      marginTop: "8px",
+                    }}
+                  >
+                    <p
+                      className="form-subtitle"
+                      style={{
+                        margin: 0,
+                        color: "#8f897f",
+                      }}
+                    >
+                      O nome pode ter no máximo 10 caracteres.
+                    </p>
+                    <span
+                      style={{
+                        color: profileDisplayName.length >= 10 ? "#c9b58a" : "#77736b",
+                        fontSize: "9px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {profileDisplayName.length}/10
+                    </span>
+                  </div>
+                  {profileNameChangedAt && (
+                    <p className="form-subtitle" style={{ marginTop: "9px", marginBottom: "0", color: "#c9b58a" }}>
+                      {(() => {
+                        const nextNameChangeAt = new Date(profileNameChangedAt).getTime() + 30 * 24 * 60 * 60 * 1000;
+                        if (Date.now() >= nextNameChangeAt) return "Seu nome pode ser alterado novamente.";
+                        const daysRemaining = Math.max(1, Math.ceil((nextNameChangeAt - Date.now()) / (24 * 60 * 60 * 1000)));
+                        return `O nome poderá ser alterado novamente em ${daysRemaining} ${daysRemaining === 1 ? "dia" : "dias"}.`;
+                      })()}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: "22px" }}>
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>IDENTIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                     {["Homem cis", "Homem trans", "Não binário"].map((option) => (
@@ -6448,7 +6798,7 @@ const filteredConversations = conversations
                     boxShadow: "none"
                   }}
                 />
-                <button type="submit" disabled={loading || !profileForm.gender || !profileForm.sexuality || !profileForm.position || !profileForm.availability}>{loading ? "SALVANDO..." : "SALVAR ALTERAÇÕES"}</button>
+                <button type="submit" disabled={loading || !profileDisplayName.trim() || !profileForm.gender || !profileForm.sexuality || !profileForm.position || !profileForm.availability}>{loading ? "SALVANDO..." : "SALVAR ALTERAÇÕES"}</button>
               </form>
 
               {message && <p className="form-subtitle">{message}</p>}
@@ -6470,6 +6820,31 @@ const filteredConversations = conversations
             padding: "30px 20px",
           }}
         >
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-start",
+              marginBottom: "18px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => { setScreen("inside"); setMessage(""); }}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#c9b58a",
+                fontSize: "10px",
+                letterSpacing: "1.8px",
+                cursor: "pointer",
+                padding: "4px 0",
+              }}
+            >
+              ← VOLTAR
+            </button>
+          </div>
+
           <div style={{ textAlign: "center", marginBottom: "30px" }}>
             <div className="moon-logo">MOON</div>
             <p className="moon-tagline">FIND YOUR NIGHT.</p>
@@ -6623,9 +6998,6 @@ const filteredConversations = conversations
             </div>
           )}
 
-          <div style={{ display: "flex", justifyContent: "center", marginTop: "35px" }}>
-            <button className="back-button" onClick={() => { setScreen("inside"); setMessage(""); }}>VOLTAR</button>
-          </div>
         </section>
       )}
 
@@ -6928,6 +7300,98 @@ const filteredConversations = conversations
                         flexShrink: 0,
                       }}
                     >
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleDeleteConversation(conversation.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleDeleteConversation(conversation.id);
+                          }
+                        }}
+                        aria-label="Excluir conversa"
+                        title="Excluir conversa"
+                        style={{
+                          width: "28px",
+                          height: "28px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#77736b",
+                          fontSize: "14px",
+                          cursor: "pointer",
+                          userSelect: "none",
+                        }}
+                      >
+                        ×
+                      </span>
+
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleTogglePinnedConversation(conversation.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleTogglePinnedConversation(conversation.id);
+                          }
+                        }}
+                        aria-label={
+                          pinnedConversationIds.includes(conversation.id)
+                            ? "Desafixar conversa"
+                            : "Fixar conversa"
+                        }
+                        title={
+                          pinnedConversationIds.includes(conversation.id)
+                            ? "Desafixar conversa"
+                            : "Fixar conversa"
+                        }
+                        style={{
+                          width: "28px",
+                          height: "28px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: pinnedConversationIds.includes(conversation.id)
+                            ? "#c9b58a"
+                            : "#55524c",
+                          fontSize: "14px",
+                          cursor: "pointer",
+                          userSelect: "none",
+                        }}
+                      >
+                        <svg
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M8 3H16L15 9L18.5 13H5.5L9 9L8 3Z"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M12 13V21"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </span>
+
                       {conversation.unreadCount > 0 && (
                         <span
                           style={{
@@ -7040,21 +7504,35 @@ const filteredConversations = conversations
                   color: "#f4ead7",
                   fontSize: "18px",
                   letterSpacing: "2px",
+                  lineHeight: 1.2,
                 }}
               >
                 {chatTarget?.name || "CONVERSA"}
               </div>
-              {chatTarget?.city && (
-                <div
-                  style={{
-                    color: "#77736b",
-                    fontSize: "9px",
-                    letterSpacing: "1.5px",
-                    marginTop: "5px",
-                  }}
-                >
-                </div>
-              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (chatTarget?.id) {
+                    openChatProfile(chatTarget);
+                  }
+                }}
+                disabled={!chatTarget?.id}
+                style={{
+                  marginTop: "7px",
+                  border: "1px solid #292929",
+                  background: "transparent",
+                  color: "#c9b58a",
+                  padding: "6px 11px",
+                  fontSize: "8px",
+                  letterSpacing: "1.6px",
+                  cursor: chatTarget?.id ? "pointer" : "default",
+                  fontFamily: "inherit",
+                  opacity: chatTarget?.id ? 1 : 0.5,
+                }}
+              >
+                VER PERFIL
+              </button>
             </div>
 
             <div
@@ -7368,6 +7846,178 @@ const filteredConversations = conversations
       )}
 
       {/* DISCOVERY */}
+
+          {selectedProfile && (
+            <div
+              onClick={() => setSelectedProfile(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 900,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "20px",
+                background: "rgba(0,0,0,0.88)",
+                backdropFilter: "blur(10px)",
+                overflowY: "auto",
+              }}
+            >
+              <div
+                onClick={(event) => event.stopPropagation()}
+                style={{
+                  width: "100%",
+                  maxWidth: "560px",
+                  maxHeight: "90vh",
+                  overflowY: "auto",
+                  background: "#080808",
+                  border: "1px solid #292929",
+                  padding: "18px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    {selectedProfileFromMap && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProfile(null);
+                          setSelectedProfileFromMap(false);
+                          setScreen("map");
+                        }}
+                        style={{ height: "30px", padding: "0 10px", border: "1px solid #c9b58a", background: "transparent", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.2px", cursor: "pointer" }}
+                      >
+                        VOLTAR AO MAPA
+                      </button>
+                    )}
+                    <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px" }}>PERFIL MOON</div>
+                  </div>
+                  <div style={{ position: "relative", display: "flex", gap: "7px", alignItems: "center" }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowSelectedProfileMenu((value) => !value)}
+                      aria-label="Opções do perfil"
+                      style={{ width: "34px", height: "34px", border: "1px solid #292929", background: "transparent", color: "#c9b58a", cursor: "pointer", fontSize: "18px", lineHeight: "1" }}
+                    >
+                      ⋮
+                    </button>
+
+                    {showSelectedProfileMenu && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "40px",
+                          right: "42px",
+                          width: "190px",
+                          background: "#0b0b0b",
+                          border: "1px solid #292929",
+                          boxShadow: "0 18px 45px rgba(0,0,0,0.55)",
+                          zIndex: 60,
+                          padding: "6px",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSelectedProfileMenu(false);
+                            handleBlock(selectedProfile);
+                          }}
+                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
+                        >
+                          BLOQUEAR USUÁRIO
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSelectedProfileMenu(false);
+                            setReportTarget(selectedProfile);
+                            setReportReason("");
+                            setMessage("");
+                          }}
+                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
+                        >
+                          DENUNCIAR USUÁRIO
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSelectedProfileMenu(false);
+                            setLegalPage("privacy");
+                            setSelectedProfile(null);
+                          }}
+                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
+                        >
+                          PRIVACIDADE
+                        </button>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => { setShowSelectedProfileMenu(false); setSelectedProfile(null); }}
+                      style={{ width: "34px", height: "34px", border: "1px solid #292929", background: "transparent", color: "#c9b58a", cursor: "pointer", fontSize: "15px" }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                {selectedProfileLoading ? (
+                  <MoonSkeleton rows={2} />
+                ) : (
+                  <>
+                    {selectedProfilePhotos.length > 0 ? (
+                      <div style={{ display: "grid", gridTemplateColumns: selectedProfilePhotos.length === 1 ? "1fr" : "repeat(2, 1fr)", gap: "6px", marginBottom: "18px" }}>
+                        {selectedProfilePhotos.map((photo) => (
+                          <img
+                            key={photo.id}
+                            src={photo.publicUrl}
+                            alt={selectedProfile.name || "Perfil MOON"}
+                            style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
+                          />
+                        ))}
+                      </div>
+                    ) : selectedProfile.photoUrl ? (
+                      <div style={{ marginBottom: "18px" }}>
+                        <img
+                          src={selectedProfile.photoUrl}
+                          alt={selectedProfile.name || "Perfil MOON"}
+                          style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
+                        />
+                      </div>
+                    ) : null}
+
+                    <div style={{ marginBottom: "18px" }}>
+                      <h2 style={{ margin: 0, color: "#f4ead7", fontSize: "24px", fontWeight: "400", letterSpacing: "1px" }}>
+                        {selectedProfile.name || "Sem nome"}{selectedProfile.birth_date ? `, ${calculateAge(selectedProfile.birth_date)}` : ""}
+                      </h2>
+                      <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginTop: "7px" }}>
+                        {getOnlineStatus(selectedProfile.last_active_at) || "OFFLINE"}
+                        {selectedProfile.distance_km !== undefined && selectedProfile.distance_km !== null ? ` · ${formatDistance(selectedProfile.distance_km)}` : ""}
+                      </div>
+                    </div>
+
+
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", marginBottom: "18px" }}>
+                      {selectedProfile.gender && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.gender}</span></div>}
+                      {selectedProfile.sexuality && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.sexuality}</span></div>}
+                      {selectedProfile.position && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.position}</span></div>}
+                      {selectedProfile.availability && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.availability}</span></div>}
+                    </div>
+
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button type="button" onClick={() => { handleLike(selectedProfile.id, selectedProfile); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>CURTIR</button>
+                      <button type="button" onClick={() => { setSelectedProfile(null); handleChat(selectedProfile, "inside"); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>MENSAGEM</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
 
       {screen === "inside" && (
         <section
@@ -8103,182 +8753,6 @@ const filteredConversations = conversations
             >
               {message}
             </p>
-          )}
-
-          {selectedProfile && (
-            <div
-              onClick={() => setSelectedProfile(null)}
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 900,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "20px",
-                background: "rgba(0,0,0,0.88)",
-                backdropFilter: "blur(10px)",
-                overflowY: "auto",
-              }}
-            >
-              <div
-                onClick={(event) => event.stopPropagation()}
-                style={{
-                  width: "100%",
-                  maxWidth: "560px",
-                  maxHeight: "90vh",
-                  overflowY: "auto",
-                  background: "#080808",
-                  border: "1px solid #292929",
-                  padding: "18px",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    {selectedProfileFromMap && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedProfile(null);
-                          setSelectedProfileFromMap(false);
-                          setScreen("map");
-                        }}
-                        style={{ height: "30px", padding: "0 10px", border: "1px solid #c9b58a", background: "transparent", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.2px", cursor: "pointer" }}
-                      >
-                        VOLTAR AO MAPA
-                      </button>
-                    )}
-                    <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px" }}>PERFIL MOON</div>
-                  </div>
-                  <div style={{ position: "relative", display: "flex", gap: "7px", alignItems: "center" }}>
-                    <button
-                      type="button"
-                      onClick={() => setShowSelectedProfileMenu((value) => !value)}
-                      aria-label="Opções do perfil"
-                      style={{ width: "34px", height: "34px", border: "1px solid #292929", background: "transparent", color: "#c9b58a", cursor: "pointer", fontSize: "18px", lineHeight: "1" }}
-                    >
-                      ⋮
-                    </button>
-
-                    {showSelectedProfileMenu && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: "40px",
-                          right: "42px",
-                          width: "190px",
-                          background: "#0b0b0b",
-                          border: "1px solid #292929",
-                          boxShadow: "0 18px 45px rgba(0,0,0,0.55)",
-                          zIndex: 60,
-                          padding: "6px",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowSelectedProfileMenu(false);
-                            handleBlock(selectedProfile);
-                          }}
-                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
-                        >
-                          BLOQUEAR USUÁRIO
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowSelectedProfileMenu(false);
-                            setReportTarget(selectedProfile);
-                            setReportReason("");
-                            setMessage("");
-                          }}
-                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
-                        >
-                          DENUNCIAR USUÁRIO
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowSelectedProfileMenu(false);
-                            setLegalPage("privacy");
-                            setSelectedProfile(null);
-                          }}
-                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
-                        >
-                          PRIVACIDADE
-                        </button>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => { setShowSelectedProfileMenu(false); setSelectedProfile(null); }}
-                      style={{ width: "34px", height: "34px", border: "1px solid #292929", background: "transparent", color: "#c9b58a", cursor: "pointer", fontSize: "15px" }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-
-                {selectedProfileLoading ? (
-                  <MoonSkeleton rows={2} />
-                ) : (
-                  <>
-                    {selectedProfilePhotos.length > 0 ? (
-                      <div style={{ display: "grid", gridTemplateColumns: selectedProfilePhotos.length === 1 ? "1fr" : "repeat(2, 1fr)", gap: "6px", marginBottom: "18px" }}>
-                        {selectedProfilePhotos.map((photo) => (
-                          <img
-                            key={photo.id}
-                            src={photo.publicUrl}
-                            alt={selectedProfile.name || "Perfil MOON"}
-                            style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
-                          />
-                        ))}
-                      </div>
-                    ) : selectedProfile.photoUrl ? (
-                      <div style={{ marginBottom: "18px" }}>
-                        <img
-                          src={selectedProfile.photoUrl}
-                          alt={selectedProfile.name || "Perfil MOON"}
-                          style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
-                        />
-                      </div>
-                    ) : null}
-
-                    <div style={{ marginBottom: "18px" }}>
-                      <h2 style={{ margin: 0, color: "#f4ead7", fontSize: "24px", fontWeight: "400", letterSpacing: "1px" }}>
-                        {selectedProfile.name || "Sem nome"}{selectedProfile.birth_date ? `, ${calculateAge(selectedProfile.birth_date)}` : ""}
-                      </h2>
-                      <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginTop: "7px" }}>
-                        {getOnlineStatus(selectedProfile.last_active_at) || "OFFLINE"}
-                        {selectedProfile.distance_km !== undefined && selectedProfile.distance_km !== null ? ` · ${formatDistance(selectedProfile.distance_km)}` : ""}
-                      </div>
-                    </div>
-
-                    {selectedProfile.bio && (
-                      <div style={{ border: "1px solid #202020", background: "#0b0b0b", padding: "16px", marginBottom: "8px" }}>
-                        <span style={{ display: "block", color: "#77736b", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "8px" }}>SOBRE VOCÊ</span>
-                        <p style={{ margin: 0, color: "#e9dfcd", fontSize: "12px", lineHeight: "1.7" }}>{selectedProfile.bio}</p>
-                      </div>
-                    )}
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", marginBottom: "18px" }}>
-                      {selectedProfile.gender && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.gender}</span></div>}
-                      {selectedProfile.sexuality && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.sexuality}</span></div>}
-                      {selectedProfile.position && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.position}</span></div>}
-                      {selectedProfile.availability && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.availability}</span></div>}
-                    </div>
-
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button type="button" onClick={() => { handleLike(selectedProfile.id, selectedProfile); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>CURTIR</button>
-                      <button type="button" onClick={() => { setSelectedProfile(null); handleChat(selectedProfile, "inside"); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>MENSAGEM</button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
           )}
 
           {reportTarget && (
