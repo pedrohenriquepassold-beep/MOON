@@ -1150,6 +1150,14 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
+    if (await isUserBlocked(profile.id)) {
+      setMessage("Este perfil está bloqueado.");
+      setSelectedProfile(null);
+      setSelectedProfilePhotos([]);
+      setShowSelectedProfileMenu(false);
+      return;
+    }
+
     setSelectedProfile(profile);
     setShowSelectedProfileMenu(false);
     setSelectedProfileLoading(true);
@@ -1192,9 +1200,11 @@ const chatMessagesBottomRef = useRef(null);
 
       setSelectedProfilePhotos(photosWithUrl);
 
-      if (user?.id && user.id !== profile.id) {
-        supabase.from("profile_views").insert({
-          viewer_id: user.id,
+      const { data: { user: viewer } } = await supabase.auth.getUser();
+
+      if (viewer?.id && viewer.id !== profile.id) {
+        await supabase.from("profile_views").insert({
+          viewer_id: viewer.id,
           profile_id: profile.id,
         });
       }
@@ -1209,6 +1219,14 @@ const chatMessagesBottomRef = useRef(null);
   async function openProfileDetails(profile) {
     if (!profile?.id) return;
 
+    if (await isUserBlocked(profile.id)) {
+      setMessage("Este perfil está bloqueado.");
+      setSelectedProfile(null);
+      setSelectedProfilePhotos([]);
+      setShowSelectedProfileMenu(false);
+      return;
+    }
+
     // O perfil já vem completo da descoberta/mapa. Abrimos imediatamente,
     // enquanto carregamos apenas as fotos adicionais.
     setSelectedProfile(profile);
@@ -1216,9 +1234,11 @@ const chatMessagesBottomRef = useRef(null);
     setSelectedProfilePhotos([]);
     setSelectedProfileLoading(false);
 
-    if (user?.id && user.id !== profile.id) {
-      supabase.from("profile_views").insert({
-        viewer_id: user.id,
+    const { data: { user: viewer } } = await supabase.auth.getUser();
+
+    if (viewer?.id && viewer.id !== profile.id) {
+      await supabase.from("profile_views").insert({
+        viewer_id: viewer.id,
         profile_id: profile.id,
       });
     }
@@ -1305,14 +1325,7 @@ const chatMessagesBottomRef = useRef(null);
 
 
       const { data: { user } } = await supabase.auth.getUser();
-      const { data: blockedRows, error: blockedError } = await supabase
-        .from("blocked_users")
-        .select("blocked_user_id")
-        .eq("user_id", user?.id);
-
-      if (blockedError) throw blockedError;
-
-      const blockedIds = new Set((blockedRows || []).map((row) => row.blocked_user_id));
+      const blockedIds = await getBlockedUserIds(user?.id);
       const visibleProfiles = profiles.filter((profile) => !blockedIds.has(profile.id) && profile.is_hidden !== true);
 
       const { data: advertisementData, error: advertisementError } = await supabase
@@ -1585,14 +1598,7 @@ const chatMessagesBottomRef = useRef(null);
       if (error) throw error;
 
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const { data: blockedRows, error: blockedError } = await supabase
-        .from("blocked_users")
-        .select("blocked_user_id")
-        .eq("user_id", currentUser?.id);
-
-      if (blockedError) throw blockedError;
-
-      const blockedIds = new Set((blockedRows || []).map((row) => row.blocked_user_id));
+      const blockedIds = await getBlockedUserIds(currentUser?.id);
       const visibleProfiles = (data || []).filter((profile) =>
         profile.id !== currentUser?.id &&
         !blockedIds.has(profile.id) &&
@@ -1853,6 +1859,75 @@ const chatMessagesBottomRef = useRef(null);
   }
 
 
+  function isValidUuid(value) {
+    return typeof value === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
+
+  async function getBlockedUserIds(userId = null) {
+    try {
+      let currentId = userId || currentUserId;
+
+      if (!isValidUuid(currentId)) {
+        const { data: { user } } = await supabase.auth.getUser();
+        currentId = user?.id || null;
+      }
+
+      if (!isValidUuid(currentId)) {
+        return new Set();
+      }
+
+      const { data, error } = await supabase
+        .from("blocked_users")
+        .select("user_id, blocked_user_id")
+        .or(`user_id.eq.${currentId},blocked_user_id.eq.${currentId}`);
+
+      if (error) throw error;
+
+      const blockedIds = new Set();
+
+      (data || []).forEach((row) => {
+        if (row.user_id === currentId && isValidUuid(row.blocked_user_id)) {
+          blockedIds.add(row.blocked_user_id);
+        }
+
+        if (row.blocked_user_id === currentId && isValidUuid(row.user_id)) {
+          blockedIds.add(row.user_id);
+        }
+      });
+
+      return blockedIds;
+    } catch (error) {
+      console.error("ERRO AO CARREGAR BLOQUEIOS BIDIRECIONAIS:", error);
+      return new Set();
+    }
+  }
+
+  async function isUserBlocked(blockedUserId, userId = null) {
+    if (!isValidUuid(blockedUserId)) return false;
+
+    try {
+      let currentId = userId || currentUserId;
+
+      if (!isValidUuid(currentId)) {
+        const { data: { user } } = await supabase.auth.getUser();
+        currentId = user?.id || null;
+      }
+
+      if (!isValidUuid(currentId) || currentId === blockedUserId) return false;
+
+      if (blockedUsers.some((item) => item.id === blockedUserId)) {
+        return true;
+      }
+
+      const blockedIds = await getBlockedUserIds(currentId);
+      return blockedIds.has(blockedUserId);
+    } catch (error) {
+      console.error("ERRO AO VERIFICAR BLOQUEIO:", error);
+      return false;
+    }
+  }
+
   async function loadBlockedUsers() {
     setBlockedUsersLoading(true);
 
@@ -1886,6 +1961,22 @@ const chatMessagesBottomRef = useRef(null);
         .filter(Boolean);
 
       setBlockedUsers(orderedProfiles);
+
+      setNearbyProfiles((current) =>
+        current.filter((profile) => !blockedIds.includes(profile.id))
+      );
+      setMapProfiles((current) =>
+        current.filter((profile) => !blockedIds.includes(profile.id))
+      );
+      setLikedProfiles((current) =>
+        current.filter((profile) => !blockedIds.includes(profile.id))
+      );
+      setViewedProfiles((current) =>
+        current.filter((profile) => !blockedIds.includes(profile.id))
+      );
+      setConversations((current) =>
+        current.filter((conversation) => !blockedIds.includes(conversation.profile?.id))
+      );
     } catch (error) {
       console.error("ERRO AO CARREGAR BLOQUEADOS:", error);
       setMessage("Não foi possível carregar os usuários bloqueados.");
@@ -1893,6 +1984,108 @@ const chatMessagesBottomRef = useRef(null);
       setBlockedUsersLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (screen === "settings" && currentUserId) {
+      loadBlockedUsers();
+    }
+  }, [screen, currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setPinnedConversationIds([]);
+      return;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(
+        `moon_pinned_conversations_${currentUserId}`
+      );
+      const parsed = stored ? JSON.parse(stored) : [];
+      setPinnedConversationIds(
+        Array.isArray(parsed) ? parsed.filter(Boolean) : []
+      );
+    } catch (error) {
+      console.error("ERRO AO CARREGAR CONVERSAS FIXADAS:", error);
+      setPinnedConversationIds([]);
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!isValidUuid(currentUserId)) return;
+
+    const channel = supabase
+      .channel(`moon-blocks-${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "blocked_users",
+        },
+        (payload) => {
+          const row = payload?.new;
+          if (!row) return;
+
+          const affectsCurrentUser =
+            row.user_id === currentUserId ||
+            row.blocked_user_id === currentUserId;
+
+          if (!affectsCurrentUser) return;
+
+          const otherUserId =
+            row.user_id === currentUserId
+              ? row.blocked_user_id
+              : row.user_id;
+
+          if (!isValidUuid(otherUserId)) return;
+
+          setNearbyProfiles((current) =>
+            current.filter((item) => item.id !== otherUserId)
+          );
+          setMapProfiles((current) =>
+            current.filter((item) => item.id !== otherUserId)
+          );
+          setLikedProfiles((current) =>
+            current.filter((item) => item.id !== otherUserId)
+          );
+          setViewedProfiles((current) =>
+            current.filter((item) => item.id !== otherUserId)
+          );
+          setConversations((current) =>
+            current.filter(
+              (conversation) => conversation.profile?.id !== otherUserId
+            )
+          );
+
+          if (chatTarget?.id === otherUserId) {
+            setChatTarget(null);
+            setChatConversation(null);
+            setChatMessages([]);
+            setChatText("");
+            setChatTyping(false);
+            setShowChatMenu(false);
+            setScreen("inside");
+          }
+
+          if (selectedProfile?.id === otherUserId) {
+            setSelectedProfile(null);
+            setSelectedProfilePhotos([]);
+            setShowSelectedProfileMenu(false);
+          }
+
+          if (selectedMapProfile?.id === otherUserId) {
+            setSelectedMapProfile(null);
+            setSelectedMapProfileLoading(false);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, chatTarget?.id, selectedProfile?.id, selectedMapProfile?.id]);
 
   async function handleUnblock(profile) {
     if (!profile?.id) return;
@@ -1917,7 +2110,10 @@ const chatMessagesBottomRef = useRef(null);
 
       setBlockedUsers((current) => current.filter((item) => item.id !== profile.id));
       showToast({ icon: "↩", title: "Usuário desbloqueado", body: "O perfil foi desbloqueado." });
-      await loadNearbyProfiles(userLocation.latitude, userLocation.longitude);
+
+      if (userLocation.latitude !== null && userLocation.longitude !== null) {
+        await loadNearbyProfiles(userLocation.latitude, userLocation.longitude);
+      }
     } catch (error) {
       console.error("ERRO AO DESBLOQUEAR USUÁRIO:", error);
       setMessage(error.message || "Não foi possível desbloquear o usuário.");
@@ -1925,6 +2121,12 @@ const chatMessagesBottomRef = useRef(null);
   }
 
   async function handleBlock(profile) {
+    if (!isValidUuid(profile?.id)) {
+      console.error("TENTATIVA DE BLOQUEIO COM ID INVÁLIDO:", profile?.id);
+      setMessage("Não foi possível bloquear este perfil porque o ID do usuário é inválido.");
+      return;
+    }
+
     const confirmBlock = window.confirm(
       `Deseja realmente bloquear ${profile?.name || "este perfil"}?`
     );
@@ -1937,22 +2139,132 @@ const chatMessagesBottomRef = useRef(null);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não encontrado.");
 
-      const { error } = await supabase
+      if (user.id === profile.id) {
+        throw new Error("Você não pode bloquear seu próprio perfil.");
+      }
+
+      const { error: blockError } = await supabase
         .from("blocked_users")
-        .insert({ user_id: user.id, blocked_user_id: profile.id });
+        .upsert(
+          { user_id: user.id, blocked_user_id: profile.id },
+          { onConflict: "user_id,blocked_user_id", ignoreDuplicates: true }
+        );
 
-      if (error && error.code !== "23505") throw error;
+      if (blockError) throw blockError;
 
-      setNearbyProfiles((currentProfiles) =>
-        currentProfiles.filter((item) => item.id !== profile.id)
+      setBlockedUsers((current) => {
+        if (current.some((item) => item.id === profile.id)) return current;
+        return [
+          ...current,
+          {
+            id: profile.id,
+            name: profile.name || "Usuário",
+            birth_date: profile.birth_date || null,
+          },
+        ];
+      });
+
+      setNearbyProfiles((current) =>
+        current.filter((item) => item.id !== profile.id)
       );
-      showToast({ title: "Perfil bloqueado", body: "O perfil foi bloqueado." });
+      setMapProfiles((current) =>
+        current.filter((item) => item.id !== profile.id)
+      );
+      setLikedProfiles((current) =>
+        current.filter((item) => item.id !== profile.id)
+      );
+      setViewedProfiles((current) =>
+        current.filter((item) => item.id !== profile.id)
+      );
+
+      const { data: userConversations, error: conversationsError } = await supabase
+        .from("conversations")
+        .select("id, user_one_id, user_two_id")
+        .or(
+          `and(user_one_id.eq.${user.id},user_two_id.eq.${profile.id}),and(user_one_id.eq.${profile.id},user_two_id.eq.${user.id})`
+        );
+
+      if (conversationsError) throw conversationsError;
+
+      const conversationIds = (userConversations || []).map((conversation) => conversation.id);
+
+      if (conversationIds.length) {
+        const { error: deleteConversationsError } = await supabase
+          .from("conversations")
+          .delete()
+          .in("id", conversationIds);
+
+        if (deleteConversationsError) throw deleteConversationsError;
+      }
+
+      setConversations((current) =>
+        current.filter((conversation) => conversation.profile?.id !== profile.id)
+      );
+      setPinnedConversationIds((currentIds) => {
+        const conversationIdSet = new Set(conversationIds);
+        const nextIds = currentIds.filter((id) => !conversationIdSet.has(id));
+
+        try {
+          window.localStorage.setItem(
+            `moon_pinned_conversations_${user.id}`,
+            JSON.stringify(nextIds)
+          );
+        } catch (error) {
+          console.error("ERRO AO ATUALIZAR CONVERSAS FIXADAS:", error);
+        }
+
+        return nextIds;
+      });
+
+      const wasCurrentChat =
+        chatTarget?.id === profile.id ||
+        (chatConversation &&
+          (chatConversation.user_one_id === profile.id ||
+            chatConversation.user_two_id === profile.id));
+
+      if (wasCurrentChat) {
+        setChatTarget(null);
+        setChatConversation(null);
+        setChatMessages([]);
+        setChatText("");
+        setChatTyping(false);
+        setShowChatMenu(false);
+        setScreen("conversations");
+      }
+
+      if (selectedProfile?.id === profile.id) {
+        setSelectedProfile(null);
+        setSelectedProfilePhotos([]);
+        setShowSelectedProfileMenu(false);
+      }
+
+      if (selectedMapProfile?.id === profile.id) {
+        setSelectedMapProfile(null);
+        setSelectedMapProfileLoading(false);
+      }
+
+      // Depois do bloqueio, nunca deixamos a tela do perfil bloqueado aberta.
+      // O usuário volta imediatamente para a Discovery já com o perfil removido.
+      setSelectedProfile(null);
+      setSelectedProfilePhotos([]);
+      setSelectedProfileFromMap(false);
+      setShowSelectedProfileMenu(false);
+      setShowChatMenu(false);
+      setScreen("inside");
+
+      // Confirma o estado persistido no banco e mantém a lista de bloqueados
+      // sincronizada com a seção de Configurações.
+      await loadBlockedUsers();
+
+      showToast({
+        title: "Perfil bloqueado",
+        body: "O perfil foi bloqueado e removido das suas conexões.",
+      });
     } catch (error) {
       console.error("ERRO AO BLOQUEAR PERFIL:", error);
       setMessage(error.message || "Não foi possível bloquear este perfil.");
     }
   }
-
   async function handleReport(profile) {
     if (!profile?.id) return;
 
@@ -2299,13 +2611,13 @@ const chatMessagesBottomRef = useRef(null);
 
       setCurrentUserId(user.id);
 
+      const blockedIds = await getBlockedUserIds(user.id);
+
       const { data, error } = await supabase
         .from("conversations")
         .select("*")
         .or(`user_one_id.eq.${user.id},user_two_id.eq.${user.id}`)
-        .order("created_at", {
-          ascending: false,
-        });
+        .order("created_at", { ascending: false });
 
       if (error) {
         throw error;
@@ -2318,6 +2630,10 @@ const chatMessagesBottomRef = useRef(null);
               conversation.user_one_id === user.id
                 ? conversation.user_two_id
                 : conversation.user_one_id;
+
+            if (blockedIds.has(otherUserId)) {
+              return null;
+            }
 
             const { data: profile, error: profileError } =
               await supabase
@@ -2400,7 +2716,6 @@ const chatMessagesBottomRef = useRef(null);
       setConversationsLoading(false);
     }
   }
-
   async function loadLikedProfiles() {
     setLikesLoading(true);
 
@@ -2413,6 +2728,8 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Usuário não encontrado.");
       }
 
+      const blockedIds = await getBlockedUserIds(user.id);
+
       const { data, error } = await supabase
         .from("likes")
         .select("user_id, created_at")
@@ -2424,36 +2741,38 @@ const chatMessagesBottomRef = useRef(null);
       }
 
       const profiles = await Promise.all(
-        (data || []).map(async (like) => {
-          const { data: profile, error: profileError } = await supabase
-            .from("profiles")
-            .select("id, name, city, birth_date, last_active_at")
-            .eq("id", like.user_id)
-            .maybeSingle();
+        (data || [])
+          .filter((like) => !blockedIds.has(like.user_id))
+          .map(async (like) => {
+            const { data: profile, error: profileError } = await supabase
+              .from("profiles")
+              .select("id, name, city, birth_date, last_active_at")
+              .eq("id", like.user_id)
+              .maybeSingle();
 
-          if (profileError || !profile) {
-            return null;
-          }
+            if (profileError || !profile || blockedIds.has(profile.id)) {
+              return null;
+            }
 
-          const { data: photoData } = await supabase
-            .from("profile_photos")
-            .select("storage_path, is_primary")
-            .eq("user_id", profile.id)
-            .order("is_primary", { ascending: false })
-            .order("created_at", { ascending: true })
-            .limit(1);
+            const { data: photoData } = await supabase
+              .from("profile_photos")
+              .select("storage_path, is_primary")
+              .eq("user_id", profile.id)
+              .order("is_primary", { ascending: false })
+              .order("created_at", { ascending: true })
+              .limit(1);
 
-          let photoUrl = null;
+            let photoUrl = null;
 
-          if (photoData && photoData.length > 0) {
-            const { data: publicData } = supabase.storage
-              .from("profile-photos")
-              .getPublicUrl(photoData[0].storage_path);
-            photoUrl = publicData.publicUrl;
-          }
+            if (photoData && photoData.length > 0) {
+              const { data: publicData } = supabase.storage
+                .from("profile-photos")
+                .getPublicUrl(photoData[0].storage_path);
+              photoUrl = publicData.publicUrl;
+            }
 
-          return { ...profile, photoUrl };
-        })
+            return { ...profile, photoUrl };
+          })
       );
 
       setLikedProfiles(profiles.filter(Boolean));
@@ -2464,7 +2783,6 @@ const chatMessagesBottomRef = useRef(null);
       setLikesLoading(false);
     }
   }
-
   async function loadMatchedProfiles() {
     setConnectionsLoading(true);
 
@@ -2477,6 +2795,8 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Usuário não encontrado.");
       }
 
+      const blockedIds = await getBlockedUserIds(user.id);
+
       const { data, error } = await supabase
         .from("matches")
         .select("user_one_id, user_two_id, created_at")
@@ -2487,11 +2807,13 @@ const chatMessagesBottomRef = useRef(null);
         throw error;
       }
 
-      const matchedUserIds = (data || []).map((match) =>
-        match.user_one_id === user.id
-          ? match.user_two_id
-          : match.user_one_id
-      );
+      const matchedUserIds = (data || [])
+        .map((match) =>
+          match.user_one_id === user.id
+            ? match.user_two_id
+            : match.user_one_id
+        )
+        .filter((profileId) => !blockedIds.has(profileId));
 
       const profiles = await Promise.all(
         matchedUserIds.map(async (profileId) => {
@@ -2501,7 +2823,7 @@ const chatMessagesBottomRef = useRef(null);
             .eq("id", profileId)
             .maybeSingle();
 
-          if (profileError || !profile) {
+          if (profileError || !profile || blockedIds.has(profile.id)) {
             return null;
           }
 
@@ -2534,7 +2856,6 @@ const chatMessagesBottomRef = useRef(null);
       setConnectionsLoading(false);
     }
   }
-
   async function markNotificationsAsRead(type) {
     if (!currentUserId || !type) return;
 
@@ -2582,6 +2903,8 @@ const chatMessagesBottomRef = useRef(null);
   }
 
   async function handleChat(profile, origin = "inside") {
+    if (!profile?.id) return;
+
     setMessage("");
     setChatLoading(true);
 
@@ -2592,6 +2915,11 @@ const chatMessagesBottomRef = useRef(null);
 
       if (!user) {
         throw new Error("Usuário não encontrado.");
+      }
+
+      if (await isUserBlocked(profile.id, user.id)) {
+        setMessage("Este perfil está bloqueado.");
+        return;
       }
 
       const firstUserId =
@@ -2658,27 +2986,6 @@ const chatMessagesBottomRef = useRef(null);
       setChatLoading(false);
     }
   }
-
-  useEffect(() => {
-    if (!currentUserId) {
-      setPinnedConversationIds([]);
-      return;
-    }
-
-    try {
-      const storedPins = window.localStorage.getItem(
-        `moon_pinned_conversations_${currentUserId}`
-      );
-      const parsedPins = storedPins ? JSON.parse(storedPins) : [];
-      setPinnedConversationIds(
-        Array.isArray(parsedPins) ? parsedPins : []
-      );
-    } catch (error) {
-      console.error("ERRO AO CARREGAR CONVERSAS FIXADAS:", error);
-      setPinnedConversationIds([]);
-    }
-  }, [currentUserId]);
-
   function handleTogglePinnedConversation(conversationId) {
     if (!conversationId || !currentUserId) return;
 
@@ -2686,7 +2993,7 @@ const chatMessagesBottomRef = useRef(null);
       const isPinned = currentIds.includes(conversationId);
       const nextIds = isPinned
         ? currentIds.filter((id) => id !== conversationId)
-        : [...currentIds, conversationId];
+        : [conversationId, ...currentIds];
 
       try {
         window.localStorage.setItem(
@@ -2694,15 +3001,8 @@ const chatMessagesBottomRef = useRef(null);
           JSON.stringify(nextIds)
         );
       } catch (error) {
-        console.error("ERRO AO SALVAR CONVERSA FIXADA:", error);
+        console.error("ERRO AO SALVAR CONVERSAS FIXADAS:", error);
       }
-
-      showToast({
-        title: isPinned ? "Conversa desafixada" : "Conversa fixada",
-        body: isPinned
-          ? "A conversa foi retirada do topo."
-          : "A conversa ficará no topo da sua lista.",
-      });
 
       return nextIds;
     });
@@ -3452,13 +3752,9 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
-    if (nameChanged && profileNameChangedAt) {
-      const nextNameChangeAt = new Date(profileNameChangedAt).getTime() + 30 * 24 * 60 * 60 * 1000;
-      if (Date.now() < nextNameChangeAt) {
-        const daysRemaining = Math.max(1, Math.ceil((nextNameChangeAt - Date.now()) / (24 * 60 * 60 * 1000)));
-        setMessage(`Você poderá alterar seu nome novamente em ${daysRemaining} ${daysRemaining === 1 ? "dia" : "dias"}.`);
-        return;
-      }
+    if (normalizedName.length > 6) {
+      setMessage("O nome pode ter no máximo 6 caracteres.");
+      return;
     }
 
     setLoading(true);
@@ -3484,7 +3780,7 @@ const chatMessagesBottomRef = useRef(null);
           .from("profiles")
           .update({
             ...(profileDisplayName.trim() !== profileOriginalName.trim()
-              ? { name: profileDisplayName.trim(), name_changed_at: new Date().toISOString() }
+              ? { name: profileDisplayName.trim() }
               : {}),
             bio:
               profileForm.bio,
@@ -5800,9 +6096,6 @@ const filteredConversations = conversations
                   <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px", marginBottom: "7px", textAlign: "left" }}>
                     STATUS DE LEITURA
                   </div>
-                  <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6" }}>
-                    Permite mostrar quando suas mensagens foram lidas.
-                  </div>
                 </div>
                 <button type="button" onClick={async () => {
                   const nextValue = !readReceiptsEnabled;
@@ -5827,9 +6120,6 @@ const filteredConversations = conversations
                 <div>
                   <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px", marginBottom: "7px", textAlign: "left" }}>
                     OCULTAR PERFIL
-                  </div>
-                  <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6" }}>
-                    Seu perfil não aparecerá na descoberta nem no mapa enquanto estiver oculto.
                   </div>
                 </div>
                 <button
@@ -5882,9 +6172,6 @@ const filteredConversations = conversations
               <div>
                 <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px" }}>
                   SONS DE NOTIFICAÇÃO
-                </div>
-                <div style={{ color: "#77736b", fontSize: "9px", marginTop: "5px", textAlign: "left" }}>
-                  Curtidas e novas mensagens
                 </div>
               </div>
 
@@ -6684,7 +6971,7 @@ const filteredConversations = conversations
                     type="text"
                     value={profileDisplayName}
                     onChange={(event) => setProfileDisplayName(event.target.value.slice(0, 10))}
-                    maxLength={10}
+                    maxLength={6}
                     style={{
                       width: "100%",
                       height: "48px",
@@ -6715,28 +7002,18 @@ const filteredConversations = conversations
                         color: "#8f897f",
                       }}
                     >
-                      O nome pode ter no máximo 10 caracteres.
+                      O nome pode ter no máximo 6 caracteres.
                     </p>
                     <span
                       style={{
-                        color: profileDisplayName.length >= 10 ? "#c9b58a" : "#77736b",
+                        color: profileDisplayName.length >= 6 ? "#c9b58a" : "#77736b",
                         fontSize: "9px",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {profileDisplayName.length}/10
+                      {profileDisplayName.length}/6
                     </span>
                   </div>
-                  {profileNameChangedAt && (
-                    <p className="form-subtitle" style={{ marginTop: "9px", marginBottom: "0", color: "#c9b58a" }}>
-                      {(() => {
-                        const nextNameChangeAt = new Date(profileNameChangedAt).getTime() + 30 * 24 * 60 * 60 * 1000;
-                        if (Date.now() >= nextNameChangeAt) return "Seu nome pode ser alterado novamente.";
-                        const daysRemaining = Math.max(1, Math.ceil((nextNameChangeAt - Date.now()) / (24 * 60 * 60 * 1000)));
-                        return `O nome poderá ser alterado novamente em ${daysRemaining} ${daysRemaining === 1 ? "dia" : "dias"}.`;
-                      })()}
-                    </p>
-                  )}
                 </div>
 
                 <div style={{ marginBottom: "22px" }}>
