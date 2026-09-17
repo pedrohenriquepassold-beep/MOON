@@ -57,6 +57,9 @@ function App() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [ageVerified, setAgeVerified] = useState(false);
   const [message, setMessage] = useState("");
+  const [pwaInstallAvailable, setPwaInstallAvailable] = useState(false);
+  const [pwaIosInstallAvailable, setPwaIosInstallAvailable] = useState(false);
+  const deferredInstallPromptRef = useRef(null);
 
   const [toast, setToast] = useState(null);
 const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
@@ -140,6 +143,12 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [showPositionFilter, setShowPositionFilter] = useState(false);
   const [availabilityFilter, setAvailabilityFilter] = useState("");
   const [showAvailabilityFilter, setShowAvailabilityFilter] = useState(false);
+  const [filterDraftMinAge, setFilterDraftMinAge] = useState(18);
+  const [filterDraftMaxAge, setFilterDraftMaxAge] = useState(65);
+  const [filterDraftIdentity, setFilterDraftIdentity] = useState("");
+  const [filterDraftSexuality, setFilterDraftSexuality] = useState("");
+  const [filterDraftPosition, setFilterDraftPosition] = useState("");
+  const [filterDraftAvailability, setFilterDraftAvailability] = useState("");
 
   const [chatTarget, setChatTarget] = useState(null);
   const [chatConversation, setChatConversation] = useState(null);
@@ -147,6 +156,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [chatText, setChatText] = useState("");
   const [chatTyping, setChatTyping] = useState(false);
   const chatTypingTimeoutRef = useRef(null);
+  const chatChannelReadyRef = useRef(false);
   const chatRealtimeChannelRef = useRef(null);
   const chatMessagesContainerRef = useRef(null);
 const chatMessagesBottomRef = useRef(null);
@@ -312,6 +322,93 @@ const chatMessagesBottomRef = useRef(null);
       }
     };
   }, []);
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+      window.navigator.standalone === true;
+
+    const isIos = /iPad|iPhone|iPod/.test(window.navigator.userAgent) && !window.MSStream;
+
+    if (!isStandalone && isIos) {
+      setPwaIosInstallAvailable(true);
+    }
+
+    const ensureLink = (rel, href, extra = {}) => {
+      let link = document.querySelector(`link[rel="${rel}"]`);
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = rel;
+        document.head.appendChild(link);
+      }
+      link.href = href;
+      Object.entries(extra).forEach(([key, value]) => {
+        link.setAttribute(key, value);
+      });
+    };
+
+    ensureLink("manifest", "/manifest.json");
+    ensureLink("apple-touch-icon", "/apple-touch-icon.png");
+
+    let themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (!themeMeta) {
+      themeMeta = document.createElement("meta");
+      themeMeta.name = "theme-color";
+      document.head.appendChild(themeMeta);
+    }
+    themeMeta.content = "#000000";
+
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      deferredInstallPromptRef.current = event;
+      if (!isStandalone) {
+        setPwaInstallAvailable(true);
+      }
+    };
+
+    const handleAppInstalled = () => {
+      deferredInstallPromptRef.current = null;
+      setPwaInstallAvailable(false);
+      setPwaIosInstallAvailable(false);
+      setMessage("MOON adicionada ao seu dispositivo.");
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch((error) => {
+        console.warn("NÃO FOI POSSÍVEL ATIVAR O APP MOON:", error);
+      });
+    }
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  async function handleInstallMoon() {
+    const deferredPrompt = deferredInstallPromptRef.current;
+
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === "accepted") {
+        setPwaInstallAvailable(false);
+        setMessage("MOON adicionada ao seu dispositivo.");
+      }
+      deferredInstallPromptRef.current = null;
+      return;
+    }
+
+    if (pwaIosInstallAvailable) {
+      setMessage("No iPhone: toque em Compartilhar e depois em 'Adicionar à Tela de Início'.");
+      return;
+    }
+
+    setMessage("Use o menu do navegador e escolha 'Instalar MOON' ou 'Adicionar à tela inicial'.");
+  }
 
   useEffect(() => {
     if (screen !== "verificationCamera") {
@@ -1472,6 +1569,10 @@ const chatMessagesBottomRef = useRef(null);
         lastActiveAt
       ).getTime();
 
+    if (!Number.isFinite(lastActive)) {
+      return "OFFLINE";
+    }
+
     const now = statusClock;
     const difference =
       Math.max(0, now - lastActive);
@@ -1480,7 +1581,7 @@ const chatMessagesBottomRef = useRef(null);
       difference / (1000 * 60)
     );
 
-    if (minutes < 1) {
+    if (minutes < 2) {
       return "ATIVO AGORA";
     }
 
@@ -1498,6 +1599,249 @@ const chatMessagesBottomRef = useRef(null);
 
     return `ONLINE HÁ ${days} ${days === 1 ? "DIA" : "DIAS"}`;
   }
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    let cancelled = false;
+    let lastHeartbeatAt = 0;
+
+    const updateLastActive = async (force = false) => {
+      if (cancelled || document.visibilityState === "hidden") return;
+
+      const now = Date.now();
+
+      if (!force && now - lastHeartbeatAt < 15000) return;
+
+      lastHeartbeatAt = now;
+      const activeAt = new Date(now).toISOString();
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          last_active_at: activeAt,
+        })
+        .eq("id", currentUserId);
+
+      if (error) {
+        console.error("ERRO AO ATUALIZAR STATUS ATIVO:", error);
+        return;
+      }
+
+      setStatusClock(now);
+    };
+
+    const handleUserActivity = () => {
+      updateLastActive(false);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        updateLastActive(true);
+      }
+    };
+
+    const handleWindowFocus = () => {
+      updateLastActive(true);
+    };
+
+    updateLastActive(true);
+
+    const heartbeatInterval = window.setInterval(() => {
+      updateLastActive(true);
+    }, 20000);
+
+    const clockInterval = window.setInterval(() => {
+      setStatusClock(Date.now());
+    }, 5000);
+
+    window.addEventListener("pointerdown", handleUserActivity, { passive: true });
+    window.addEventListener("keydown", handleUserActivity);
+    window.addEventListener("touchstart", handleUserActivity, { passive: true });
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(heartbeatInterval);
+      window.clearInterval(clockInterval);
+      window.removeEventListener("pointerdown", handleUserActivity);
+      window.removeEventListener("keydown", handleUserActivity);
+      window.removeEventListener("touchstart", handleUserActivity);
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || screen !== "inside") return;
+
+    let cancelled = false;
+
+    const refreshVisibleProfileStatuses = async () => {
+      try {
+        const profileIds = Array.from(
+          new Set([
+            ...nearbyProfiles,
+            ...likedProfiles,
+            ...viewedProfiles,
+            ...conversations.map((conversation) => conversation.profile).filter(Boolean),
+            selectedProfile,
+          ].map((profile) => profile?.id).filter(Boolean))
+        );
+
+        if (!profileIds.length) return;
+
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, last_active_at")
+          .in("id", profileIds);
+
+        if (error) {
+          console.error("ERRO AO ATUALIZAR STATUS DOS PERFIS:", error);
+          return;
+        }
+
+        if (cancelled || !data?.length) return;
+
+        const statusMap = new Map(
+          data.map((profile) => [profile.id, profile.last_active_at])
+        );
+
+        const mergeStatus = (profile) => {
+          if (!profile?.id || !statusMap.has(profile.id)) return profile;
+          return {
+            ...profile,
+            last_active_at: statusMap.get(profile.id),
+          };
+        };
+
+        setNearbyProfiles((current) => current.map(mergeStatus));
+        setLikedProfiles((current) => current.map(mergeStatus));
+        setViewedProfiles((current) => current.map(mergeStatus));
+        setConversations((current) =>
+          current.map((conversation) =>
+            conversation.profile
+              ? { ...conversation, profile: mergeStatus(conversation.profile) }
+              : conversation
+          )
+        );
+        setSelectedProfile((current) => mergeStatus(current));
+        setStatusClock(Date.now());
+      } catch (error) {
+        console.error("ERRO AO ATUALIZAR STATUS DOS PERFIS:", error);
+      }
+    };
+
+    refreshVisibleProfileStatuses();
+    const statusRefreshInterval = window.setInterval(
+      refreshVisibleProfileStatuses,
+      15000
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(statusRefreshInterval);
+    };
+  }, [currentUserId, screen, nearbyProfiles.length, likedProfiles.length, viewedProfiles.length, conversations.length, selectedProfile?.id]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const channel = supabase
+      .channel(`moon-profile-status-${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+        },
+        (payload) => {
+          const updatedProfile = payload.new;
+
+          if (!updatedProfile?.id) return;
+
+          setNearbyProfiles((current) =>
+            current.map((profile) =>
+              profile.id === updatedProfile.id
+                ? { ...profile, ...updatedProfile }
+                : profile
+            )
+          );
+
+          setConversations((current) =>
+            current.map((conversation) =>
+              conversation.profile?.id === updatedProfile.id
+                ? {
+                    ...conversation,
+                    profile: {
+                      ...conversation.profile,
+                      ...updatedProfile,
+                    },
+                  }
+                : conversation
+            )
+          );
+
+          setLikedProfiles((current) =>
+            current.map((profile) =>
+              profile.id === updatedProfile.id
+                ? { ...profile, ...updatedProfile }
+                : profile
+            )
+          );
+
+          setViewedProfiles((current) =>
+            current.map((profile) =>
+              profile.id === updatedProfile.id
+                ? { ...profile, ...updatedProfile }
+                : profile
+            )
+          );
+
+          setSelectedProfile((current) =>
+            current?.id === updatedProfile.id
+              ? { ...current, ...updatedProfile }
+              : current
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (
+      !currentUserId ||
+      screen !== "inside" ||
+      userLocation.latitude === null ||
+      userLocation.longitude === null
+    ) {
+      return;
+    }
+
+    const refreshDiscoveryStatuses = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") {
+        loadNearbyProfiles(
+          userLocation.latitude,
+          userLocation.longitude
+        );
+      }
+    }, 60000);
+
+    return () => {
+      window.clearInterval(refreshDiscoveryStatuses);
+    };
+  }, [
+    currentUserId,
+    screen,
+    userLocation.latitude,
+    userLocation.longitude,
+  ]);
 
   function formatDistance(
     distance
@@ -1831,6 +2175,45 @@ const chatMessagesBottomRef = useRef(null);
     );
   }
 
+  function openFiltersPage() {
+    setFilterDraftMinAge(minAge);
+    setFilterDraftMaxAge(maxAge);
+    setFilterDraftIdentity(identityFilter);
+    setFilterDraftSexuality(sexualityFilter);
+    setFilterDraftPosition(positionFilter);
+    setFilterDraftAvailability(availabilityFilter);
+    setMessage("");
+    setScreen("filters");
+  }
+
+  function applyFilters() {
+    setMinAge(filterDraftMinAge);
+    setMaxAge(filterDraftMaxAge);
+    setIdentityFilter(filterDraftIdentity);
+    setSexualityFilter(filterDraftSexuality);
+    setPositionFilter(filterDraftPosition);
+    setAvailabilityFilter(filterDraftAvailability);
+    setMessage("");
+    setScreen("inside");
+  }
+
+  function cancelFilters() {
+    setMinAge(18);
+    setMaxAge(65);
+    setIdentityFilter("");
+    setSexualityFilter("");
+    setPositionFilter("");
+    setAvailabilityFilter("");
+    setFilterDraftMinAge(18);
+    setFilterDraftMaxAge(65);
+    setFilterDraftIdentity("");
+    setFilterDraftSexuality("");
+    setFilterDraftPosition("");
+    setFilterDraftAvailability("");
+    setMessage("");
+    setScreen("inside");
+  }
+
   async function refreshDiscovery() {
     setMessage("");
 
@@ -1856,6 +2239,91 @@ const chatMessagesBottomRef = useRef(null);
       title: "Descoberta atualizada",
       body: "Os perfis próximos foram atualizados.",
     });
+  }
+
+  async function handleRefreshAll() {
+    setMessage("");
+    setLocationLoading(true);
+    setDiscoveryLoading(true);
+
+    if (!navigator.geolocation) {
+      setMessage("Seu navegador não suporta localização.");
+      setLocationLoading(false);
+      setDiscoveryLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+
+          if (!user) {
+            throw new Error("Usuário não encontrado.");
+          }
+
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+          const activeAt = new Date().toISOString();
+
+          const { error } = await supabase
+            .from("profiles")
+            .update({
+              latitude,
+              longitude,
+              last_active_at: activeAt,
+              updated_at: activeAt,
+            })
+            .eq("id", user.id);
+
+          if (error) {
+            throw error;
+          }
+
+          setLocationSaved(true);
+          setUserLocation({ latitude, longitude });
+
+          await loadNearbyProfiles(latitude, longitude);
+
+          showToast({
+            title: "Atualizado",
+            body: "Localização e descoberta foram atualizadas.",
+          });
+        } catch (error) {
+          console.error("ERRO AO ATUALIZAR LOCALIZAÇÃO E DISCOVERY:", error);
+          setMessage(
+            error.message ||
+            "Não foi possível atualizar sua localização e a descoberta."
+          );
+        } finally {
+          setLocationLoading(false);
+          setDiscoveryLoading(false);
+        }
+      },
+      (error) => {
+        console.error("ERRO DE GEOLOCALIZAÇÃO:", error);
+
+        if (error.code === 1) {
+          setMessage("Permita o acesso à localização para continuar.");
+        } else if (error.code === 2) {
+          setMessage("Não foi possível encontrar sua localização.");
+        } else if (error.code === 3) {
+          setMessage("A localização demorou muito para responder.");
+        } else {
+          setMessage("Não foi possível obter sua localização.");
+        }
+
+        setLocationLoading(false);
+        setDiscoveryLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      }
+    );
   }
 
 
@@ -2507,6 +2975,28 @@ const chatMessagesBottomRef = useRef(null);
         }
       )
       .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const updatedMessage = payload.new;
+
+          if (!isMounted || !updatedMessage?.id) return;
+
+          setChatMessages((currentMessages) =>
+            currentMessages.map((message) =>
+              message.id === updatedMessage.id
+                ? { ...message, ...updatedMessage }
+                : message
+            )
+          );
+        }
+      )
+      .on(
         "broadcast",
         {
           event: "typing",
@@ -2524,7 +3014,9 @@ const chatMessagesBottomRef = useRef(null);
 
     chatRealtimeChannelRef.current = channel;
 
-    channel.subscribe();
+    channel.subscribe((status) => {
+      chatChannelReadyRef.current = status === "SUBSCRIBED";
+    });
 
     return () => {
       isMounted = false;
@@ -2534,6 +3026,18 @@ const chatMessagesBottomRef = useRef(null);
         chatTypingTimeoutRef.current = null;
       }
 
+      if (chatChannelReadyRef.current && chatRealtimeChannelRef.current && currentUserId) {
+        chatRealtimeChannelRef.current.send({
+          type: "broadcast",
+          event: "typing",
+          payload: {
+            userId: currentUserId,
+            isTyping: false,
+          },
+        });
+      }
+
+      chatChannelReadyRef.current = false;
       setChatTyping(false);
       chatRealtimeChannelRef.current = null;
       supabase.removeChannel(channel);
@@ -3089,6 +3593,18 @@ const chatMessagesBottomRef = useRef(null);
       if (error) {
         throw error;
       }
+
+      setChatMessages((currentMessages) =>
+        currentMessages.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                deleted_for_everyone: true,
+                content: "Mensagem excluída.",
+              }
+            : message
+        )
+      );
 
       showToast({
         title: "Mensagem excluída",
@@ -6067,6 +6583,37 @@ const filteredConversations = conversations
               </>
             )}
 
+            {(pwaInstallAvailable || pwaIosInstallAvailable) && (
+              <div style={{ padding: "18px", borderBottom: "1px solid #242424" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "18px" }}>
+                  <div>
+                    <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px", marginBottom: "6px" }}>
+                      ADICIONAR MOON AO CELULAR
+                    </div>
+                    <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.5" }}>
+                      Use a MOON pelo navegador ou adicione o ícone à tela inicial.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleInstallMoon}
+                    style={{
+                      minWidth: "112px",
+                      height: "38px",
+                      border: "1px solid #c9b58a",
+                      background: "#15130f",
+                      color: "#c9b58a",
+                      fontSize: "9px",
+                      letterSpacing: "1.5px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ADICIONAR
+                  </button>
+                </div>
+              </div>
+            )}
+
                     <button
               type="button"
               onClick={handleLogout}
@@ -8039,9 +8586,18 @@ const filteredConversations = conversations
                 const value = event.target.value;
                 setChatText(value);
 
-                const channel = chatRealtimeChannelRef.current;
+                if (chatTypingTimeoutRef.current) {
+                  clearTimeout(chatTypingTimeoutRef.current);
+                  chatTypingTimeoutRef.current = null;
+                }
 
-                if (channel && currentUserId) {
+                const channel = chatRealtimeChannelRef.current;
+                const canBroadcastTyping =
+                  Boolean(channel) &&
+                  Boolean(currentUserId) &&
+                  chatChannelReadyRef.current;
+
+                if (canBroadcastTyping) {
                   channel.send({
                     type: "broadcast",
                     event: "typing",
@@ -8052,15 +8608,15 @@ const filteredConversations = conversations
                   });
                 }
 
-                if (chatTypingTimeoutRef.current) {
-                  clearTimeout(chatTypingTimeoutRef.current);
-                }
-
                 if (value.trim()) {
                   chatTypingTimeoutRef.current = setTimeout(() => {
                     const activeChannel = chatRealtimeChannelRef.current;
 
-                    if (activeChannel && currentUserId) {
+                    if (
+                      activeChannel &&
+                      currentUserId &&
+                      chatChannelReadyRef.current
+                    ) {
                       activeChannel.send({
                         type: "broadcast",
                         event: "typing",
@@ -8070,7 +8626,9 @@ const filteredConversations = conversations
                         },
                       });
                     }
-                  }, 1500);
+
+                    chatTypingTimeoutRef.current = null;
+                  }, 1200);
                 }
               }}
               placeholder="Escreva uma mensagem..."
@@ -8296,6 +8854,288 @@ const filteredConversations = conversations
           )}
 
 
+      {screen === "filters" && (
+        <section
+          style={{
+            width: "100%",
+            maxWidth: "620px",
+            minHeight: "100vh",
+            padding: "35px 20px",
+            margin: "0 auto",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+              marginBottom: "35px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setMessage("");
+                setScreen("inside");
+              }}
+              title="Voltar para Discovery"
+              style={{
+                width: "42px",
+                height: "36px",
+                border: "1px solid #292929",
+                background: "#0b0b0b",
+                color: "#c9b58a",
+                fontSize: "16px",
+                cursor: "pointer",
+              }}
+            >
+              ←
+            </button>
+
+            <div
+              style={{
+                color: "#f4ead7",
+                fontSize: "15px",
+                letterSpacing: "4px",
+                textAlign: "center",
+                flex: 1,
+              }}
+            >
+              FILTROS
+            </div>
+
+            <button
+              type="button"
+              onClick={cancelFilters}
+              title="Cancelar e limpar filtros"
+              style={{
+                width: "42px",
+                height: "36px",
+                border: "1px solid #292929",
+                background: "#0b0b0b",
+                color: "#c9b58a",
+                fontSize: "17px",
+                cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          <div
+            style={{
+              border: "1px solid #292929",
+              background: "#0b0b0b",
+              padding: "20px",
+            }}
+          >
+            <p
+              style={{
+                color: "#77736b",
+                fontSize: "9px",
+                letterSpacing: "1.6px",
+                margin: "0 0 22px",
+                textAlign: "center",
+              }}
+            >
+              DEFINA COMO VOCÊ QUER ENCONTRAR PESSOAS
+            </p>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                IDADE
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>
+                  MÍNIMO
+                  <select
+                    value={filterDraftMinAge}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setFilterDraftMinAge(value);
+                      if (value > filterDraftMaxAge) setFilterDraftMaxAge(value);
+                    }}
+                    style={{
+                      width: "100%",
+                      marginTop: "6px",
+                      background: "#101010",
+                      color: "#e9dfcd",
+                      border: "1px solid #292929",
+                      padding: "11px",
+                      outline: "none",
+                    }}
+                  >
+                    {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
+                      <option key={age} value={age}>{age} anos</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>
+                  MÁXIMO
+                  <select
+                    value={filterDraftMaxAge}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setFilterDraftMaxAge(value);
+                      if (value < filterDraftMinAge) setFilterDraftMinAge(value);
+                    }}
+                    style={{
+                      width: "100%",
+                      marginTop: "6px",
+                      background: "#101010",
+                      color: "#e9dfcd",
+                      border: "1px solid #292929",
+                      padding: "11px",
+                      outline: "none",
+                    }}
+                  >
+                    {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
+                      <option key={age} value={age}>{age === 65 ? "65+" : `${age} anos`}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                IDENTIDADE
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                {["Homem cis", "Homem trans", "Não binário"].map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setFilterDraftIdentity(filterDraftIdentity === option ? "" : option)}
+                    style={{
+                      minHeight: "44px",
+                      border: filterDraftIdentity === option ? "1px solid #c9b58a" : "1px solid #292929",
+                      background: filterDraftIdentity === option ? "#15130f" : "#0b0b0b",
+                      color: filterDraftIdentity === option ? "#f4ead7" : "#c9b58a",
+                      fontSize: "9px",
+                      letterSpacing: "0.7px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                SEXUALIDADE
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
+                {["Gay", "Bissexual", "Pansexual", "Outra"].map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setFilterDraftSexuality(filterDraftSexuality === option ? "" : option)}
+                    style={{
+                      height: "44px",
+                      border: filterDraftSexuality === option ? "1px solid #c9b58a" : "1px solid #292929",
+                      background: filterDraftSexuality === option ? "#15130f" : "#0b0b0b",
+                      color: filterDraftSexuality === option ? "#f4ead7" : "#c9b58a",
+                      fontSize: "10px",
+                      letterSpacing: "1px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                POSIÇÃO
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                {["Ativo", "Passivo", "Versátil"].map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setFilterDraftPosition(filterDraftPosition === option ? "" : option)}
+                    style={{
+                      height: "44px",
+                      border: filterDraftPosition === option ? "1px solid #c9b58a" : "1px solid #292929",
+                      background: filterDraftPosition === option ? "#15130f" : "#0b0b0b",
+                      color: filterDraftPosition === option ? "#f4ead7" : "#c9b58a",
+                      fontSize: "10px",
+                      letterSpacing: "1px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "28px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                DISPONIBILIDADE
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
+                {["Agora", "Mais tarde", "Outro dia", "Conversar"].map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() =>
+                      setFilterDraftAvailability(
+                        filterDraftAvailability === option ? "" : option
+                      )
+                    }
+                    style={{
+                      height: "48px",
+                      border:
+                        filterDraftAvailability === option
+                          ? "1px solid #c9b58a"
+                          : "1px solid #292929",
+                      background:
+                        filterDraftAvailability === option
+                          ? "#15130f"
+                          : "#0b0b0b",
+                      color:
+                        filterDraftAvailability === option
+                          ? "#f4ead7"
+                          : "#c9b58a",
+                      fontSize: "10px",
+                      letterSpacing: "1px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={applyFilters}
+              style={{
+                width: "100%",
+                height: "48px",
+                border: "1px solid #c9b58a",
+                background: "#c9b58a",
+                color: "#050505",
+                fontSize: "10px",
+                letterSpacing: "2.2px",
+                cursor: "pointer",
+              }}
+            >
+              APLICAR FILTROS
+            </button>
+          </div>
+        </section>
+      )}
+
       {screen === "inside" && (
         <section
           style={{
@@ -8360,40 +9200,24 @@ const filteredConversations = conversations
           >
             <button
               type="button"
-              onClick={refreshDiscovery}
-              disabled={discoveryLoading}
-              title="Atualizar Discovery"
+              onClick={handleRefreshAll}
+              disabled={locationLoading || discoveryLoading}
+              title="Atualizar localização e Discovery"
               style={{
-                width: "42px",
+                minWidth: "112px",
                 height: "34px",
+                padding: "0 14px",
                 border: "1px solid #292929",
                 background: "#0b0b0b",
                 color: "#c9b58a",
-                fontSize: "15px",
+                fontSize: "10px",
+                fontWeight: 600,
+                letterSpacing: "1.5px",
                 cursor: "pointer",
-                opacity: discoveryLoading ? 0.55 : 1,
+                opacity: (locationLoading || discoveryLoading) ? 0.55 : 1,
               }}
             >
-              ↻
-            </button>
-
-            <button
-              type="button"
-              onClick={handleUseLocation}
-              disabled={locationLoading}
-              title="Atualizar localização"
-              style={{
-                width: "42px",
-                height: "34px",
-                border: "1px solid #292929",
-                background: "#0b0b0b",
-                color: "#c9b58a",
-                fontSize: "14px",
-                cursor: "pointer",
-                opacity: locationLoading ? 0.55 : 1,
-              }}
-            >
-              ⌖
+              {(locationLoading || discoveryLoading) ? "ATUALIZANDO..." : "↻ ATUALIZAR"}
             </button>
 
 
@@ -8412,123 +9236,43 @@ const filteredConversations = conversations
           <div
             style={{
               display: "flex",
-              gap: "8px",
-              overflowX: "auto",
-              paddingBottom: "4px",
-              marginBottom: "16px",
-              scrollbarWidth: "none",
               justifyContent: "center",
+              marginBottom: "20px",
             }}
           >
-            {[
-              ["IDADE", () => setShowAgeFilter((value) => !value), minAge !== 18 || maxAge !== 65 ? `${minAge}-${maxAge >= 65 ? "65+" : maxAge}` : ""],
-              ["IDENTIDADE", () => setShowIdentityFilter((value) => !value), identityFilter],
-              ["SEXUALIDADE", () => setShowSexualityFilter((value) => !value), sexualityFilter],
-              ["POSIÇÃO", () => setShowPositionFilter((value) => !value), positionFilter],
-              ["DISPONIBILIDADE", () => setShowAvailabilityFilter((value) => !value), availabilityFilter],
-            ].map(([label, onClick, activeValue]) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => {
-                  setMessage("");
-                  onClick();
-                }}
-                style={{
-                  flex: "0 0 auto",
-                  minWidth: "105px",
-                  height: "36px",
-                  padding: "0 12px",
-                  background: "#0b0b0b",
-                  border: "1px solid #292929",
-                  color: activeValue ? "#ffffff" : "#e9dfcd",
-                  fontSize: "8px",
-                  letterSpacing: "1.4px",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {label}{activeValue ? ` · ${activeValue}` : ""}
-              </button>
-            ))}
-          </div>
-
-          {/* FILTRO DE IDADE */}
-          {showAgeFilter && (
-            <div
+            <button
+              type="button"
+              onClick={openFiltersPage}
               style={{
-                maxWidth: "520px",
-                margin: "0 auto 18px",
-                padding: "20px",
-                border: "1px solid #292929",
-                background: "#0b0b0b",
+                minWidth: "150px",
+                height: "38px",
+                padding: "0 18px",
+                border: "1px solid #c9b58a",
+                background:
+                  identityFilter ||
+                  sexualityFilter ||
+                  positionFilter ||
+                  availabilityFilter ||
+                  minAge !== 18 ||
+                  maxAge !== 65
+                    ? "#15130f"
+                    : "#0b0b0b",
+                color: "#c9b58a",
+                fontSize: "9px",
+                letterSpacing: "1.8px",
+                cursor: "pointer",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
-                <span style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px" }}>IDADE</span>
-                <span style={{ color: "#f4ead7", fontSize: "13px" }}>{minAge} - {maxAge >= 65 ? "65+" : maxAge}</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                <label style={{ color: "#77736b", fontSize: "9px", letterSpacing: "1.5px" }}>
-                  MÍNIMO
-                  <select value={minAge} onChange={(e) => { const value = Number(e.target.value); setMinAge(value); if (value > maxAge) setMaxAge(value); }} style={{ width: "100%", marginTop: "7px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "11px", outline: "none" }}>
-                    {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => <option key={age} value={age}>{age} anos</option>)}
-                  </select>
-                </label>
-                <label style={{ color: "#77736b", fontSize: "9px", letterSpacing: "1.5px" }}>
-                  MÁXIMO
-                  <select value={maxAge} onChange={(e) => { const value = Number(e.target.value); setMaxAge(value); if (value < minAge) setMinAge(value); }} style={{ width: "100%", marginTop: "7px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "11px", outline: "none" }}>
-                    {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => <option key={age} value={age}>{age === 65 ? "65+" : `${age} anos`}</option>)}
-                  </select>
-                </label>
-              </div>
-              <button type="button" onClick={() => setShowAgeFilter(false)} style={{ marginTop: "18px", width: "100%", background: "transparent", border: "1px solid #6f5c36", color: "#c9b58a", padding: "11px", fontSize: "10px", letterSpacing: "1.8px", cursor: "pointer" }}>APLICAR FILTRO</button>
-            </div>
-          )}
-
-          {/* FILTRO DE IDENTIDADE */}
-          {showIdentityFilter && (
-            <div style={{ maxWidth: "520px", margin: "0 auto 18px", padding: "18px", border: "1px solid #292929", background: "#0b0b0b" }}>
-              <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", marginBottom: "12px" }}>IDENTIDADE</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
-                {["Homem cis", "Homem trans", "Não binário"].map((option) => (
-                  <button key={option} type="button" onClick={() => setIdentityFilter(identityFilter === option ? "" : option)} style={{ height: "44px", border: identityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: identityFilter === option ? "#15130f" : "#0b0b0b", color: identityFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "9px", letterSpacing: "0.7px", cursor: "pointer" }}>{option}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* FILTRO DE SEXUALIDADE */}
-          {showSexualityFilter && (
-            <div style={{ maxWidth: "520px", margin: "0 auto 18px", padding: "18px", border: "1px solid #292929", background: "#0b0b0b" }}>
-              <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", marginBottom: "12px" }}>SEXUALIDADE</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
-                {["Gay", "Bissexual", "Pansexual", "Outra"].map((option) => (
-                  <button key={option} type="button" onClick={() => setSexualityFilter(sexualityFilter === option ? "" : option)} style={{ height: "44px", border: sexualityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: sexualityFilter === option ? "#15130f" : "#0b0b0b", color: sexualityFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* FILTRO DE POSIÇÃO */}
-          {showPositionFilter && (
-            <div style={{ maxWidth: "520px", margin: "0 auto 18px", padding: "18px", border: "1px solid #292929", background: "#0b0b0b" }}>
-              <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", marginBottom: "12px" }}>POSIÇÃO</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
-                {["Ativo", "Passivo", "Versátil"].map((option) => (
-                  <button key={option} type="button" onClick={() => setPositionFilter(positionFilter === option ? "" : option)} style={{ height: "44px", border: positionFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: positionFilter === option ? "#15130f" : "#0b0b0b", color: positionFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {showAvailabilityFilter && (
-            <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px" }}>
-              {["Agora", "Mais tarde", "Outro dia", "Conversar"].map((option) => (
-                <button key={option} type="button" onClick={() => setAvailabilityFilter(availabilityFilter === option ? "" : option)} style={{ height: "44px", border: availabilityFilter === option ? "1px solid #c9b58a" : "1px solid #292929", background: availabilityFilter === option ? "#15130f" : "#0b0b0b", color: availabilityFilter === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
-              ))}
-            </div>
-          )}
+              {identityFilter ||
+              sexualityFilter ||
+              positionFilter ||
+              availabilityFilter ||
+              minAge !== 18 ||
+              maxAge !== 65
+                ? "FILTROS · ATIVOS"
+                : "FILTROS"}
+            </button>
+          </div>
 
           <style>{`
             .moon-discovery-grid {

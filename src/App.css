@@ -4,8 +4,8 @@
 
 body {
   margin: 0;
-  background: #050505;
-  color: #f4ead7;
+  background: #0b0a08;
+  color: #efe5d2;
   font-family: Arial, Helvetica, sans-serif;
 }
 
@@ -17,7 +17,7 @@ input {
 .moon-app {
   min-height: 100vh;
   width: 100%;
-  background: #050505;
+  background: #0b0a08;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -35,17 +35,17 @@ input {
   font-size: 76px;
   font-weight: 300;
   letter-spacing: 14px;
-  color: #f4ead7;
+  color: #f3ead9;
   margin-left: 14px;
   line-height: 1;
-  text-shadow: 0 0 35px rgba(201, 181, 138, 0.16);
+  text-shadow: 0 0 35px rgba(214, 191, 150, 0.18);
 }
 
 .moon-tagline {
   margin: 18px 0 42px;
   font-size: 13px;
   letter-spacing: 5px;
-  color: #c9b58a;
+  color: #d6bf96;
   font-weight: 400;
 }
 
@@ -63,9 +63,9 @@ input {
 .photo-section > button {
   width: 100%;
   height: 48px;
-  border: 1px solid #c9b58a;
-  background: transparent;
-  color: #f4ead7;
+  border: 1px solid #d6bf96;
+  background: #eee3cf;
+  color: #0b0a08;
   letter-spacing: 3px;
   font-size: 11px;
   cursor: pointer;
@@ -75,8 +75,8 @@ input {
 .home-buttons button:hover,
 .form-screen form button:hover,
 .photo-section > button:hover {
-  background: #c9b58a;
-  color: #050505;
+  background: #d6bf96;
+  color: #0b0a08;
 }
 
 .form-screen {
@@ -93,12 +93,12 @@ input {
   font-size: 22px;
   font-weight: 400;
   letter-spacing: 5px;
-  color: #f4ead7;
+  color: #f3ead9;
 }
 
 .form-subtitle {
   margin: 14px 0 30px;
-  color: #8e877c;
+  color: #a69d8e;
   font-size: 13px;
   letter-spacing: 1px;
 }
@@ -117,19 +117,20 @@ input {
   width: 100%;
   height: 48px;
   padding: 0 16px;
-  border: 1px solid #292929;
-  background: #0b0b0b;
-  color: #f4ead7;
+  border: 1px solid #3a352d;
+  background: #eee3cf;
+  color: #171411;
   outline: none;
   border-radius: 0;
 }
 
 .form-screen input::placeholder {
-  color: #68645d;
+  color: #817969;
 }
 
 .form-screen input:focus {
-  border-color: #c9b58a;
+  border-color: #d6bf96;
+  box-shadow: 0 0 0 1px rgba(214, 191, 150, 0.25);
 }
 
 .terms {
@@ -138,14 +139,14 @@ input {
   gap: 10px;
   text-align: left;
   margin: 4px 0 8px;
-  color: #77736b;
+  color: #a69d8e;
   font-size: 11px;
   line-height: 1.5;
 }
 
 .terms input {
   margin-top: 2px;
-  accent-color: #c9b58a;
+  accent-color: #d6bf96;
 }
 
 .form-screen form button {
@@ -156,14 +157,14 @@ input {
   margin-top: 22px;
   border: none;
   background: transparent;
-  color: #77736b;
+  color: #a69d8e;
   font-size: 11px;
   letter-spacing: 3px;
   cursor: pointer;
 }
 
 .back-button:hover {
-  color: #c9b58a;
+  color: #d6bf96;
 }
 
 /* FOTOS */
@@ -174,7 +175,7 @@ input {
 }
 
 .photo-counter {
-  color: #c9b58a;
+  color: #d6bf96;
   font-size: 11px;
   letter-spacing: 2px;
   margin: 0 0 15px;
@@ -199,19 +200,19 @@ input {
   object-fit: cover;
   display: block;
   border-radius: 4px;
-  border: 1px solid #292929;
+  border: 1px solid #3a352d;
 }
 
 .photo-card img[src] {
-  background: #0b0b0b;
+  background: #eee3cf;
 }
 
 .primary-label {
   position: absolute;
   left: 5px;
   bottom: 5px;
-  background: #c9b58a;
-  color: #050505;
+  background: #d6bf96;
+  color: #0b0a08;
   font-size: 8px;
   padding: 4px 6px;
   letter-spacing: 1px;
@@ -225,8 +226,8 @@ input {
   height: 25px;
   padding: 0;
   border: none;
-  background: rgba(5, 5, 5, 0.78);
-  color: #f4ead7;
+  background: rgba(11, 10, 8, 0.82);
+  color: #f3ead9;
   font-size: 12px;
   cursor: pointer;
 }
@@ -241,8 +242,8 @@ input {
 
 .photo-star:hover,
 .photo-delete:hover {
-  background: #c9b58a;
-  color: #050505;
+  background: #d6bf96;
+  color: #0b0a08;
 }
 
 /* BOTÃO DE ADICIONAR FOTO */
@@ -250,8 +251,8 @@ input {
 .moon-upload {
   width: 100%;
   min-height: 110px;
-  border: 1px dashed #3a352d;
-  background: #0b0b0b;
+  border: 1px dashed #625b4e;
+  background: #eee3cf;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -263,8 +264,8 @@ input {
 }
 
 .moon-upload:hover {
-  border-color: #c9b58a;
-  background: #0e0d0b;
+  border-color: #d6bf96;
+  background: #e5d9c4;
 }
 
 .moon-upload input {
@@ -272,7 +273,7 @@ input {
 }
 
 .moon-upload-icon {
-  color: #c9b58a;
+  color: #8d7a59;
   font-size: 26px;
   font-weight: 200;
   line-height: 1;
@@ -284,13 +285,13 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #f4ead7;
+  color: #171411;
   font-size: 11px;
   letter-spacing: 3px;
 }
 
 .moon-upload-subtext {
-  color: #68645d;
+  color: #6f685d;
   font-size: 9px;
   letter-spacing: 1px;
   margin-top: 7px;
@@ -307,7 +308,7 @@ input {
   height: 130px;
   object-fit: cover;
   border-radius: 50%;
-  border: 1px solid #c9b58a;
+  border: 1px solid #d6bf96;
   margin-bottom: 20px;
 }
 
