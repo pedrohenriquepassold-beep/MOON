@@ -175,6 +175,7 @@ const chatMessagesBottomRef = useRef(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [statusClock, setStatusClock] = useState(Date.now());
+  const [captureShieldActive, setCaptureShieldActive] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminStats, setAdminStats] = useState(null);
@@ -1842,6 +1843,42 @@ const chatMessagesBottomRef = useRef(null);
     return `ONLINE HÁ ${days} ${days === 1 ? "DIA" : "DIAS"}`;
   }
 
+  // Proteção de captura para fotos de perfil e mídias temporárias.
+  // A web não oferece uma API confiável para bloquear 100% screenshots/gravações.
+  // Por isso, o MOON esconde imediatamente o conteúdo protegido quando a página
+  // perde visibilidade ou foco e bloqueia as formas comuns de salvar/arrastar a mídia.
+  useEffect(() => {
+    const hideProtectedContent = () => setCaptureShieldActive(true);
+    const showProtectedContent = () => {
+      if (document.visibilityState === "visible") setCaptureShieldActive(false);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") hideProtectedContent();
+      else showProtectedContent();
+    };
+
+    const handleBlur = () => hideProtectedContent();
+    const handleFocus = () => showProtectedContent();
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  const protectedMediaProps = {
+    draggable: false,
+    onContextMenu: (event) => event.preventDefault(),
+    onDragStart: (event) => event.preventDefault(),
+    onSelect: (event) => event.preventDefault(),
+  };
+
   useEffect(() => {
     if (!currentUserId) return;
 
@@ -3299,6 +3336,26 @@ const chatMessagesBottomRef = useRef(null);
     };
   }, []);
 
+  // Liga explicitamente os streams aos elementos <video>. O estado React sozinho
+  // não atribui MediaStream ao srcObject do elemento.
+  useEffect(() => {
+    const video = videoCallLocalVideoRef.current;
+    if (!video) return;
+    video.srcObject = videoCallLocalStream || null;
+    if (videoCallLocalStream) {
+      video.play().catch(() => {});
+    }
+  }, [videoCallLocalStream]);
+
+  useEffect(() => {
+    const video = videoCallRemoteVideoRef.current;
+    if (!video) return;
+    video.srcObject = videoCallRemoteStream || null;
+    if (videoCallRemoteStream) {
+      video.play().catch(() => {});
+    }
+  }, [videoCallRemoteStream]);
+
   function formatVideoCallTime(seconds) {
     const value = Math.max(0, Number(seconds) || 0);
     return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
@@ -3349,9 +3406,18 @@ const chatMessagesBottomRef = useRef(null);
     const stream = await ensureVideoCallMedia();
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
 
+    const remoteStreamRef = new MediaStream();
     peer.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (remoteStream) setVideoCallRemoteStream(remoteStream);
+      if (event.streams?.[0]) {
+        setVideoCallRemoteStream(event.streams[0]);
+        return;
+      }
+
+      if (event.track) {
+        const alreadyAdded = remoteStreamRef.getTracks().some((track) => track.id === event.track.id);
+        if (!alreadyAdded) remoteStreamRef.addTrack(event.track);
+        setVideoCallRemoteStream(remoteStreamRef);
+      }
     };
 
     peer.onicecandidate = (event) => {
@@ -4573,6 +4639,16 @@ const chatMessagesBottomRef = useRef(null);
       setChatAudioRecording(true);
       setChatAudioSeconds(0);
 
+      const recordingStartedAt = Date.now();
+      let finalDurationSeconds = 0;
+      let stopHandled = false;
+
+      const updateAudioTimer = () => {
+        const elapsed = Math.min(120, Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1000)));
+        setChatAudioSeconds(elapsed);
+        return elapsed;
+      };
+
       recorder.ondataavailable = (event) => {
         if (event.data?.size) chatAudioChunksRef.current.push(event.data);
       };
@@ -4580,12 +4656,17 @@ const chatMessagesBottomRef = useRef(null);
       recorder.onerror = () => setMessage("Não foi possível gravar o áudio.");
 
       recorder.onstop = async () => {
+        if (stopHandled) return;
+        stopHandled = true;
+
+        finalDurationSeconds = Math.min(120, Math.max(1, updateAudioTimer()));
+
         if (chatAudioTimerRef.current) {
           clearInterval(chatAudioTimerRef.current);
           chatAudioTimerRef.current = null;
         }
         setChatAudioRecording(false);
-        setChatAudioSeconds(0);
+
         if (chatAudioStreamRef.current) {
           chatAudioStreamRef.current.getTracks().forEach((track) => track.stop());
           chatAudioStreamRef.current = null;
@@ -4597,6 +4678,7 @@ const chatMessagesBottomRef = useRef(null);
         chatAudioChunksRef.current = [];
 
         if (!audioBlob.size) {
+          setChatAudioSeconds(0);
           setMessage("O áudio ficou vazio. Tente novamente.");
           return;
         }
@@ -4613,7 +4695,7 @@ const chatMessagesBottomRef = useRef(null);
           const { data: insertedMessage, error } = await supabase.from("messages").insert({
             conversation_id: chatConversation.id,
             sender_id: currentUserId,
-            content: "Mensagem de áudio",
+            content: `Mensagem de áudio · ${formatAudioTime(finalDurationSeconds)}`,
             message_type: "audio",
             media_url: filePath,
           }).select("*").single();
@@ -4628,8 +4710,24 @@ const chatMessagesBottomRef = useRef(null);
             if (!hydratedMessage || currentMessages.some((item) => item.id === hydratedMessage.id)) return currentMessages;
             return [...currentMessages, hydratedMessage];
           });
-          showToast({ title: "Áudio enviado", body: "Sua mensagem de áudio foi enviada." });
+          setChatAudioSeconds(finalDurationSeconds);
+          showToast({ title: "Áudio enviado", body: `Duração: ${formatAudioTime(finalDurationSeconds)}.` });
         } catch (error) {
+          console.error("ERRO AO ENVIAR ÁUDIO:", error);
+          setMessage(error.message || "Não foi possível enviar o áudio.");
+        } finally {
+          setChatMediaLoading(false);
+        }
+      };
+
+      recorder.start(250);
+      chatAudioTimerRef.current = setInterval(() => {
+        const elapsed = updateAudioTimer();
+        if (elapsed >= 120 && chatAudioRecorderRef.current?.state !== "inactive") {
+          chatAudioRecorderRef.current.stop();
+        }
+      }, 250);
+    } catch (error) {
           console.error("ERRO AO ENVIAR ÁUDIO:", error);
           setMessage(error.message || "Não foi possível enviar o áudio.");
         } finally {
@@ -5684,6 +5782,27 @@ const filteredConversations = conversations
 
   return (
     <main className="moon-app">
+      {captureShieldActive && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2147483647,
+            background: "#050505",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#f4ead7",
+            fontSize: "11px",
+            letterSpacing: "2px",
+            textTransform: "uppercase",
+            pointerEvents: "all",
+          }}
+        >
+          MOON • CONTEÚDO PROTEGIDO
+        </div>
+      )}
 
       {toast && (
         <div
@@ -8847,7 +8966,7 @@ const filteredConversations = conversations
                   <div style={{ position: "absolute", zIndex: 1200, left: "50%", bottom: "16px", transform: "translateX(-50%)", width: "min(360px, calc(100% - 32px))", padding: "12px", border: "1px solid #c9b58a", background: "rgba(5,5,5,0.97)", display: "flex", alignItems: "center", gap: "12px", boxSizing: "border-box" }}>
                     <div style={{ width: "64px", height: "64px", flexShrink: 0, overflow: "hidden", border: "1px solid #292929", background: "#111" }}>
                       {selectedMapProfile.photoUrl ? (
-                        <img src={selectedMapProfile.photoUrl} alt={selectedMapProfile.name || "Perfil"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        <img src={captureShieldActive ? undefined : selectedMapProfile.photoUrl} alt={selectedMapProfile.name || "Perfil"} {...protectedMediaProps} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       ) : (
                         <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#77736b", fontSize: "18px" }}>
                           {selectedMapProfile.name?.charAt(0)?.toUpperCase() || "M"}
@@ -9390,7 +9509,7 @@ const filteredConversations = conversations
                   >
                     <div style={{ aspectRatio: "1 / 1", background: "#111", overflow: "hidden" }}>
                       {profile.photoUrl ? (
-                        <img src={profile.photoUrl} alt={profile.name || "Perfil"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        <img src={captureShieldActive ? undefined : profile.photoUrl} alt={profile.name || "Perfil"} {...protectedMediaProps} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       ) : (
                         <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#77736b", fontSize: "10px", letterSpacing: "1px" }}>
                           SEM FOTO
@@ -9437,7 +9556,7 @@ const filteredConversations = conversations
                 >
                   <div style={{ width: "100%", aspectRatio: "1 / 1", overflow: "hidden", background: "#101010" }}>
                     {profile.photoUrl ? (
-                      <img src={profile.photoUrl} alt={profile.name || "Perfil MOON"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      <img src={captureShieldActive ? undefined : profile.photoUrl} alt={profile.name || "Perfil MOON"} {...protectedMediaProps} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : (
                       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#3b3832", fontSize: "9px", letterSpacing: "1px" }}>MOON</div>
                     )}
@@ -10242,15 +10361,17 @@ const filteredConversations = conversations
                       ) : chatMessage.media_signed_url ? (
                         chatMessage.message_type === "video" ? (
                           <video
-                            src={chatMessage.media_signed_url}
+                            src={captureShieldActive ? undefined : chatMessage.media_signed_url}
                             controls
                             playsInline
+                            {...protectedMediaProps}
                             style={{ display: "block", maxWidth: "260px", maxHeight: "360px", width: "100%" }}
                           />
                         ) : (
                           <img
-                            src={chatMessage.media_signed_url}
+                            src={captureShieldActive ? undefined : chatMessage.media_signed_url}
                             alt="Mídia temporária"
+                            {...protectedMediaProps}
                             style={{ display: "block", maxWidth: "260px", maxHeight: "360px", width: "100%", objectFit: "cover" }}
                           />
                         )
@@ -10665,8 +10786,9 @@ const filteredConversations = conversations
                         {selectedProfilePhotos.map((photo) => (
                           <img
                             key={photo.id}
-                            src={photo.publicUrl}
+                            src={captureShieldActive ? undefined : photo.publicUrl}
                             alt={selectedProfile.name || "Perfil MOON"}
+                            {...protectedMediaProps}
                             style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
                           />
                         ))}
@@ -10674,8 +10796,9 @@ const filteredConversations = conversations
                     ) : selectedProfile.photoUrl ? (
                       <div style={{ marginBottom: "18px" }}>
                         <img
-                          src={selectedProfile.photoUrl}
+                          src={captureShieldActive ? undefined : selectedProfile.photoUrl}
                           alt={selectedProfile.name || "Perfil MOON"}
+                          {...protectedMediaProps}
                           style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
                         />
                       </div>
