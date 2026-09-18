@@ -160,6 +160,18 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const chatRealtimeChannelRef = useRef(null);
   const chatMessagesContainerRef = useRef(null);
 const chatMessagesBottomRef = useRef(null);
+  const chatMediaInputRef = useRef(null);
+  const chatGalleryInputRef = useRef(null);
+  const chatVideoInputRef = useRef(null);
+  const [chatMediaLoading, setChatMediaLoading] = useState(false);
+  const [chatMediaMode, setChatMediaMode] = useState(null);
+  const [chatAudioRecording, setChatAudioRecording] = useState(false);
+  const [chatAudioSeconds, setChatAudioSeconds] = useState(0);
+  const chatAudioRecorderRef = useRef(null);
+  const chatAudioChunksRef = useRef([]);
+  const chatAudioStreamRef = useRef(null);
+  const chatAudioTimerRef = useRef(null);
+  const [showChatAttachMenu, setShowChatAttachMenu] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [statusClock, setStatusClock] = useState(Date.now());
@@ -168,6 +180,13 @@ const chatMessagesBottomRef = useRef(null);
   const [adminStats, setAdminStats] = useState(null);
   const [adminReports, setAdminReports] = useState([]);
   const [adminReportsLoading, setAdminReportsLoading] = useState(false);
+  const [adminSupportTickets, setAdminSupportTickets] = useState([]);
+  const [adminSupportLoading, setAdminSupportLoading] = useState(false);
+  const [adminSupportSelected, setAdminSupportSelected] = useState(null);
+  const [adminSupportResponse, setAdminSupportResponse] = useState("");
+  const [adminSupportActionLoading, setAdminSupportActionLoading] = useState(false);
+  const [userSupportTickets, setUserSupportTickets] = useState([]);
+  const [userSupportLoading, setUserSupportLoading] = useState(false);
   const [adminActionReportId, setAdminActionReportId] = useState(null);
   const [adminAction, setAdminAction] = useState("");
   const [adminActionNote, setAdminActionNote] = useState("");
@@ -202,6 +221,23 @@ const chatMessagesBottomRef = useRef(null);
   const [chatOrigin, setChatOrigin] = useState("inside");
   const [reportTarget, setReportTarget] = useState(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
+  const [videoCallState, setVideoCallState] = useState("idle");
+  const [videoCallId, setVideoCallId] = useState(null);
+  const [videoCallSeconds, setVideoCallSeconds] = useState(0);
+  const [videoCallIncoming, setVideoCallIncoming] = useState(null);
+  const [videoCallLocalStream, setVideoCallLocalStream] = useState(null);
+  const [videoCallRemoteStream, setVideoCallRemoteStream] = useState(null);
+  const [videoCallLoading, setVideoCallLoading] = useState(false);
+  const videoCallPeerRef = useRef(null);
+  const videoCallLocalStreamRef = useRef(null);
+  const videoCallTimerRef = useRef(null);
+  const videoCallIceQueueRef = useRef([]);
+  const videoCallRoleRef = useRef(null);
+  const videoCallIdRef = useRef(null);
+  const videoCallEndingRef = useRef(false);
+  const videoCallLocalVideoRef = useRef(null);
+  const videoCallRemoteVideoRef = useRef(null);
+
   const [showSelectedProfileMenu, setShowSelectedProfileMenu] = useState(false);
   const [legalPage, setLegalPage] = useState(null);
   const [reportReason, setReportReason] = useState("");
@@ -215,6 +251,13 @@ const chatMessagesBottomRef = useRef(null);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+
+  const [supportForm, setSupportForm] = useState({
+    category: "question",
+    subject: "",
+    description: "",
+  });
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
   const [resetPasswordForm, setResetPasswordForm] = useState({
     newPassword: "",
@@ -1103,7 +1146,7 @@ const chatMessagesBottomRef = useRef(null);
     setAdminLoading(true);
     setMessage("");
     try {
-      const [users, active, likes, conversations, messages, reports, blocks] = await Promise.all([
+      const [users, active, likes, conversations, messages, reports, blocks, support] = await Promise.all([
         supabase.from("profiles").select("id", { count: "exact", head: true }),
         supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_active", true),
         supabase.from("likes").select("id", { count: "exact", head: true }),
@@ -1111,10 +1154,11 @@ const chatMessagesBottomRef = useRef(null);
         supabase.from("messages").select("id", { count: "exact", head: true }),
         supabase.from("reports").select("id", { count: "exact", head: true }),
         supabase.from("blocked_users").select("id", { count: "exact", head: true }),
+        supabase.from("support_tickets").select("id", { count: "exact", head: true }).neq("status", "resolved"),
       ]);
-      const err = [users, active, likes, conversations, messages, reports, blocks].find(r => r.error)?.error;
+      const err = [users, active, likes, conversations, messages, reports, blocks, support].find(r => r.error)?.error;
       if (err) throw err;
-      setAdminStats({ totalUsers: users.count || 0, activeUsers: active.count || 0, likes: likes.count || 0, conversations: conversations.count || 0, messages: messages.count || 0, reports: reports.count || 0, blocks: blocks.count || 0 });
+      setAdminStats({ totalUsers: users.count || 0, activeUsers: active.count || 0, likes: likes.count || 0, conversations: conversations.count || 0, messages: messages.count || 0, reports: reports.count || 0, blocks: blocks.count || 0, support: support.count || 0 });
     } catch (error) { console.error("ERRO AO CARREGAR PAINEL ADMIN:", error); setMessage(error.message || "Não foi possível carregar o painel administrativo."); }
     finally { setAdminLoading(false); }
   }
@@ -1124,6 +1168,204 @@ const chatMessagesBottomRef = useRef(null);
     if (!admin) { setMessage("Acesso restrito."); return; }
     setScreen("admin");
     await loadAdminStats();
+  }
+
+  async function handleSubmitSupportTicket(event) {
+    event?.preventDefault();
+
+    const subject = supportForm.subject.trim();
+    const description = supportForm.description.trim();
+
+    if (!subject) {
+      setMessage("Informe o assunto do chamado.");
+      return;
+    }
+
+    if (!description) {
+      setMessage("Descreva sua dúvida ou problema.");
+      return;
+    }
+
+    if (subject.length > 120) {
+      setMessage("O assunto pode ter no máximo 120 caracteres.");
+      return;
+    }
+
+    if (description.length > 3000) {
+      setMessage("A descrição pode ter no máximo 3000 caracteres.");
+      return;
+    }
+
+    setSupportSubmitting(true);
+    setMessage("");
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        setMessage("Sua sessão expirou. Entre novamente para abrir um chamado.");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("support_tickets")
+        .insert({
+          user_id: user.id,
+          category: supportForm.category,
+          subject,
+          description,
+        });
+
+      if (error) throw error;
+
+      setSupportForm({
+        category: "question",
+        subject: "",
+        description: "",
+      });
+
+      setMessage("Chamado enviado com sucesso. Nossa equipe irá analisar sua solicitação.");
+    } catch (error) {
+      console.error("ERRO AO ENVIAR CHAMADO DE SUPORTE:", error);
+      setMessage(error.message || "Não foi possível enviar seu chamado.");
+    } finally {
+      setSupportSubmitting(false);
+    }
+  }
+
+  async function loadUserSupportTickets() {
+    setUserSupportLoading(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        setUserSupportTickets([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("support_tickets")
+        .select("id, category, subject, description, status, admin_response, created_at, updated_at, resolved_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setUserSupportTickets(data || []);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR MEUS CHAMADOS:", error);
+      setMessage(error.message || "Não foi possível carregar seus chamados.");
+    } finally {
+      setUserSupportLoading(false);
+    }
+  }
+
+  async function loadAdminSupportTickets() {
+    const admin = await checkAdminStatus();
+    if (!admin) {
+      setMessage("Acesso restrito.");
+      return;
+    }
+
+    setAdminSupportLoading(true);
+    setMessage("");
+
+    try {
+      const { data: ticketRows, error: ticketError } = await supabase
+        .from("support_tickets")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (ticketError) throw ticketError;
+
+      const tickets = ticketRows || [];
+      const userIds = [...new Set(tickets.map((ticket) => ticket.user_id).filter(Boolean))];
+
+      let profiles = [];
+      if (userIds.length) {
+        const { data: profileRows, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, name, birth_date")
+          .in("id", userIds);
+
+        if (profilesError) throw profilesError;
+        profiles = profileRows || [];
+      }
+
+      const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
+
+      setAdminSupportTickets(
+        tickets.map((ticket) => ({
+          ...ticket,
+          user: profileMap.get(ticket.user_id) || null,
+        }))
+      );
+    } catch (error) {
+      console.error("ERRO AO CARREGAR SUPORTE ADMINISTRATIVO:", error);
+      setMessage(error.message || "Não foi possível carregar os chamados de suporte.");
+    } finally {
+      setAdminSupportLoading(false);
+    }
+  }
+
+  async function handleAdminSupportUpdate(ticketId, status) {
+    if (!ticketId) return;
+
+    const response = adminSupportResponse.trim();
+
+    if (status === "answered" && !response) {
+      setMessage("Escreva uma resposta antes de marcar o chamado como respondido.");
+      return;
+    }
+
+    setAdminSupportActionLoading(true);
+    setMessage("");
+
+    try {
+      const payload = {
+        status,
+        admin_response: response || null,
+        resolved_at: status === "resolved" ? new Date().toISOString() : null,
+      };
+
+      const { error } = await supabase
+        .from("support_tickets")
+        .update(payload)
+        .eq("id", ticketId);
+
+      if (error) throw error;
+
+      setAdminSupportSelected(null);
+      setAdminSupportResponse("");
+      setMessage(
+        status === "resolved"
+          ? "Chamado marcado como resolvido."
+          : status === "answered"
+            ? "Resposta enviada ao usuário."
+            : "Chamado atualizado."
+      );
+
+      await loadAdminSupportTickets();
+      await loadAdminStats();
+    } catch (error) {
+      console.error("ERRO AO ATUALIZAR CHAMADO DE SUPORTE:", error);
+      setMessage(error.message || "Não foi possível atualizar o chamado.");
+    } finally {
+      setAdminSupportActionLoading(false);
+    }
+  }
+
+  async function openAdminSupport() {
+    const admin = await checkAdminStatus();
+    if (!admin) {
+      setMessage("Acesso restrito.");
+      return;
+    }
+
+    setAdminSupportSelected(null);
+    setAdminSupportResponse("");
+    setScreen("adminSupport");
+    await loadAdminSupportTickets();
   }
 
   async function loadProfile(userId) {
@@ -1883,7 +2125,9 @@ const chatMessagesBottomRef = useRef(null);
       [name]:
         type === "checkbox"
           ? checked
-          : value,
+          : name === "name"
+            ? value.slice(0, 8)
+            : value,
     });
 
     setMessage("");
@@ -2482,6 +2726,49 @@ const chatMessagesBottomRef = useRef(null);
   useEffect(() => {
     if (!isValidUuid(currentUserId)) return;
 
+    const removeBlockedUserFromInterface = (otherUserId) => {
+      if (!isValidUuid(otherUserId) || otherUserId === currentUserId) return;
+
+      setNearbyProfiles((current) =>
+        current.filter((item) => item.id !== otherUserId)
+      );
+      setMapProfiles((current) =>
+        current.filter((item) => item.id !== otherUserId)
+      );
+      setLikedProfiles((current) =>
+        current.filter((item) => item.id !== otherUserId)
+      );
+      setViewedProfiles((current) =>
+        current.filter((item) => item.id !== otherUserId)
+      );
+      setConversations((current) =>
+        current.filter(
+          (conversation) => conversation.profile?.id !== otherUserId
+        )
+      );
+
+      if (chatTarget?.id === otherUserId) {
+        setChatTarget(null);
+        setChatConversation(null);
+        setChatMessages([]);
+        setChatText("");
+        setChatTyping(false);
+        setShowChatMenu(false);
+        setScreen("inside");
+      }
+
+      if (selectedProfile?.id === otherUserId) {
+        setSelectedProfile(null);
+        setSelectedProfilePhotos([]);
+        setShowSelectedProfileMenu(false);
+      }
+
+      if (selectedMapProfile?.id === otherUserId) {
+        setSelectedMapProfile(null);
+        setSelectedMapProfileLoading(false);
+      }
+    };
+
     const channel = supabase
       .channel(`moon-blocks-${currentUserId}`)
       .on(
@@ -2506,52 +2793,39 @@ const chatMessagesBottomRef = useRef(null);
               ? row.blocked_user_id
               : row.user_id;
 
-          if (!isValidUuid(otherUserId)) return;
+          removeBlockedUserFromInterface(otherUserId);
+        }
+      )
+      .subscribe();
 
-          setNearbyProfiles((current) =>
-            current.filter((item) => item.id !== otherUserId)
-          );
-          setMapProfiles((current) =>
-            current.filter((item) => item.id !== otherUserId)
-          );
-          setLikedProfiles((current) =>
-            current.filter((item) => item.id !== otherUserId)
-          );
-          setViewedProfiles((current) =>
-            current.filter((item) => item.id !== otherUserId)
-          );
-          setConversations((current) =>
-            current.filter(
-              (conversation) => conversation.profile?.id !== otherUserId
-            )
-          );
+    const directBlockChannel = supabase
+      .channel(`moon-direct-block-${currentUserId}`)
+      .on(
+        "broadcast",
+        { event: "user_blocked" },
+        (payload) => {
+          const blockedUserId = payload?.payload?.blockedUserId;
 
-          if (chatTarget?.id === otherUserId) {
-            setChatTarget(null);
-            setChatConversation(null);
-            setChatMessages([]);
-            setChatText("");
-            setChatTyping(false);
-            setShowChatMenu(false);
-            setScreen("inside");
+          if (!isValidUuid(blockedUserId) || blockedUserId !== currentUserId) {
+            return;
           }
 
-          if (selectedProfile?.id === otherUserId) {
-            setSelectedProfile(null);
-            setSelectedProfilePhotos([]);
-            setShowSelectedProfileMenu(false);
-          }
+          const blockerId = payload?.payload?.blockerId;
+          if (!isValidUuid(blockerId) || blockerId === currentUserId) return;
 
-          if (selectedMapProfile?.id === otherUserId) {
-            setSelectedMapProfile(null);
-            setSelectedMapProfileLoading(false);
-          }
+          removeBlockedUserFromInterface(blockerId);
+          showToast({
+            icon: "⊘",
+            title: "Usuário bloqueado",
+            body: "Este perfil não está mais disponível para você.",
+          });
         }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(directBlockChannel);
     };
   }, [currentUserId, chatTarget?.id, selectedProfile?.id, selectedMapProfile?.id]);
 
@@ -2710,6 +2984,31 @@ const chatMessagesBottomRef = useRef(null);
         setSelectedMapProfile(null);
         setSelectedMapProfileLoading(false);
       }
+
+      const directBlockChannel = supabase.channel(
+        `moon-direct-block-${profile.id}`
+      );
+
+      directBlockChannel.on(
+        "broadcast",
+        { event: "user_blocked" },
+        () => {}
+      );
+
+      await directBlockChannel.subscribe();
+
+      await directBlockChannel.send({
+        type: "broadcast",
+        event: "user_blocked",
+        payload: {
+          blockerId: user.id,
+          blockedUserId: profile.id,
+        },
+      });
+
+      window.setTimeout(() => {
+        supabase.removeChannel(directBlockChannel);
+      }, 1500);
 
       // Depois do bloqueio, nunca deixamos a tela do perfil bloqueado aberta.
       // O usuário volta imediatamente para a Discovery já com o perfil removido.
@@ -2933,6 +3232,395 @@ const chatMessagesBottomRef = useRef(null);
   }
 
   useEffect(() => {
+    return () => {
+      if (chatAudioTimerRef.current) {
+        clearInterval(chatAudioTimerRef.current);
+        chatAudioTimerRef.current = null;
+      }
+      if (chatAudioStreamRef.current) {
+        chatAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+        chatAudioStreamRef.current = null;
+      }
+      if (chatAudioRecorderRef.current && chatAudioRecorderRef.current.state !== "inactive") {
+        chatAudioRecorderRef.current.stop();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (videoCallRemoteStream && videoCallRemoteVideoRef.current) {
+      videoCallRemoteVideoRef.current.srcObject = videoCallRemoteStream;
+      videoCallRemoteVideoRef.current.play().catch(() => {});
+    }
+  }, [videoCallRemoteStream]);
+
+  useEffect(() => {
+    if (videoCallLocalStream && videoCallLocalVideoRef.current) {
+      videoCallLocalVideoRef.current.srcObject = videoCallLocalStream;
+      videoCallLocalVideoRef.current.play().catch(() => {});
+    }
+  }, [videoCallLocalStream]);
+
+  useEffect(() => {
+    if (videoCallState !== "connected") {
+      if (videoCallTimerRef.current) {
+        clearInterval(videoCallTimerRef.current);
+        videoCallTimerRef.current = null;
+      }
+      return;
+    }
+
+    videoCallTimerRef.current = setInterval(() => {
+      setVideoCallSeconds((current) => {
+        const next = current + 1;
+        if (next >= 300) {
+          setTimeout(() => endVideoCall("ended", true), 0);
+          return 300;
+        }
+        return next;
+      });
+    }, 1000);
+
+    return () => {
+      if (videoCallTimerRef.current) {
+        clearInterval(videoCallTimerRef.current);
+        videoCallTimerRef.current = null;
+      }
+    };
+  }, [videoCallState]);
+
+  useEffect(() => {
+    return () => {
+      if (videoCallTimerRef.current) clearInterval(videoCallTimerRef.current);
+      if (videoCallPeerRef.current) videoCallPeerRef.current.close();
+      if (videoCallLocalStreamRef.current) {
+        videoCallLocalStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  function formatVideoCallTime(seconds) {
+    const value = Math.max(0, Number(seconds) || 0);
+    return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  }
+
+  function getVideoCallPeer() {
+    return new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+      ],
+    });
+  }
+
+  async function ensureVideoCallMedia() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Seu navegador não permite chamadas de vídeo.");
+    }
+
+    if (videoCallLocalStreamRef.current) {
+      return videoCallLocalStreamRef.current;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" },
+      audio: true,
+    });
+
+    videoCallLocalStreamRef.current = stream;
+    setVideoCallLocalStream(stream);
+    return stream;
+  }
+
+  function sendVideoSignal(payload) {
+    const channel = chatRealtimeChannelRef.current;
+    if (!channel || !chatChannelReadyRef.current) return;
+    channel.send({
+      type: "broadcast",
+      event: "video-call",
+      payload,
+    });
+  }
+
+  async function createVideoCallPeer({ isCaller, offer = null }) {
+    const peer = getVideoCallPeer();
+    videoCallPeerRef.current = peer;
+
+    const stream = await ensureVideoCallMedia();
+    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+
+    peer.ontrack = (event) => {
+      const [remoteStream] = event.streams;
+      if (remoteStream) setVideoCallRemoteStream(remoteStream);
+    };
+
+    peer.onicecandidate = (event) => {
+      if (event.candidate) {
+        sendVideoSignal({
+          type: "ice-candidate",
+          callId: videoCallIdRef.current,
+          candidate: event.candidate,
+          senderId: currentUserId,
+        });
+      }
+    };
+
+    peer.onconnectionstatechange = () => {
+      const state = peer.connectionState;
+      if (state === "connected") {
+        setVideoCallState("connected");
+        setVideoCallLoading(false);
+      } else if (["failed", "disconnected", "closed"].includes(state)) {
+        if (!videoCallEndingRef.current) {
+          endVideoCall("ended", false);
+        }
+      }
+    };
+
+    if (isCaller) {
+      const createdOffer = await peer.createOffer();
+      await peer.setLocalDescription(createdOffer);
+      sendVideoSignal({
+        type: "offer",
+        callId: videoCallIdRef.current,
+        callerId: currentUserId,
+        receiverId: chatTarget?.id,
+        sdp: createdOffer,
+      });
+    } else if (offer) {
+      await peer.setRemoteDescription(new RTCSessionDescription(offer));
+      for (const candidate of videoCallIceQueueRef.current.splice(0)) {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+      }
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      sendVideoSignal({
+        type: "answer",
+        callId: videoCallIdRef.current,
+        senderId: currentUserId,
+        sdp: answer,
+      });
+    }
+
+    return peer;
+  }
+
+  async function handleVideoCallSignal(payload) {
+    if (!payload || !currentUserId || !chatConversation?.id) return;
+    if (payload.senderId === currentUserId) return;
+
+    if (payload.type === "offer") {
+      if (payload.receiverId !== currentUserId || payload.callId === videoCallIdRef.current) return;
+      if (videoCallState !== "idle") return;
+
+      videoCallIdRef.current = payload.callId;
+      videoCallRoleRef.current = "receiver";
+      videoCallIceQueueRef.current = [];
+      setVideoCallId(payload.callId);
+      setVideoCallIncoming({
+        callId: payload.callId,
+        callerId: payload.callerId,
+        offer: payload.sdp,
+      });
+      setVideoCallState("incoming");
+      return;
+    }
+
+    if (payload.callId !== videoCallIdRef.current) return;
+
+    if (payload.type === "answer") {
+      const peer = videoCallPeerRef.current;
+      if (!peer) return;
+      await peer.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      for (const candidate of videoCallIceQueueRef.current.splice(0)) {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+      }
+      return;
+    }
+
+    if (payload.type === "ice-candidate") {
+      const peer = videoCallPeerRef.current;
+      if (!peer || !peer.remoteDescription) {
+        videoCallIceQueueRef.current.push(payload.candidate);
+        return;
+      }
+      await peer.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(() => {});
+      return;
+    }
+
+    if (payload.type === "reject") {
+      await finishVideoCallState("rejected", false, false);
+      showToast({ title: "Chamada recusada", body: "A chamada de vídeo foi recusada." });
+      return;
+    }
+
+    if (payload.type === "end") {
+      await finishVideoCallState("ended", false, false);
+      return;
+    }
+  }
+
+  async function getVideoCallsTodayCount() {
+    if (!currentUserId) return 0;
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const { count, error } = await supabase
+      .from("video_calls")
+      .select("id", { count: "exact", head: true })
+      .eq("caller_id", currentUserId)
+      .gte("created_at", startOfToday.toISOString());
+
+    if (error) throw error;
+    return count || 0;
+  }
+
+  async function handleStartVideoCall() {
+    if (!chatConversation?.id || !chatTarget?.id || !currentUserId) return;
+    if (videoCallState !== "idle") return;
+
+    setVideoCallLoading(true);
+    setMessage("");
+
+    try {
+      const todayCount = await getVideoCallsTodayCount();
+      if (todayCount >= 5) {
+        setMessage("Você já iniciou 5 chamadas de vídeo hoje. Tente novamente amanhã.");
+        setVideoCallLoading(false);
+        return;
+      }
+
+      const { data: call, error } = await supabase
+        .from("video_calls")
+        .insert({
+          conversation_id: chatConversation.id,
+          caller_id: currentUserId,
+          receiver_id: chatTarget.id,
+          status: "calling",
+        })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      videoCallIdRef.current = call.id;
+      videoCallRoleRef.current = "caller";
+      videoCallEndingRef.current = false;
+      videoCallIceQueueRef.current = [];
+      setVideoCallId(call.id);
+      setVideoCallSeconds(0);
+      setVideoCallState("outgoing");
+
+      await ensureVideoCallMedia();
+      await createVideoCallPeer({ isCaller: true });
+    } catch (error) {
+      console.error("ERRO AO INICIAR CHAMADA DE VÍDEO:", error);
+      await finishVideoCallState("ended", false, false);
+      setMessage(error?.name === "NotAllowedError" ? "Permita o acesso à câmera e ao microfone para fazer a chamada." : error.message || "Não foi possível iniciar a chamada de vídeo.");
+    } finally {
+      setVideoCallLoading(false);
+    }
+  }
+
+  async function handleAcceptVideoCall() {
+    if (!videoCallIncoming?.callId || !currentUserId) return;
+
+    setVideoCallLoading(true);
+    setMessage("");
+
+    try {
+      videoCallEndingRef.current = false;
+      await ensureVideoCallMedia();
+      await createVideoCallPeer({
+        isCaller: false,
+        offer: videoCallIncoming.offer,
+      });
+
+      const { error } = await supabase
+        .from("video_calls")
+        .update({ status: "accepted" })
+        .eq("id", videoCallIncoming.callId);
+
+      if (error) throw error;
+
+      setVideoCallIncoming(null);
+      setVideoCallState("connected");
+      setVideoCallSeconds(0);
+    } catch (error) {
+      console.error("ERRO AO ACEITAR CHAMADA DE VÍDEO:", error);
+      sendVideoSignal({ type: "reject", callId: videoCallIncoming.callId, senderId: currentUserId });
+      await finishVideoCallState("rejected", false, false);
+      setMessage(error?.name === "NotAllowedError" ? "Permita o acesso à câmera e ao microfone para atender a chamada." : error.message || "Não foi possível atender a chamada.");
+    } finally {
+      setVideoCallLoading(false);
+    }
+  }
+
+  async function handleRejectVideoCall() {
+    const callId = videoCallIncoming?.callId || videoCallIdRef.current;
+    if (!callId) return;
+    sendVideoSignal({ type: "reject", callId, senderId: currentUserId });
+    await finishVideoCallState("rejected", false, false);
+  }
+
+  async function finishVideoCallState(status = "ended", notifyPeer = false, showEndedToast = false) {
+    const callId = videoCallIdRef.current;
+    videoCallEndingRef.current = true;
+
+    if (notifyPeer && callId) {
+      sendVideoSignal({ type: "end", callId, senderId: currentUserId });
+    }
+
+    if (callId) {
+      await supabase
+        .from("video_calls")
+        .update({
+          status,
+          ended_at: new Date().toISOString(),
+          duration_seconds: Math.min(300, Math.max(0, videoCallSeconds)),
+        })
+        .eq("id", callId);
+    }
+
+    if (videoCallTimerRef.current) {
+      clearInterval(videoCallTimerRef.current);
+      videoCallTimerRef.current = null;
+    }
+
+    if (videoCallPeerRef.current) {
+      videoCallPeerRef.current.onconnectionstatechange = null;
+      videoCallPeerRef.current.close();
+      videoCallPeerRef.current = null;
+    }
+
+    if (videoCallLocalStreamRef.current) {
+      videoCallLocalStreamRef.current.getTracks().forEach((track) => track.stop());
+      videoCallLocalStreamRef.current = null;
+    }
+
+    setVideoCallLocalStream(null);
+    setVideoCallRemoteStream(null);
+    setVideoCallIncoming(null);
+    setVideoCallState("idle");
+    setVideoCallId(null);
+    setVideoCallSeconds(0);
+    videoCallIdRef.current = null;
+    videoCallRoleRef.current = null;
+    videoCallIceQueueRef.current = [];
+    videoCallEndingRef.current = false;
+
+    if (showEndedToast) {
+      showToast({ title: "Chamada encerrada", body: "O limite de 5 minutos foi atingido." });
+    }
+  }
+
+  async function endVideoCall(status = "ended", notifyPeer = true) {
+    if (videoCallEndingRef.current) return;
+    await finishVideoCallState(status, notifyPeer, true);
+  }
+
+  useEffect(() => {
     if (screen !== "chat" || !chatConversation?.id) {
       return;
     }
@@ -2961,12 +3649,16 @@ const chatMessagesBottomRef = useRef(null);
 
           if (!isMounted || !newMessage?.id) return;
 
-          setChatMessages((currentMessages) => {
-            if (currentMessages.some((message) => message.id === newMessage.id)) {
-              return currentMessages;
-            }
+          hydrateChatMessages([newMessage]).then(([hydratedMessage]) => {
+            if (!isMounted || !hydratedMessage?.id) return;
 
-            return [...currentMessages, newMessage];
+            setChatMessages((currentMessages) => {
+              if (currentMessages.some((message) => message.id === hydratedMessage.id)) {
+                return currentMessages;
+              }
+
+              return [...currentMessages, hydratedMessage];
+            });
           });
 
           if (newMessage.sender_id !== currentUserId) {
@@ -3010,6 +3702,18 @@ const chatMessagesBottomRef = useRef(null);
 
           setChatTyping(Boolean(payload?.payload?.isTyping));
         }
+      )
+      .on(
+        "broadcast",
+        {
+          event: "video-call",
+        },
+        (payload) => {
+          if (!isMounted) return;
+          handleVideoCallSignal(payload?.payload).catch((error) => {
+            console.error("ERRO AO PROCESSAR SINAL DA CHAMADA:", error);
+          });
+        }
       );
 
     chatRealtimeChannelRef.current = channel;
@@ -3044,6 +3748,42 @@ const chatMessagesBottomRef = useRef(null);
     };
   }, [screen, chatConversation?.id, currentUserId]);
 
+  async function hydrateChatMessages(messages) {
+    const now = Date.now();
+
+    return Promise.all(
+      (messages || []).map(async (chatMessage) => {
+        if (chatMessage.message_type !== "image" && chatMessage.message_type !== "video" && chatMessage.message_type !== "audio") {
+          return chatMessage;
+        }
+
+        if (!chatMessage.media_url) {
+          return chatMessage;
+        }
+
+        if (chatMessage.media_expires_at && new Date(chatMessage.media_expires_at).getTime() <= now) {
+          return { ...chatMessage, media_signed_url: null, media_expired: true };
+        }
+
+        try {
+          const { data, error } = await supabase.storage
+            .from("chat-media")
+            .createSignedUrl(chatMessage.media_url, 60 * 60);
+
+          if (error) throw error;
+
+          return {
+            ...chatMessage,
+            media_signed_url: data?.signedUrl || null,
+          };
+        } catch (error) {
+          console.error("ERRO AO GERAR URL TEMPORÁRIA DA MÍDIA:", error);
+          return { ...chatMessage, media_signed_url: null };
+        }
+      })
+    );
+  }
+
   async function loadMessages(conversationId) {
     const { data, error } = await supabase
       .from("messages")
@@ -3061,7 +3801,8 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
-    setChatMessages(data || []);
+    const hydratedMessages = await hydrateChatMessages(data || []);
+    setChatMessages(hydratedMessages);
     await markConversationAsRead(conversationId);
   }
 
@@ -3641,17 +4382,27 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Usuário não encontrado.");
       }
 
-      const { error } = await supabase
+      const { data: insertedMessage, error } = await supabase
         .from("messages")
         .insert({
           conversation_id: chatConversation.id,
           sender_id: user.id,
           content,
-        });
+          message_type: "text",
+        })
+        .select("*")
+        .single();
 
       if (error) {
         throw error;
       }
+
+      setChatMessages((currentMessages) => {
+        if (!insertedMessage || currentMessages.some((message) => message.id === insertedMessage.id)) {
+          return currentMessages;
+        }
+        return [...currentMessages, insertedMessage];
+      });
 
       setChatText("");
       showToast({
@@ -3667,6 +4418,312 @@ const chatMessagesBottomRef = useRef(null);
       setMessage(
         error.message ||
         "Não foi possível enviar a mensagem."
+      );
+    }
+  }
+
+  function openChatMediaPicker(mode) {
+    setShowChatAttachMenu(false);
+    setChatMediaMode(mode);
+
+    if (mode === "video") {
+      chatVideoInputRef.current?.click();
+      return;
+    }
+
+    if (mode === "gallery") {
+      chatGalleryInputRef.current?.click();
+      return;
+    }
+
+    chatMediaInputRef.current?.click();
+  }
+
+  async function handleChatMediaChange(event) {
+    const file = event.target.files?.[0];
+    const mode = chatMediaMode;
+
+    if (!file || !chatConversation?.id || !currentUserId) {
+      event.target.value = "";
+      return;
+    }
+
+    const isImage = file.type.startsWith("image/");
+    const isVideo = file.type.startsWith("video/");
+
+    if (!isImage && !isVideo) {
+      setMessage("Escolha uma foto ou vídeo.");
+      event.target.value = "";
+      return;
+    }
+
+    if (mode === "camera" && !isImage) {
+      setMessage("A câmera rápida aceita fotos.");
+      event.target.value = "";
+      return;
+    }
+
+    if (mode === "video" && !isVideo) {
+      setMessage("Escolha um vídeo para enviar.");
+      event.target.value = "";
+      return;
+    }
+
+    const maxSize = isVideo ? 50 * 1024 * 1024 : 15 * 1024 * 1024;
+
+    if (file.size > maxSize) {
+      setMessage(
+        isVideo
+          ? "O vídeo deve ter no máximo 50 MB."
+          : "A foto deve ter no máximo 15 MB."
+      );
+      event.target.value = "";
+      return;
+    }
+
+    setChatMediaLoading(true);
+    setMessage("");
+
+    try {
+      const extension =
+        file.name.split(".").pop()?.toLowerCase() ||
+        (isVideo ? "mp4" : "jpg");
+      const fileName = `${crypto.randomUUID()}.${extension}`;
+      const filePath = `${currentUserId}/${chatConversation.id}/${fileName}`;
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      const { error: uploadError } = await supabase.storage
+        .from("chat-media")
+        .upload(filePath, file, {
+          contentType: file.type,
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: insertedMessage, error } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: chatConversation.id,
+          sender_id: currentUserId,
+          content: file.name,
+          message_type: isVideo ? "video" : "image",
+          media_url: filePath,
+          media_expires_at: expiresAt,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        await supabase.storage.from("chat-media").remove([filePath]);
+        throw error;
+      }
+
+      const [hydratedMessage] = await hydrateChatMessages([insertedMessage]);
+
+      setChatMessages((currentMessages) => {
+        if (!hydratedMessage || currentMessages.some((item) => item.id === hydratedMessage.id)) {
+          return currentMessages;
+        }
+        return [...currentMessages, hydratedMessage];
+      });
+
+      showToast({
+        title: isVideo ? "Vídeo enviado" : "Foto enviada",
+        body: "Esta mídia ficará disponível por 10 minutos.",
+      });
+    } catch (error) {
+      console.error("ERRO AO ENVIAR MÍDIA DA CONVERSA:", error);
+      setMessage(
+        error.message ||
+        "Não foi possível enviar a mídia."
+      );
+    } finally {
+      setChatMediaLoading(false);
+      setChatMediaMode(null);
+      event.target.value = "";
+    }
+  }
+
+  async function handleSendAudio() {
+    if (!chatConversation?.id || !currentUserId) return;
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setMessage("Seu navegador não permite gravar áudio.");
+      return;
+    }
+
+    if (chatAudioRecording) {
+      if (chatAudioRecorderRef.current && chatAudioRecorderRef.current.state !== "inactive") {
+        chatAudioRecorderRef.current.stop();
+      }
+      return;
+    }
+
+    setMessage("");
+    chatAudioChunksRef.current = [];
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chatAudioStreamRef.current = stream;
+      const mimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+      const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported?.(type));
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      chatAudioRecorderRef.current = recorder;
+      setChatAudioRecording(true);
+      setChatAudioSeconds(0);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) chatAudioChunksRef.current.push(event.data);
+      };
+
+      recorder.onerror = () => setMessage("Não foi possível gravar o áudio.");
+
+      recorder.onstop = async () => {
+        if (chatAudioTimerRef.current) {
+          clearInterval(chatAudioTimerRef.current);
+          chatAudioTimerRef.current = null;
+        }
+        setChatAudioRecording(false);
+        setChatAudioSeconds(0);
+        if (chatAudioStreamRef.current) {
+          chatAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+          chatAudioStreamRef.current = null;
+        }
+
+        const finalMimeType = recorder.mimeType || "audio/webm";
+        const extension = finalMimeType.includes("mp4") ? "m4a" : "webm";
+        const audioBlob = new Blob(chatAudioChunksRef.current, { type: finalMimeType });
+        chatAudioChunksRef.current = [];
+
+        if (!audioBlob.size) {
+          setMessage("O áudio ficou vazio. Tente novamente.");
+          return;
+        }
+
+        setChatMediaLoading(true);
+        try {
+          const filePath = `${currentUserId}/${chatConversation.id}/${crypto.randomUUID()}.${extension}`;
+          const { error: uploadError } = await supabase.storage.from("chat-media").upload(filePath, audioBlob, {
+            contentType: finalMimeType,
+            upsert: false,
+          });
+          if (uploadError) throw uploadError;
+
+          const { data: insertedMessage, error } = await supabase.from("messages").insert({
+            conversation_id: chatConversation.id,
+            sender_id: currentUserId,
+            content: "Mensagem de áudio",
+            message_type: "audio",
+            media_url: filePath,
+          }).select("*").single();
+
+          if (error) {
+            await supabase.storage.from("chat-media").remove([filePath]);
+            throw error;
+          }
+
+          const [hydratedMessage] = await hydrateChatMessages([insertedMessage]);
+          setChatMessages((currentMessages) => {
+            if (!hydratedMessage || currentMessages.some((item) => item.id === hydratedMessage.id)) return currentMessages;
+            return [...currentMessages, hydratedMessage];
+          });
+          showToast({ title: "Áudio enviado", body: "Sua mensagem de áudio foi enviada." });
+        } catch (error) {
+          console.error("ERRO AO ENVIAR ÁUDIO:", error);
+          setMessage(error.message || "Não foi possível enviar o áudio.");
+        } finally {
+          setChatMediaLoading(false);
+        }
+      };
+
+      recorder.start();
+      chatAudioTimerRef.current = setInterval(() => {
+        setChatAudioSeconds((current) => {
+          const next = current + 1;
+          if (next >= 120) {
+            if (chatAudioRecorderRef.current?.state !== "inactive") chatAudioRecorderRef.current.stop();
+            return 120;
+          }
+          return next;
+        });
+      }, 1000);
+    } catch (error) {
+      console.error("ERRO AO INICIAR GRAVAÇÃO:", error);
+      if (chatAudioStreamRef.current) {
+        chatAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+        chatAudioStreamRef.current = null;
+      }
+      setChatAudioRecording(false);
+      setChatAudioSeconds(0);
+      setMessage(error?.name === "NotAllowedError" ? "Permita o acesso ao microfone para gravar áudio." : error.message || "Não foi possível iniciar a gravação.");
+    }
+  }
+
+  function formatAudioTime(seconds) {
+    const value = Math.max(0, Number(seconds) || 0);
+    return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  }
+
+  async function handleSendLocation() {
+    if (!chatConversation?.id || !currentUserId) return;
+
+    setShowChatAttachMenu(false);
+    setMessage("");
+
+    if (!navigator.geolocation) {
+      setMessage("Seu dispositivo não oferece localização pelo navegador.");
+      return;
+    }
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+
+      const { data: insertedMessage, error } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: chatConversation.id,
+          sender_id: currentUserId,
+          content: "Localização compartilhada",
+          message_type: "location",
+          latitude,
+          longitude,
+        })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      setChatMessages((currentMessages) => {
+        if (!insertedMessage || currentMessages.some((item) => item.id === insertedMessage.id)) {
+          return currentMessages;
+        }
+        return [...currentMessages, insertedMessage];
+      });
+
+      showToast({
+        title: "Localização enviada",
+        body: "Sua localização atual foi compartilhada na conversa.",
+      });
+    } catch (error) {
+      console.error("ERRO AO ENVIAR LOCALIZAÇÃO:", error);
+      const code = error?.code;
+      setMessage(
+        code === 1
+          ? "Permissão de localização negada."
+          : code === 2
+            ? "Não foi possível encontrar sua localização."
+            : code === 3
+              ? "A localização demorou demais para responder."
+              : error.message || "Não foi possível enviar a localização."
       );
     }
   }
@@ -4045,6 +5102,18 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
+    const normalizedName = form.name.trim();
+
+    if (!normalizedName) {
+      setMessage("Informe seu nome.");
+      return;
+    }
+
+    if (normalizedName.length > 8) {
+      setMessage("O nome pode ter no máximo 8 caracteres.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -4078,7 +5147,7 @@ const chatMessagesBottomRef = useRef(null);
           .from("profiles")
           .insert({
             id: data.user.id,
-            name: form.name,
+            name: form.name.trim(),
             birth_date:
               form.birthDate,
           });
@@ -4269,7 +5338,7 @@ const chatMessagesBottomRef = useRef(null);
     }
 
     if (normalizedName.length > 6) {
-      setMessage("O nome pode ter no máximo 6 caracteres.");
+      setMessage("O nome pode ter no máximo 8 caracteres.");
       return;
     }
 
@@ -4977,18 +6046,49 @@ const filteredConversations = conversations
             }
           >
 
-            <input
-              type="text"
-              name="name"
-              placeholder="Nome ou apelido"
-              value={
-                form.name
-              }
-              onChange={
-                handleChange
-              }
-              required
-            />
+            <div style={{ marginBottom: "18px" }}>
+              <input
+                type="text"
+                name="name"
+                placeholder="Nome ou apelido"
+                value={
+                  form.name
+                }
+                onChange={
+                  handleChange
+                }
+                maxLength={8}
+                required
+              />
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginTop: "7px",
+                  padding: "0 2px",
+                }}
+              >
+                <span
+                  style={{
+                    color: "#77736b",
+                    fontSize: "9px",
+                    letterSpacing: "0.2px",
+                  }}
+                >
+                  Seu nome pode ter no máximo 8 caracteres.
+                </span>
+                <span
+                  style={{
+                    color: form.name.length >= 8 ? "#c9b58a" : "#77736b",
+                    fontSize: "9px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {form.name.length}/8
+                </span>
+              </div>
+            </div>
 
             <input
               type="date"
@@ -5657,6 +6757,250 @@ const filteredConversations = conversations
         </section>
       )}
 
+      {screen === "support" && (
+        <main className="moon-page" onLoad={loadUserSupportTickets}>
+          <section className="moon-panel" style={{ maxWidth: "700px", margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "28px", flexWrap: "wrap" }}>
+              <div>
+                <div className="moon-eyebrow">MOON</div>
+                <h1>Suporte</h1>
+                <p>Estamos aqui para ajudar.</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => { setScreen("settings"); setMessage(""); }}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "999px",
+                  border: "1px solid rgba(214, 185, 125, 0.28)",
+                  background: "transparent",
+                  color: "#d6b97d",
+                  fontSize: "10px",
+                  fontWeight: 600,
+                  letterSpacing: "0.16em",
+                  cursor: "pointer",
+                }}
+              >
+                ← VOLTAR
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitSupportTicket} style={{ display: "grid", gap: "16px" }}>
+              <label style={{ display: "grid", gap: "8px" }}>
+                <span style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.6px" }}>
+                  CATEGORIA
+                </span>
+                <select
+                  value={supportForm.category}
+                  onChange={(event) =>
+                    setSupportForm((current) => ({
+                      ...current,
+                      category: event.target.value,
+                    }))
+                  }
+                  disabled={supportSubmitting}
+                  style={{
+                    width: "100%",
+                    minHeight: "48px",
+                    padding: "0 14px",
+                    border: "1px solid #242424",
+                    borderRadius: "10px",
+                    background: "#090909",
+                    color: "#f4ead7",
+                    fontSize: "12px",
+                    outline: "none",
+                  }}
+                >
+                  <option value="account">Problema com minha conta</option>
+                  <option value="app">Problema no aplicativo</option>
+                  <option value="security">Segurança</option>
+                  <option value="report">Denúncia</option>
+                  <option value="privacy">Privacidade</option>
+                  <option value="question">Dúvida</option>
+                  <option value="other">Outro assunto</option>
+                </select>
+              </label>
+
+              <label style={{ display: "grid", gap: "8px" }}>
+                <span style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.6px" }}>
+                  ASSUNTO
+                </span>
+                <input
+                  type="text"
+                  value={supportForm.subject}
+                  onChange={(event) =>
+                    setSupportForm((current) => ({
+                      ...current,
+                      subject: event.target.value.slice(0, 120),
+                    }))
+                  }
+                  maxLength={120}
+                  placeholder="Ex.: Não consigo entrar na minha conta"
+                  disabled={supportSubmitting}
+                  style={{
+                    width: "100%",
+                    minHeight: "48px",
+                    padding: "0 14px",
+                    border: "1px solid #242424",
+                    borderRadius: "10px",
+                    background: "#090909",
+                    color: "#f4ead7",
+                    fontSize: "12px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+                <div style={{ display: "flex", justifyContent: "flex-end", color: "#55524d", fontSize: "9px", letterSpacing: "0.8px" }}>
+                  {supportForm.subject.length}/120
+                </div>
+              </label>
+
+              <label style={{ display: "grid", gap: "8px" }}>
+                <span style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.6px" }}>
+                  DESCRIÇÃO
+                </span>
+                <textarea
+                  value={supportForm.description}
+                  onChange={(event) =>
+                    setSupportForm((current) => ({
+                      ...current,
+                      description: event.target.value.slice(0, 3000),
+                    }))
+                  }
+                  maxLength={3000}
+                  rows={8}
+                  placeholder="Descreva sua dúvida ou o problema com o máximo de detalhes possível."
+                  disabled={supportSubmitting}
+                  style={{
+                    width: "100%",
+                    padding: "14px",
+                    border: "1px solid #242424",
+                    borderRadius: "10px",
+                    background: "#090909",
+                    color: "#f4ead7",
+                    fontSize: "12px",
+                    lineHeight: "1.6",
+                    outline: "none",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <div style={{ display: "flex", justifyContent: "flex-end", color: "#55524d", fontSize: "9px", letterSpacing: "0.8px" }}>
+                  {supportForm.description.length}/3000
+                </div>
+              </label>
+
+              <div style={{ marginTop: "4px", padding: "14px", border: "1px solid #242424", background: "#090909", color: "#77736b", fontSize: "10px", lineHeight: "1.6" }}>
+                Envie apenas informações necessárias para que nossa equipe consiga entender e resolver sua solicitação.
+              </div>
+
+              <button
+                type="submit"
+                disabled={supportSubmitting}
+                style={{
+                  width: "100%",
+                  minHeight: "50px",
+                  border: "1px solid #c9b58a",
+                  borderRadius: "10px",
+                  background: "#15130f",
+                  color: "#c9b58a",
+                  fontSize: "10px",
+                  fontWeight: 600,
+                  letterSpacing: "1.6px",
+                  cursor: supportSubmitting ? "default" : "pointer",
+                  opacity: supportSubmitting ? 0.6 : 1,
+                }}
+              >
+                {supportSubmitting ? "ENVIANDO..." : "ENVIAR CHAMADO"}
+              </button>
+            </form>
+
+            <div style={{ marginTop: "34px", paddingTop: "26px", borderTop: "1px solid rgba(255,255,255,.08)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "14px", flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ color: "#d6b97d", fontSize: "9px", letterSpacing: ".16em" }}>MEUS CHAMADOS</div>
+                  <div style={{ color: "#77736c", fontSize: "10px", marginTop: "5px" }}>Acompanhe suas solicitações e respostas da equipe.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadUserSupportTickets}
+                  disabled={userSupportLoading}
+                  style={{
+                    padding: "9px 13px",
+                    borderRadius: "999px",
+                    border: "1px solid rgba(214,185,125,.25)",
+                    background: "transparent",
+                    color: "#d6b97d",
+                    fontSize: "9px",
+                    letterSpacing: ".12em",
+                    cursor: userSupportLoading ? "default" : "pointer",
+                    opacity: userSupportLoading ? .6 : 1,
+                  }}
+                >
+                  {userSupportLoading ? "ATUALIZANDO..." : "ATUALIZAR"}
+                </button>
+              </div>
+
+              {userSupportLoading && userSupportTickets.length === 0 ? (
+                <div style={{ color: "#77736c", fontSize: "10px", padding: "18px 0" }}>Carregando seus chamados...</div>
+              ) : userSupportTickets.length === 0 ? (
+                <div style={{ border: "1px solid rgba(255,255,255,.08)", borderRadius: "12px", padding: "22px", color: "#77736c", fontSize: "10px", lineHeight: "1.6" }}>
+                  Você ainda não abriu nenhum chamado.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {userSupportTickets.map((ticket) => {
+                    const statusLabel = ticket.status === "open"
+                      ? "ABERTO"
+                      : ticket.status === "in_progress"
+                        ? "EM ANÁLISE"
+                        : ticket.status === "answered"
+                          ? "RESPONDIDO"
+                          : "RESOLVIDO";
+
+                    const categoryLabel = {
+                      account: "CONTA", app: "APLICATIVO", security: "SEGURANÇA", report: "DENÚNCIA",
+                      privacy: "PRIVACIDADE", question: "DÚVIDA", other: "OUTRO",
+                    }[ticket.category] || "OUTRO";
+
+                    return (
+                      <article key={ticket.id} style={{ border: "1px solid rgba(255,255,255,.09)", borderRadius: "12px", padding: "16px", background: "rgba(255,255,255,.02)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ color: "#f4ead7", fontSize: "12px", fontWeight: 600 }}>{ticket.subject}</div>
+                            <div style={{ color: "#77736c", fontSize: "9px", marginTop: "6px", letterSpacing: ".08em" }}>
+                              {categoryLabel} · {ticket.created_at ? new Date(ticket.created_at).toLocaleString("pt-BR") : ""}
+                            </div>
+                          </div>
+                          <span style={{ padding: "6px 9px", borderRadius: "999px", border: "1px solid rgba(214,185,125,.22)", color: "#d6b97d", fontSize: "8px", letterSpacing: ".12em", whiteSpace: "nowrap" }}>
+                            {statusLabel}
+                          </span>
+                        </div>
+
+                        <div style={{ marginTop: "14px", padding: "12px", background: "#090909", border: "1px solid #202020", color: "#aaa49a", fontSize: "10px", lineHeight: "1.65", whiteSpace: "pre-wrap" }}>
+                          {ticket.description}
+                        </div>
+
+                        {ticket.admin_response ? (
+                          <div style={{ marginTop: "12px", padding: "13px", background: "rgba(214,185,125,.045)", border: "1px solid rgba(214,185,125,.16)" }}>
+                            <div style={{ color: "#d6b97d", fontSize: "8px", letterSpacing: ".14em", marginBottom: "7px" }}>RESPOSTA DA EQUIPE</div>
+                            <div style={{ color: "#e0d9cd", fontSize: "10px", lineHeight: "1.7", whiteSpace: "pre-wrap" }}>{ticket.admin_response}</div>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: "10px", color: "#55524d", fontSize: "9px" }}>A equipe ainda não respondeu este chamado.</div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        </main>
+      )}
+
       {/* CONFIGURAÇÕES */}
 
       {screen === "admin" && isAdmin && (
@@ -5685,25 +7029,28 @@ const filteredConversations = conversations
             {adminLoading ? <p>Carregando dados do painel...</p> : adminStats ? (
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px" }}>
-                  {[["USUÁRIOS",adminStats.totalUsers],["ATIVOS",adminStats.activeUsers],["CURTIDAS",adminStats.likes],["CONVERSAS",adminStats.conversations],["MENSAGENS",adminStats.messages],["DENÚNCIAS",adminStats.reports],["BLOQUEIOS",adminStats.blocks]].map(([label,value]) => (
+                  {[["USUÁRIOS",adminStats.totalUsers],["ATIVOS",adminStats.activeUsers],["CURTIDAS",adminStats.likes],["CONVERSAS",adminStats.conversations],["MENSAGENS",adminStats.messages],["DENÚNCIAS",adminStats.reports],["SUPORTE",adminStats.support || 0],["BLOQUEIOS",adminStats.blocks]].map(([label,value]) => (
                     <div
                       key={label}
                       onClick={label === "DENÚNCIAS" ? async () => {
                         setScreen("adminReports");
                         await loadAdminReports();
+                      } : label === "SUPORTE" ? async () => {
+                        await openAdminSupport();
                       } : undefined}
                       style={{
-                        border: label === "DENÚNCIAS" ? "1px solid rgba(214, 185, 125, .38)" : "1px solid rgba(255,255,255,.12)",
+                        border: label === "DENÚNCIAS" || label === "SUPORTE" ? "1px solid rgba(214, 185, 125, .38)" : "1px solid rgba(255,255,255,.12)",
                         borderRadius: "14px",
                         padding: "18px",
-                        background: label === "DENÚNCIAS" ? "rgba(214, 185, 125, .055)" : "rgba(255,255,255,.035)",
-                        cursor: label === "DENÚNCIAS" ? "pointer" : "default",
+                        background: label === "DENÚNCIAS" || label === "SUPORTE" ? "rgba(214, 185, 125, .055)" : "rgba(255,255,255,.035)",
+                        cursor: label === "DENÚNCIAS" || label === "SUPORTE" ? "pointer" : "default",
                         transition: "border-color .2s ease, background .2s ease",
                       }}
                     >
                       <div style={{ fontSize: "11px", letterSpacing: ".14em", opacity: .65, marginBottom: "9px" }}>{label}</div>
                       <strong style={{ fontSize: "28px" }}>{value}</strong>
                       {label === "DENÚNCIAS" && <div style={{ marginTop: "8px", color: "#d6b97d", fontSize: "9px", letterSpacing: ".12em" }}>VER DENÚNCIAS →</div>}
+                      {label === "SUPORTE" && <div style={{ marginTop: "8px", color: "#d6b97d", fontSize: "9px", letterSpacing: ".12em" }}>VER CHAMADOS →</div>}
                     </div>
                   ))}
                 </div>
@@ -6120,6 +7467,258 @@ const filteredConversations = conversations
                 })}
               </div>
             )}
+          </section>
+        </main>
+      )}
+
+      {screen === "adminSupport" && isAdmin && (
+        <main className="moon-page">
+          <section className="moon-panel" style={{ maxWidth: "1100px", margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
+              <div>
+                <div className="moon-eyebrow">MOON</div>
+                <h1>Suporte</h1>
+                <p>Atenda as solicitações enviadas pelos usuários.</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setScreen("admin")}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "999px",
+                  border: "1px solid rgba(214, 185, 125, 0.28)",
+                  background: "transparent",
+                  color: "#d6b97d",
+                  fontSize: "10px",
+                  fontWeight: 600,
+                  letterSpacing: "0.16em",
+                  cursor: "pointer",
+                }}
+              >
+                ← VOLTAR
+              </button>
+            </div>
+
+            {adminSupportLoading ? (
+              <p>Carregando chamados...</p>
+            ) : adminSupportTickets.length === 0 ? (
+              <div style={{
+                border: "1px solid rgba(255,255,255,.10)",
+                borderRadius: "14px",
+                padding: "36px 22px",
+                textAlign: "center",
+                background: "rgba(255,255,255,.025)",
+              }}>
+                <div style={{ fontSize: "24px", marginBottom: "12px" }}>✓</div>
+                <div style={{ color: "#f4ead7", fontSize: "13px", letterSpacing: ".12em" }}>
+                  NENHUM CHAMADO
+                </div>
+                <p style={{ color: "#8a857c", fontSize: "11px", lineHeight: "1.7", margin: "10px 0 0" }}>
+                  Não existem solicitações de suporte no momento.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: "12px" }}>
+                {adminSupportTickets.map((ticket) => {
+                  const statusLabel = ticket.status === "open"
+                    ? "ABERTO"
+                    : ticket.status === "in_progress"
+                      ? "EM ANÁLISE"
+                      : ticket.status === "answered"
+                        ? "RESPONDIDO"
+                        : "RESOLVIDO";
+
+                  const categoryLabel = {
+                    account: "CONTA",
+                    app: "APLICATIVO",
+                    security: "SEGURANÇA",
+                    report: "DENÚNCIA",
+                    privacy: "PRIVACIDADE",
+                    question: "DÚVIDA",
+                    other: "OUTRO",
+                  }[ticket.category] || "OUTRO";
+
+                  const isSelected = adminSupportSelected?.id === ticket.id;
+
+                  return (
+                    <article
+                      key={ticket.id}
+                      style={{
+                        border: isSelected ? "1px solid rgba(214, 185, 125, .38)" : "1px solid rgba(255,255,255,.10)",
+                        borderRadius: "14px",
+                        padding: "18px",
+                        background: "rgba(255,255,255,.025)",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminSupportSelected(isSelected ? null : ticket);
+                          setAdminSupportResponse(ticket.admin_response || "");
+                          setMessage("");
+                        }}
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          background: "transparent",
+                          color: "inherit",
+                          padding: 0,
+                          textAlign: "left",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ color: "#d6b97d", fontSize: "9px", letterSpacing: ".16em", marginBottom: "7px" }}>
+                              CHAMADO #{String(ticket.id).slice(0, 8).toUpperCase()}
+                            </div>
+                            <div style={{ color: "#f4ead7", fontSize: "13px", fontWeight: 600 }}>
+                              {ticket.subject}
+                            </div>
+                            <div style={{ color: "#8a857c", fontSize: "10px", marginTop: "7px" }}>
+                              {ticket.user?.name || "Usuário"} · {categoryLabel} · {ticket.created_at ? new Date(ticket.created_at).toLocaleString("pt-BR") : ""}
+                            </div>
+                          </div>
+
+                          <span style={{
+                            padding: "6px 10px",
+                            borderRadius: "999px",
+                            border: "1px solid rgba(214, 185, 125, .25)",
+                            color: "#d6b97d",
+                            fontSize: "9px",
+                            letterSpacing: ".12em",
+                            whiteSpace: "nowrap",
+                          }}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                      </button>
+
+                      {isSelected && (
+                        <div style={{ marginTop: "18px", paddingTop: "18px", borderTop: "1px solid rgba(255,255,255,.08)" }}>
+                          <div style={{ color: "#77736c", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>
+                            DESCRIÇÃO
+                          </div>
+                          <div style={{
+                            color: "#d8d2c7",
+                            fontSize: "11px",
+                            lineHeight: "1.7",
+                            whiteSpace: "pre-wrap",
+                            padding: "14px",
+                            border: "1px solid #242424",
+                            background: "#090909",
+                          }}>
+                            {ticket.description}
+                          </div>
+
+                          <div style={{ color: "#77736c", fontSize: "9px", letterSpacing: ".14em", margin: "16px 0 7px" }}>
+                            RESPOSTA AO USUÁRIO
+                          </div>
+                          <textarea
+                            value={adminSupportResponse}
+                            onChange={(event) => setAdminSupportResponse(event.target.value)}
+                            maxLength={3000}
+                            rows={6}
+                            placeholder="Escreva a resposta para o usuário..."
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              resize: "vertical",
+                              padding: "12px",
+                              border: "1px solid #292929",
+                              background: "#080808",
+                              color: "#f4ead7",
+                              outline: "none",
+                              fontFamily: "inherit",
+                              fontSize: "11px",
+                              lineHeight: "1.6",
+                            }}
+                          />
+
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "12px" }}>
+                            <button
+                              type="button"
+                              disabled={adminSupportActionLoading}
+                              onClick={() => handleAdminSupportUpdate(ticket.id, "in_progress")}
+                              style={{
+                                padding: "10px 15px",
+                                borderRadius: "999px",
+                                border: "1px solid rgba(214,185,125,.25)",
+                                background: "rgba(214,185,125,.05)",
+                                color: "#d6b97d",
+                                fontSize: "9px",
+                                letterSpacing: ".12em",
+                                cursor: "pointer",
+                              }}
+                            >
+                              EM ANÁLISE
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={adminSupportActionLoading}
+                              onClick={() => handleAdminSupportUpdate(ticket.id, "answered")}
+                              style={{
+                                padding: "10px 15px",
+                                borderRadius: "999px",
+                                border: "1px solid rgba(214,185,125,.35)",
+                                background: "rgba(214,185,125,.08)",
+                                color: "#d6b97d",
+                                fontSize: "9px",
+                                fontWeight: 600,
+                                letterSpacing: ".12em",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {adminSupportActionLoading ? "SALVANDO..." : "RESPONDER"}
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={adminSupportActionLoading}
+                              onClick={() => handleAdminSupportUpdate(ticket.id, "resolved")}
+                              style={{
+                                padding: "10px 15px",
+                                borderRadius: "999px",
+                                border: "1px solid rgba(120,180,130,.25)",
+                                background: "rgba(120,180,130,.05)",
+                                color: "#9bc79f",
+                                fontSize: "9px",
+                                letterSpacing: ".12em",
+                                cursor: "pointer",
+                              }}
+                            >
+                              RESOLVER
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "center", marginTop: "22px" }}>
+              <button
+                type="button"
+                onClick={loadAdminSupportTickets}
+                style={{
+                  padding: "11px 20px",
+                  borderRadius: "999px",
+                  border: "1px solid rgba(214, 185, 125, 0.32)",
+                  background: "rgba(214, 185, 125, 0.06)",
+                  color: "#d6b97d",
+                  fontSize: "10px",
+                  fontWeight: 600,
+                  letterSpacing: "0.15em",
+                  cursor: "pointer",
+                }}
+              >
+                ↻ ATUALIZAR CHAMADOS
+              </button>
+            </div>
           </section>
         </main>
       )}
@@ -6613,6 +8212,37 @@ const filteredConversations = conversations
                 </div>
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setSupportForm({
+                  category: "question",
+                  subject: "",
+                  description: "",
+                });
+                setMessage("");
+                setScreen("support");
+              }}
+              style={{
+                width: "100%",
+                minHeight: "58px",
+                padding: "0 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                border: "none",
+                borderBottom: "1px solid #242424",
+                background: "transparent",
+                color: "#f4ead7",
+                cursor: "pointer",
+                fontSize: "10px",
+                letterSpacing: "1.8px",
+              }}
+            >
+              <span>SUPORTE</span>
+              <span style={{ color: "#77736b", fontSize: "14px" }}>›</span>
+            </button>
 
                     <button
               type="button"
@@ -7517,8 +9147,8 @@ const filteredConversations = conversations
                   <input
                     type="text"
                     value={profileDisplayName}
-                    onChange={(event) => setProfileDisplayName(event.target.value.slice(0, 10))}
-                    maxLength={6}
+                    onChange={(event) => setProfileDisplayName(event.target.value.slice(0, 8))}
+                    maxLength={8}
                     style={{
                       width: "100%",
                       height: "48px",
@@ -7549,16 +9179,16 @@ const filteredConversations = conversations
                         color: "#8f897f",
                       }}
                     >
-                      O nome pode ter no máximo 6 caracteres.
+                      O nome pode ter no máximo 8 caracteres.
                     </p>
                     <span
                       style={{
-                        color: profileDisplayName.length >= 6 ? "#c9b58a" : "#77736b",
+                        color: profileDisplayName.length >= 8 ? "#c9b58a" : "#77736b",
                         fontSize: "9px",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {profileDisplayName.length}/6
+                      {profileDisplayName.length}/8
                     </span>
                   </div>
                 </div>
@@ -8307,6 +9937,11 @@ const filteredConversations = conversations
                 setChatMessages([]);
                 setChatText("");
                 setShowChatMenu(false);
+                setShowChatAttachMenu(false);
+                setChatMediaMode(null);
+                if (videoCallState !== "idle") {
+                  endVideoCall("ended", true);
+                }
                 setMessage("");
               }}
               style={{
@@ -8358,6 +9993,27 @@ const filteredConversations = conversations
                 VER PERFIL
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={handleStartVideoCall}
+              disabled={videoCallLoading || videoCallState !== "idle"}
+              aria-label="Chamada de vídeo"
+              style={{
+                width: "42px",
+                height: "38px",
+                border: "1px solid #292929",
+                background: "transparent",
+                color: "#c9b58a",
+                cursor: videoCallLoading || videoCallState !== "idle" ? "not-allowed" : "pointer",
+                fontSize: "17px",
+                opacity: videoCallLoading || videoCallState !== "idle" ? 0.45 : 1,
+                flexShrink: 0,
+              }}
+              title="Chamada de vídeo · até 5 min"
+            >
+              ▣
+            </button>
 
             <div
               style={{
@@ -8438,6 +10094,61 @@ const filteredConversations = conversations
             </div>
           </div>
 
+          {(videoCallState === "incoming" || videoCallState === "outgoing" || videoCallState === "connected") && (
+            <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "#050505", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 4, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 22px", background: "linear-gradient(to bottom, rgba(5,5,5,.9), transparent)" }}>
+                <div>
+                  <div style={{ color: "#77736b", fontSize: "8px", letterSpacing: "2px" }}>MOON / VIDEOCHAMADA</div>
+                  <div style={{ color: "#f4ead7", fontSize: "14px", letterSpacing: "1.5px", marginTop: "6px" }}>{chatTarget?.name || "CONEXÃO"}</div>
+                </div>
+                {videoCallState === "connected" && (
+                  <div style={{ minWidth: "74px", textAlign: "center", padding: "7px 10px", border: "1px solid #c9b58a", background: "rgba(5,5,5,.72)", color: "#c9b58a", fontSize: "11px", letterSpacing: "1.2px" }}>
+                    {formatVideoCallTime(videoCallSeconds)}<span style={{ color: "#77736b" }}> / 05:00</span>
+                  </div>
+                )}
+              </div>
+
+              {videoCallState === "incoming" ? (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "30px", textAlign: "center" }}>
+                  <div style={{ width: "92px", height: "92px", borderRadius: "50%", border: "1px solid #c9b58a", display: "flex", alignItems: "center", justifyContent: "center", color: "#c9b58a", fontSize: "25px", letterSpacing: "2px", marginBottom: "22px" }}>
+                    {chatTarget?.name?.slice(0, 1)?.toUpperCase() || "M"}
+                  </div>
+                  <div style={{ color: "#77736b", fontSize: "8px", letterSpacing: "2px", marginBottom: "10px" }}>CHAMADA RECEBIDA</div>
+                  <div style={{ color: "#f4ead7", fontSize: "24px", letterSpacing: "2px" }}>{chatTarget?.name || "CONEXÃO"}</div>
+                  <div style={{ color: "#aaa59b", fontSize: "11px", marginTop: "10px" }}>está chamando você por vídeo</div>
+                  <div style={{ display: "flex", gap: "12px", marginTop: "34px" }}>
+                    <button type="button" onClick={handleRejectVideoCall} disabled={videoCallLoading} style={{ width: "120px", height: "46px", border: "1px solid #292929", background: "#0b0b0b", color: "#aaa59b", cursor: "pointer", fontSize: "9px", letterSpacing: "1.4px" }}>RECUSAR</button>
+                    <button type="button" onClick={handleAcceptVideoCall} disabled={videoCallLoading} style={{ width: "120px", height: "46px", border: "1px solid #c9b58a", background: "#c9b58a", color: "#050505", cursor: "pointer", fontSize: "9px", letterSpacing: "1.4px" }}>ATENDER</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ position: "relative", flex: 1, minHeight: 0, background: "#000" }}>
+                  {videoCallRemoteStream ? (
+                    <video ref={videoCallRemoteVideoRef} autoPlay playsInline style={{ width: "100%", height: "100%", objectFit: "cover", background: "#000" }} />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#77736b" }}>
+                      <div style={{ fontSize: "10px", letterSpacing: "2px" }}>{videoCallState === "outgoing" ? "CHAMANDO..." : "CONECTANDO..."}</div>
+                      <div style={{ fontSize: "9px", marginTop: "8px", color: "#555149" }}>Câmera e microfone sendo preparados</div>
+                    </div>
+                  )}
+                  {videoCallLocalStream && (
+                    <div style={{ position: "absolute", right: "18px", bottom: "112px", width: "clamp(100px, 25vw, 180px)", aspectRatio: "3 / 4", border: "1px solid #c9b58a", background: "#0b0b0b", overflow: "hidden", boxShadow: "0 8px 30px rgba(0,0,0,.45)" }}>
+                      <video ref={videoCallLocalVideoRef} autoPlay muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", background: "#000" }} />
+                      <div style={{ position: "absolute", left: "8px", bottom: "7px", color: "#f4ead7", fontSize: "7px", letterSpacing: "1px", background: "rgba(0,0,0,.55)", padding: "4px 6px" }}>VOCÊ</div>
+                    </div>
+                  )}
+                  <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, display: "flex", justifyContent: "center", padding: "28px 20px 30px", background: "linear-gradient(transparent, rgba(5,5,5,.95))" }}>
+                    <button type="button" onClick={() => endVideoCall("ended", true)} style={{ width: "64px", height: "64px", borderRadius: "50%", border: "1px solid #c9b58a", background: "#c9b58a", color: "#050505", cursor: "pointer", fontSize: "19px", fontWeight: 500 }} aria-label="Encerrar chamada" title="Encerrar chamada">●</button>
+                  </div>
+                </div>
+              )}
+
+              {videoCallState === "outgoing" && (
+                <div style={{ position: "absolute", bottom: "24px", left: 0, right: 0, textAlign: "center", color: "#555149", fontSize: "8px", letterSpacing: "1px", zIndex: 5 }}>ESTA CHAMADA CONTA COMO 1 DAS 5 CHAMADAS DIÁRIAS</div>
+              )}
+            </div>
+          )}
+
           <div
             ref={chatMessagesContainerRef}
             style={{
@@ -8490,16 +10201,66 @@ const filteredConversations = conversations
                     lineHeight: "1.5",
                   }}
                 >
-                  <div
-                    style={{
-                      fontStyle: chatMessage.deleted_for_everyone ? "italic" : "normal",
-                      opacity: chatMessage.deleted_for_everyone ? 0.65 : 1,
-                    }}
-                  >
-                    {chatMessage.deleted_for_everyone
-                      ? "Mensagem excluída."
-                      : chatMessage.content}
-                  </div>
+                  {chatMessage.deleted_for_everyone ? (
+                    <div style={{ fontStyle: "italic", opacity: 0.65 }}>
+                      Mensagem excluída.
+                    </div>
+                  ) : chatMessage.message_type === "location" ? (
+                    <div>
+                      <div style={{ fontSize: "10px", letterSpacing: "1px", marginBottom: "8px" }}>
+                        LOCALIZAÇÃO COMPARTILHADA
+                      </div>
+                      {chatMessage.latitude !== null && chatMessage.latitude !== undefined && chatMessage.longitude !== null && chatMessage.longitude !== undefined ? (
+                        <a
+                          href={`https://www.google.com/maps?q=${chatMessage.latitude},${chatMessage.longitude}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: "inherit", textDecoration: "underline", fontSize: "11px" }}
+                        >
+                          ABRIR NO MAPA
+                        </a>
+                      ) : (
+                        <div style={{ fontSize: "10px", opacity: 0.7 }}>Localização indisponível.</div>
+                      )}
+                    </div>
+                  ) : chatMessage.message_type === "audio" ? (
+                    <div>
+                      <div style={{ fontSize: "10px", letterSpacing: "1px", marginBottom: "8px", opacity: 0.8 }}>ÁUDIO</div>
+                      {chatMessage.media_signed_url ? (
+                        <audio src={chatMessage.media_signed_url} controls preload="metadata" style={{ width: "250px", maxWidth: "100%" }} />
+                      ) : (
+                        <div style={{ fontSize: "10px", opacity: 0.7 }}>Áudio indisponível.</div>
+                      )}
+                    </div>
+                  ) : chatMessage.message_type === "image" || chatMessage.message_type === "video" ? (
+                    <div>
+                      <div style={{ fontSize: "10px", letterSpacing: "1px", marginBottom: "8px", opacity: 0.8 }}>
+                        {chatMessage.media_expired ? "MÍDIA EXPIRADA" : chatMessage.message_type === "video" ? "VÍDEO TEMPORÁRIO" : "FOTO TEMPORÁRIA"}
+                      </div>
+                      {chatMessage.media_expired ? (
+                        <div style={{ fontSize: "10px", opacity: 0.7 }}>Esta mídia não está mais disponível.</div>
+                      ) : chatMessage.media_signed_url ? (
+                        chatMessage.message_type === "video" ? (
+                          <video
+                            src={chatMessage.media_signed_url}
+                            controls
+                            playsInline
+                            style={{ display: "block", maxWidth: "260px", maxHeight: "360px", width: "100%" }}
+                          />
+                        ) : (
+                          <img
+                            src={chatMessage.media_signed_url}
+                            alt="Mídia temporária"
+                            style={{ display: "block", maxWidth: "260px", maxHeight: "360px", width: "100%", objectFit: "cover" }}
+                          />
+                        )
+                      ) : (
+                        <div style={{ fontSize: "10px", opacity: 0.7 }}>Não foi possível carregar a mídia.</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>{chatMessage.content}</div>
+                  )}
                   {chatMessage.sender_id === currentUserId && (
                     <div
                       style={{
@@ -8577,8 +10338,104 @@ const filteredConversations = conversations
               gap: "8px",
               borderTop: "1px solid #202020",
               paddingTop: "18px",
+              position: "relative",
             }}
           >
+            <input
+              ref={chatMediaInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleChatMediaChange}
+              style={{ display: "none" }}
+            />
+            <input
+              ref={chatGalleryInputRef}
+              type="file"
+              accept="image/*,video/*"
+              onChange={handleChatMediaChange}
+              style={{ display: "none" }}
+            />
+            <input
+              ref={chatVideoInputRef}
+              type="file"
+              accept="video/*"
+              capture="environment"
+              onChange={handleChatMediaChange}
+              style={{ display: "none" }}
+            />
+
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={() => setShowChatAttachMenu((value) => !value)}
+                disabled={chatMediaLoading}
+                aria-label="Anexar conteúdo"
+                style={{
+                  width: "48px",
+                  height: "48px",
+                  border: "1px solid #292929",
+                  background: "transparent",
+                  color: "#c9b58a",
+                  cursor: chatMediaLoading ? "not-allowed" : "pointer",
+                  fontSize: "22px",
+                  opacity: chatMediaLoading ? 0.45 : 1,
+                }}
+              >
+                +
+              </button>
+
+              {showChatAttachMenu && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "56px",
+                    left: 0,
+                    width: "190px",
+                    background: "#0b0b0b",
+                    border: "1px solid #292929",
+                    boxShadow: "0 18px 45px rgba(0,0,0,0.55)",
+                    zIndex: 80,
+                    padding: "6px",
+                  }}
+                >
+                  <button type="button" onClick={() => openChatMediaPicker("camera")} style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>
+                    CÂMERA · FOTO
+                  </button>
+                  <button type="button" onClick={() => openChatMediaPicker("gallery")} style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>
+                    GALERIA · FOTO
+                  </button>
+                  <button type="button" onClick={() => openChatMediaPicker("video")} style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>
+                    VÍDEO TEMPORÁRIO
+                  </button>
+                  <button type="button" onClick={handleSendLocation} style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>
+                    ENVIAR LOCALIZAÇÃO
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSendAudio}
+              disabled={chatMediaLoading}
+              aria-label={chatAudioRecording ? "Parar gravação" : "Gravar áudio"}
+              style={{
+                width: "48px", height: "48px",
+                border: chatAudioRecording ? "1px solid #c9b58a" : "1px solid #292929",
+                background: chatAudioRecording ? "#c9b58a" : "transparent",
+                color: chatAudioRecording ? "#050505" : "#c9b58a",
+                cursor: chatMediaLoading ? "not-allowed" : "pointer",
+                fontSize: "18px", opacity: chatMediaLoading ? 0.45 : 1, flexShrink: 0,
+              }}
+            >{chatAudioRecording ? "■" : "●"}</button>
+
+            {chatAudioRecording && (
+              <div style={{ position: "absolute", left: "58px", bottom: "58px", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.2px", background: "#0b0b0b", border: "1px solid #292929", padding: "7px 9px", zIndex: 90 }}>
+                GRAVANDO · {formatAudioTime(chatAudioSeconds)} / 02:00
+              </div>
+            )}
+
             <input
               type="text"
               value={chatText}
@@ -9530,59 +11387,54 @@ const filteredConversations = conversations
                         }}
                       >
 
-                        <div
+                        <h2
+                          className="moon-discovery-name"
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "5px",
-                            marginBottom: "2px",
+                            margin: "0 0 4px 0",
+                            color: "#f4ead7",
+                            fontSize: "17px",
+                            fontWeight: "400",
+                            letterSpacing: "1px",
                           }}
                         >
-                          <h2
-                            className="moon-discovery-name"
+                          {(profile.name || "Sem nome").split(" ")[0]}
+                        </h2>
+
+                        {profile.birth_date && (
+                          <div
                             style={{
-                              margin: "0",
-                              color: "#f4ead7",
-                              fontSize: "17px",
-                              fontWeight: "400",
-                              letterSpacing: "1px",
+                              color: "#c9b58a",
+                              fontSize: "11px",
+                              fontWeight: "500",
+                              marginBottom: "5px",
                             }}
                           >
-                            {(profile.name || "Sem nome").split(" ")[0]}
-                          </h2>
-
-                          {profile.birth_date && (
-                            <>
-                              <span
-                                style={{
-                                  color: "#8e877c",
-                                  fontSize: "10px",
-                                }}
-                              >
-                                ·
-                              </span>
-                              <span
-                                style={{
-                                  color: "#c9b58a",
-                                  fontSize: "11px",
-                                  fontWeight: "500",
-                                }}
-                              >
-                                {calculateAge(profile.birth_date)} anos
-                              </span>
-                            </>
-                          )}
-                        </div>
+                            {calculateAge(profile.birth_date)} anos
+                          </div>
+                        )}
 
                         {status && (
                           <div
                             style={{
-                              color: "#c9b58a",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "5px",
+                              color: status === "ATIVO AGORA" ? "#8fbd72" : "#8e877c",
                               fontSize: "8px",
                               letterSpacing: "1.5px",
                             }}
                           >
-                            ● {status}
+                            <span
+                              style={{
+                                fontSize: "8px",
+                                lineHeight: "1",
+                              }}
+                            >
+                              ●
+                            </span>
+                            <span>
+                              {status}
+                            </span>
                           </div>
                         )}
 
