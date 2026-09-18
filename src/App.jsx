@@ -4728,25 +4728,6 @@ const chatMessagesBottomRef = useRef(null);
         }
       }, 250);
     } catch (error) {
-          console.error("ERRO AO ENVIAR ÁUDIO:", error);
-          setMessage(error.message || "Não foi possível enviar o áudio.");
-        } finally {
-          setChatMediaLoading(false);
-        }
-      };
-
-      recorder.start();
-      chatAudioTimerRef.current = setInterval(() => {
-        setChatAudioSeconds((current) => {
-          const next = current + 1;
-          if (next >= 120) {
-            if (chatAudioRecorderRef.current?.state !== "inactive") chatAudioRecorderRef.current.stop();
-            return 120;
-          }
-          return next;
-        });
-      }, 1000);
-    } catch (error) {
       console.error("ERRO AO INICIAR GRAVAÇÃO:", error);
       if (chatAudioStreamRef.current) {
         chatAudioStreamRef.current.getTracks().forEach((track) => track.stop());
