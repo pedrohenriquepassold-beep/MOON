@@ -3,6 +3,148 @@ import { Circle, CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } f
 import "leaflet/dist/leaflet.css";
 
 function MoonSkeleton({ rows = 3, compact = false }) {
+  {showIosInstallGuide && (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="moon-ios-install-title"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.82)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px",
+      }}
+      onClick={() => setShowIosInstallGuide(false)}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: "390px",
+          maxHeight: "calc(100vh - 40px)",
+          overflowY: "auto",
+          border: "1px solid #292929",
+          background: "#0b0b0b",
+          padding: "28px 22px",
+          boxSizing: "border-box",
+        }}
+      >
+        <div
+          style={{
+            textAlign: "center",
+            color: "#c9b58a",
+            fontSize: "9px",
+            letterSpacing: "2px",
+            marginBottom: "10px",
+          }}
+        >
+          MOON
+        </div>
+
+        <h2
+          id="moon-ios-install-title"
+          style={{
+            margin: "0 0 10px",
+            textAlign: "center",
+            color: "#f4ead7",
+            fontSize: "19px",
+            fontWeight: 400,
+            letterSpacing: "0.6px",
+          }}
+        >
+          ADICIONE A MOON AO CELULAR
+        </h2>
+
+        <p
+          style={{
+            margin: "0 0 24px",
+            textAlign: "center",
+            color: "#77736b",
+            fontSize: "10px",
+            lineHeight: "1.6",
+          }}
+        >
+          No iPhone, a instalação é feita pelo menu Compartilhar do Safari.
+        </p>
+
+        <div
+          style={{
+            borderTop: "1px solid #242424",
+            borderBottom: "1px solid #242424",
+            padding: "18px 0",
+          }}
+        >
+          {[
+            ["01", "Abra a MOON no Safari."],
+            ["02", "Toque no botão Compartilhar do navegador."],
+            ["03", "Role o menu e toque em “Adicionar à Tela de Início”."],
+            ["04", "Confirme tocando em “Adicionar”."],
+          ].map(([number, text]) => (
+            <div
+              key={number}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "12px",
+                marginBottom: number === "04" ? 0 : "16px",
+              }}
+            >
+              <div
+                style={{
+                  width: "25px",
+                  height: "25px",
+                  border: "1px solid #c9b58a",
+                  color: "#c9b58a",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "8px",
+                  letterSpacing: "0.5px",
+                  flexShrink: 0,
+                }}
+              >
+                {number}
+              </div>
+
+              <div
+                style={{
+                  color: "#aaa59b",
+                  fontSize: "10px",
+                  lineHeight: "1.55",
+                  paddingTop: "3px",
+                }}
+              >
+                {text}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowIosInstallGuide(false)}
+          style={{
+            width: "100%",
+            height: "44px",
+            marginTop: "20px",
+            border: "1px solid #c9b58a",
+            background: "#15130f",
+            color: "#c9b58a",
+            fontSize: "9px",
+            letterSpacing: "1.6px",
+            cursor: "pointer",
+          }}
+        >
+          ENTENDI
+        </button>
+      </div>
+    </div>
+  )}
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "8px" : "12px", padding: compact ? "8px 0" : "20px 0" }}>
       {Array.from({ length: rows }).map((_, index) => (
@@ -60,6 +202,7 @@ function App() {
   const [pwaInstallAvailable, setPwaInstallAvailable] = useState(false);
   const [pwaIosInstallAvailable, setPwaIosInstallAvailable] = useState(false);
   const deferredInstallPromptRef = useRef(null);
+  const [showIosInstallGuide, setShowIosInstallGuide] = useState(false);
 
   const [toast, setToast] = useState(null);
 const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
@@ -67,6 +210,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     like: 0,
     message: 0,
     match: 0,
+    boost: 0,
   });
   const [notifications, setNotifications] = useState([]);
   const toastTimeoutRef = useRef(null);
@@ -109,6 +253,15 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     sexuality: "",
     position: "",
     availability: "",
+    profession: "",
+    education: "",
+    intention: [],
+    habits: [],
+    hobbies: [],
+    personality: [],
+    relationship: [],
+    interests: [],
+    languages: [],
   });
 
   const [photos, setPhotos] = useState([]);
@@ -137,23 +290,32 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [showSexualityFilter, setShowSexualityFilter] = useState(false);
   const [minAge, setMinAge] = useState(18);
   const [maxAge, setMaxAge] = useState(65);
-  const [identityFilter, setIdentityFilter] = useState("");
-  const [sexualityFilter, setSexualityFilter] = useState("");
-  const [positionFilter, setPositionFilter] = useState("");
+  const [identityFilter, setIdentityFilter] = useState([]);
+  const [sexualityFilter, setSexualityFilter] = useState([]);
+  const [positionFilter, setPositionFilter] = useState([]);
   const [showPositionFilter, setShowPositionFilter] = useState(false);
-  const [availabilityFilter, setAvailabilityFilter] = useState("");
+  const [availabilityFilter, setAvailabilityFilter] = useState([]);
   const [showAvailabilityFilter, setShowAvailabilityFilter] = useState(false);
   const [filterDraftMinAge, setFilterDraftMinAge] = useState(18);
   const [filterDraftMaxAge, setFilterDraftMaxAge] = useState(65);
-  const [filterDraftIdentity, setFilterDraftIdentity] = useState("");
-  const [filterDraftSexuality, setFilterDraftSexuality] = useState("");
-  const [filterDraftPosition, setFilterDraftPosition] = useState("");
-  const [filterDraftAvailability, setFilterDraftAvailability] = useState("");
+  const [filterDraftIdentity, setFilterDraftIdentity] = useState([]);
+  const [filterDraftSexuality, setFilterDraftSexuality] = useState([]);
+  const [filterDraftPosition, setFilterDraftPosition] = useState([]);
+  const [filterDraftAvailability, setFilterDraftAvailability] = useState([]);
+  const [intentionFilter, setIntentionFilter] = useState([]);
+  const [filterDraftIntention, setFilterDraftIntention] = useState([]);
+  const [filterDraftHabits, setFilterDraftHabits] = useState([]);
+  const [filterDraftHobbies, setFilterDraftHobbies] = useState([]);
+  const [filterDraftPersonality, setFilterDraftPersonality] = useState([]);
+  const [filterDraftRelationship, setFilterDraftRelationship] = useState([]);
+  const [filterDraftInterests, setFilterDraftInterests] = useState([]);
+  const [filterDraftLanguages, setFilterDraftLanguages] = useState([]);
 
   const [chatTarget, setChatTarget] = useState(null);
   const [chatConversation, setChatConversation] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatText, setChatText] = useState("");
+  const [chatReplyToMessage, setChatReplyToMessage] = useState(null);
   const [chatTyping, setChatTyping] = useState(false);
   const chatTypingTimeoutRef = useRef(null);
   const chatChannelReadyRef = useRef(false);
@@ -164,13 +326,50 @@ const chatMessagesBottomRef = useRef(null);
   const chatGalleryInputRef = useRef(null);
   const chatVideoInputRef = useRef(null);
   const [chatMediaLoading, setChatMediaLoading] = useState(false);
+  const [chatAudioRecording, setChatAudioRecording] = useState(false);
+  const [chatAudioSeconds, setChatAudioSeconds] = useState(0);
+  const chatAudioRecorderRef = useRef(null);
+  const chatAudioChunksRef = useRef([]);
+  const chatAudioStreamRef = useRef(null);
+  const chatAudioTimerRef = useRef(null);
   const [chatMediaMode, setChatMediaMode] = useState(null);
+  const [chatMediaIntimate, setChatMediaIntimate] = useState(false);
+  const [dismissedIntimateMessageIds, setDismissedIntimateMessageIds] = useState([]);
   const [showChatAttachMenu, setShowChatAttachMenu] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatIcebreaker, setChatIcebreaker] = useState(null);
+  const [chatConnection, setChatConnection] = useState(null);
+  const [chatFollowUpSuggestion, setChatFollowUpSuggestion] = useState(null);
+  const [chatDeepSuggestion, setChatDeepSuggestion] = useState(null);
+  const [offensiveWarning, setOffensiveWarning] = useState(false);
+  const [offensivePendingContent, setOffensivePendingContent] = useState("");
+  const [threatWarning, setThreatWarning] = useState(false);
+  const [threatPendingContent, setThreatPendingContent] = useState("");
+  const [dismissedThreatMessageIds, setDismissedThreatMessageIds] = useState([]);
+  const [dismissedOffensiveMessageIds, setDismissedOffensiveMessageIds] = useState([]);
+  const [chatRefusalMarkedAt, setChatRefusalMarkedAt] = useState(null);
+  const [chatRefusalPending, setChatRefusalPending] = useState(false);
+  const [dismissedInsistenceWarningMessageIds, setDismissedInsistenceWarningMessageIds] = useState([]);
+  const [chatPhotoConfirmationEnabled, setChatPhotoConfirmationEnabled] = useState(false);
+  const [intimateContentPreference, setIntimateContentPreference] = useState("confirm");
+  const [chatRevealedPhotoIds, setChatRevealedPhotoIds] = useState([]);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [statusClock, setStatusClock] = useState(Date.now());
   const [captureShieldActive, setCaptureShieldActive] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [abusiveRestrictionUntil, setAbusiveRestrictionUntil] = useState(null);
+  const [abusiveRestrictionLoading, setAbusiveRestrictionLoading] = useState(false);
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    try {
+      const savedPreference = window.localStorage.getItem(`moon-chat-photo-confirmation-${currentUserId}`);
+      setChatPhotoConfirmationEnabled(savedPreference === "true");
+    } catch (error) {
+      console.error("ERRO AO CARREGAR PROTEÇÃO DE FOTOS:", error);
+    }
+  }, [currentUserId]);
+
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminStats, setAdminStats] = useState(null);
   const [adminReports, setAdminReports] = useState([]);
@@ -186,6 +385,18 @@ const chatMessagesBottomRef = useRef(null);
   const [adminAction, setAdminAction] = useState("");
   const [adminActionNote, setAdminActionNote] = useState("");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
+  const [adminBoosts, setAdminBoosts] = useState([]);
+  const [adminBoostProfiles, setAdminBoostProfiles] = useState([]);
+  const [adminBoostSearch, setAdminBoostSearch] = useState("");
+  const [adminBoostSelectedProfile, setAdminBoostSelectedProfile] = useState(null);
+  const [adminBoostDuration, setAdminBoostDuration] = useState("24");
+  const [adminBoostLoading, setAdminBoostLoading] = useState(false);
+  const [adminBoostSaving, setAdminBoostSaving] = useState(false);
+  const [userBoosts, setUserBoosts] = useState([]);
+  const [userBoostsLoading, setUserBoostsLoading] = useState(false);
+  const [boostActivatingId, setBoostActivatingId] = useState(null);
+  const [userActiveBoost, setUserActiveBoost] = useState(null);
+  const [boostSecondsLeft, setBoostSecondsLeft] = useState(0);
 
   const [advertisements, setAdvertisements] = useState([]);
   const [advertisementsLoading, setAdvertisementsLoading] = useState(false);
@@ -414,22 +625,36 @@ const chatMessagesBottomRef = useRef(null);
     const deferredPrompt = deferredInstallPromptRef.current;
 
     if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === "accepted") {
-        setPwaInstallAvailable(false);
-        setMessage("MOON adicionada ao seu dispositivo.");
+      try {
+        deferredPrompt.prompt();
+
+        const { outcome } = await deferredPrompt.userChoice;
+
+        if (outcome === "accepted") {
+          setPwaInstallAvailable(false);
+          setMessage("MOON adicionada ao seu dispositivo.");
+        } else {
+          setMessage("A instalação foi cancelada. Você pode tentar novamente quando quiser.");
+        }
+      } catch (error) {
+        console.warn("NÃO FOI POSSÍVEL ABRIR A INSTALAÇÃO DA MOON:", error);
+        setMessage("Não foi possível abrir a instalação agora. Tente novamente.");
+      } finally {
+        deferredInstallPromptRef.current = null;
       }
-      deferredInstallPromptRef.current = null;
+
       return;
     }
 
     if (pwaIosInstallAvailable) {
-      setMessage("No iPhone: toque em Compartilhar e depois em 'Adicionar à Tela de Início'.");
+      setMessage("");
+      setShowIosInstallGuide(true);
       return;
     }
 
-    setMessage("Use o menu do navegador e escolha 'Instalar MOON' ou 'Adicionar à tela inicial'.");
+    setMessage(
+      "Use o menu do navegador e escolha 'Instalar MOON' ou 'Adicionar à tela inicial'."
+    );
   }
 
   useEffect(() => {
@@ -659,7 +884,7 @@ const chatMessagesBottomRef = useRef(null);
   useEffect(() => {
     if (!currentUserId) {
       setNotifications([]);
-      setNotificationCount({ like: 0, message: 0, match: 0 });
+      setNotificationCount({ like: 0, message: 0, match: 0, boost: 0 });
       processedNotificationIdsRef.current = new Set();
       return;
     }
@@ -685,7 +910,7 @@ const chatMessagesBottomRef = useRef(null);
 
         const unreadCounts = rows.reduce(
           (accumulator, item) => {
-            if (!item.is_read && (item.type === "like" || item.type === "message")) {
+            if (!item.is_read && (item.type === "like" || item.type === "message" || item.type === "boost")) {
               accumulator[item.type] += 1;
             }
             return accumulator;
@@ -721,7 +946,7 @@ const chatMessagesBottomRef = useRef(null);
 
           setNotifications((current) => [notification, ...current].slice(0, 100));
 
-          if (notification.type === "like" || notification.type === "message" || notification.type === "match") {
+          if (notification.type === "like" || notification.type === "message" || notification.type === "match" || notification.type === "boost") {
             setNotificationCount((current) => ({
               ...current,
               [notification.type]: current[notification.type] + (notification.is_read ? 0 : 1),
@@ -746,6 +971,12 @@ const chatMessagesBottomRef = useRef(null);
               title: "Vocês se conectaram",
               body: "Você tem um novo Match na MOON.",
             });
+          } else if (notification.type === "boost") {
+            playNotificationSound();
+            showToast({
+              title: "Você ganhou um Boost 🚀",
+              body: "Um Boost foi concedido ao seu perfil. Ative quando quiser.",
+            });
           }
         }
       )
@@ -766,6 +997,275 @@ const chatMessagesBottomRef = useRef(null);
       return admin;
     } catch (error) { console.error("ERRO AO VERIFICAR ADMIN:", error); setIsAdmin(false); return false; }
   }
+
+  async function loadAdminBoosts() {
+    const admin = await checkAdminStatus();
+    if (!admin) { setMessage("Acesso restrito."); return; }
+    setAdminBoostLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("profile_boosts")
+        .select("id, user_id, starts_at, expires_at, active, status, duration_hours, activated_at, created_at")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const boosts = data || [];
+      const ids = [...new Set(boosts.map((item) => item.user_id).filter(Boolean))];
+      let profiles = [];
+      if (ids.length) {
+        const { data: rows, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, name, profile_photo_url")
+          .in("id", ids);
+        if (profileError) throw profileError;
+        profiles = rows || [];
+      }
+      const byId = new Map(profiles.map((profile) => [profile.id, profile]));
+      setAdminBoosts(boosts.map((boost) => ({ ...boost, profile: byId.get(boost.user_id) || null })));
+    } catch (error) {
+      console.error("ERRO AO CARREGAR BOOSTS:", error);
+      setMessage(error.message || "Não foi possível carregar os boosts.");
+    } finally {
+      setAdminBoostLoading(false);
+    }
+  }
+
+  async function searchAdminBoostProfiles(value) {
+    setAdminBoostSearch(value);
+    if (!value.trim()) { setAdminBoostProfiles([]); return; }
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, name, profile_photo_url")
+        .ilike("name", `%${value.trim()}%`)
+        .limit(12);
+      if (error) throw error;
+      setAdminBoostProfiles(data || []);
+    } catch (error) {
+      console.error("ERRO AO BUSCAR PERFIS PARA BOOST:", error);
+      setMessage(error.message || "Não foi possível buscar o perfil.");
+    }
+  }
+
+  async function createAdminBoost() {
+    const admin = await checkAdminStatus();
+    if (!admin || !adminBoostSelectedProfile) {
+      setMessage("Selecione um perfil.");
+      return;
+    }
+    setAdminBoostSaving(true);
+    try {
+      const hours = Math.max(1, Number(adminBoostDuration) || 24);
+      const { error } = await supabase.from("profile_boosts").insert({
+        user_id: adminBoostSelectedProfile.id,
+        duration_hours: hours,
+        status: "available",
+        active: false,
+        starts_at: null,
+        expires_at: null,
+        activated_at: null,
+      });
+      if (error) throw error;
+
+      const { error: notificationError } = await supabase
+        .from("notifications")
+        .insert({
+          user_id: adminBoostSelectedProfile.id,
+          type: "boost",
+          is_read: false,
+        });
+
+      if (notificationError) {
+        console.error("ERRO AO CRIAR NOTIFICACAO DE BOOST:", notificationError);
+      }
+
+      setMessage("Boost concedido. O usuário poderá ativá-lo quando quiser.");
+      setAdminBoostSelectedProfile(null);
+      setAdminBoostSearch("");
+      setAdminBoostProfiles([]);
+      await loadAdminBoosts();
+    } catch (error) {
+      console.error("ERRO AO CRIAR BOOST:", error);
+      setMessage(error.message || "Não foi possível ativar o boost.");
+    } finally {
+      setAdminBoostSaving(false);
+    }
+  }
+
+  async function deactivateAdminBoost(boostId) {
+    const admin = await checkAdminStatus();
+    if (!admin) { setMessage("Acesso restrito."); return; }
+    try {
+      const { data: boost, error: boostError } = await supabase
+        .from("profile_boosts")
+        .select("id, status")
+        .eq("id", boostId)
+        .single();
+      if (boostError) throw boostError;
+
+      const nextUpdate = boost.status === "available"
+        ? { active: false, status: "cancelled" }
+        : { active: false, status: "used", expires_at: new Date().toISOString() };
+
+      const { error } = await supabase
+        .from("profile_boosts")
+        .update(nextUpdate)
+        .eq("id", boostId);
+      if (error) throw error;
+      setMessage(boost.status === "available" ? "Boost cancelado." : "Boost encerrado.");
+      await loadAdminBoosts();
+    } catch (error) {
+      console.error("ERRO AO ENCERRAR BOOST:", error);
+      setMessage(error.message || "Não foi possível encerrar o boost.");
+    }
+  }
+
+  function formatBoostCountdown(totalSeconds) {
+    const safe = Math.max(0, Number(totalSeconds) || 0);
+    const hours = Math.floor(safe / 3600);
+    const minutes = Math.floor((safe % 3600) / 60);
+    const seconds = safe % 60;
+    return [hours, minutes, seconds]
+      .map((value) => String(value).padStart(2, "0"))
+      .join(":");
+  }
+
+  async function loadUserBoosts() {
+    if (!currentUserId) return;
+
+    setUserBoostsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("profile_boosts")
+        .select("id, user_id, status, duration_hours, starts_at, expires_at, activated_at, active, created_at")
+        .eq("user_id", currentUserId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const boosts = data || [];
+      const now = Date.now();
+      const activeBoost = boosts.find(
+        (boost) =>
+          boost.status === "active" &&
+          boost.active === true &&
+          boost.expires_at &&
+          new Date(boost.expires_at).getTime() > now
+      ) || null;
+
+      setUserBoosts(boosts);
+      setUserActiveBoost(activeBoost);
+      setBoostSecondsLeft(
+        activeBoost
+          ? Math.max(0, Math.floor((new Date(activeBoost.expires_at).getTime() - now) / 1000))
+          : 0
+      );
+    } catch (error) {
+      console.error("ERRO AO CARREGAR MEUS BOOSTS:", error);
+      setMessage(error.message || "Não foi possível carregar seus Boosts.");
+    } finally {
+      setUserBoostsLoading(false);
+    }
+  }
+
+  async function activateUserBoost(boostId) {
+    if (!currentUserId || !boostId || boostActivatingId) return;
+
+    setBoostActivatingId(boostId);
+    setMessage("");
+
+    try {
+      const { data: existingActive, error: activeError } = await supabase
+        .from("profile_boosts")
+        .select("id, expires_at")
+        .eq("user_id", currentUserId)
+        .eq("status", "active")
+        .eq("active", true)
+        .gt("expires_at", new Date().toISOString())
+        .limit(1)
+        .maybeSingle();
+
+      if (activeError) throw activeError;
+
+      if (existingActive) {
+        setMessage("Você já possui um Boost ativo.");
+        return;
+      }
+
+      const { data: boost, error: boostError } = await supabase
+        .from("profile_boosts")
+        .select("id, duration_hours, status")
+        .eq("id", boostId)
+        .eq("user_id", currentUserId)
+        .eq("status", "available")
+        .maybeSingle();
+
+      if (boostError) throw boostError;
+      if (!boost) {
+        setMessage("Este Boost não está mais disponível.");
+        await loadUserBoosts();
+        return;
+      }
+
+      const startsAt = new Date();
+      const expiresAt = new Date(
+        startsAt.getTime() + Math.max(1, Number(boost.duration_hours) || 24) * 60 * 60 * 1000
+      );
+
+      const { error: updateError } = await supabase
+        .from("profile_boosts")
+        .update({
+          status: "active",
+          active: true,
+          starts_at: startsAt.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          activated_at: startsAt.toISOString(),
+        })
+        .eq("id", boostId)
+        .eq("user_id", currentUserId)
+        .eq("status", "available");
+
+      if (updateError) throw updateError;
+
+      setMessage("Boost ativado. Seu perfil já está sendo impulsionado. 🚀");
+      await loadUserBoosts();
+    } catch (error) {
+      console.error("ERRO AO ATIVAR BOOST:", error);
+      setMessage(error.message || "Não foi possível ativar o Boost.");
+    } finally {
+      setBoostActivatingId(null);
+    }
+  }
+
+  useEffect(() => {
+    if (screen !== "myBoosts" || !currentUserId) return;
+    loadUserBoosts();
+  }, [screen, currentUserId]);
+
+  useEffect(() => {
+    if (!userActiveBoost || !userActiveBoost.expires_at) return;
+
+    const timer = window.setInterval(async () => {
+      const remaining = Math.max(0, Math.floor((new Date(userActiveBoost.expires_at).getTime() - Date.now()) / 1000));
+      setBoostSecondsLeft(remaining);
+
+      if (remaining <= 0) {
+        window.clearInterval(timer);
+        try {
+          await supabase
+            .from("profile_boosts")
+            .update({ active: false, status: "used" })
+            .eq("id", userActiveBoost.id)
+            .eq("user_id", currentUserId)
+            .eq("status", "active");
+        } catch (error) {
+          console.error("ERRO AO ENCERRAR BOOST EXPIRADO:", error);
+        }
+        await loadUserBoosts();
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [userActiveBoost, currentUserId]);
 
   async function loadAdminReports() {
     if (!isAdmin) return;
@@ -1377,6 +1877,7 @@ const chatMessagesBottomRef = useRef(null);
     setProfileNameChangedAt(data.name_changed_at || null);
     setReadReceiptsEnabled(data.read_receipts_enabled !== false);
     setIsProfileHidden(data.is_hidden === true);
+    setIntimateContentPreference(data.intimate_content_preference || "confirm");
 
     setProfileForm({
       city: "",
@@ -1385,6 +1886,15 @@ const chatMessagesBottomRef = useRef(null);
       sexuality: data.sexuality || "",
       position: data.position || "",
       availability: data.availability || "",
+      profession: data.profession || "",
+      education: data.education || "",
+      intention: Array.isArray(data.intention) ? data.intention : [],
+      habits: Array.isArray(data.habits) ? data.habits : [],
+      hobbies: Array.isArray(data.hobbies) ? data.hobbies : [],
+      personality: Array.isArray(data.personality) ? data.personality : [],
+      relationship: Array.isArray(data.relationship) ? data.relationship : [],
+      interests: Array.isArray(data.interests) ? data.interests : [],
+      languages: Array.isArray(data.languages) ? data.languages : [],
     });
 
     const hasLocation =
@@ -1534,6 +2044,250 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
+  function getChatSuggestionStorageKey(conversationId) {
+    if (!conversationId) return null;
+    return `moon_chat_suggestion_stages_${conversationId}`;
+  }
+
+  function getConsumedChatSuggestionStages(conversationId) {
+    const key = getChatSuggestionStorageKey(conversationId);
+    if (!key) return [];
+
+    try {
+      const stored = window.localStorage.getItem(key);
+      const parsed = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.error("ERRO AO LER ESTÁGIOS DA CONVERSA:", error);
+      return [];
+    }
+  }
+
+  function markChatSuggestionStageAsShown(conversationId, stage) {
+    const key = getChatSuggestionStorageKey(conversationId);
+    if (!key || !stage) return;
+
+    const currentStages = getConsumedChatSuggestionStages(conversationId);
+
+    if (currentStages.includes(stage)) return;
+
+    try {
+      window.localStorage.setItem(
+        key,
+        JSON.stringify([...currentStages, stage])
+      );
+    } catch (error) {
+      console.error("ERRO AO SALVAR ESTÁGIO DA CONVERSA:", error);
+    }
+  }
+
+  useEffect(() => {
+    if (
+      !chatConnection ||
+      !chatConversation?.id ||
+      chatMessages.length !== 4 ||
+      chatFollowUpSuggestion
+    ) {
+      return;
+    }
+
+    const consumedStages = getConsumedChatSuggestionStages(
+      chatConversation.id
+    );
+
+    if (consumedStages.includes(4)) {
+      return;
+    }
+
+    setChatFollowUpSuggestion({
+      connection: chatConnection,
+      question: getFollowUpForConnection(chatConnection),
+    });
+    markChatSuggestionStageAsShown(chatConversation.id, 4);
+  }, [
+    chatMessages.length,
+    chatConnection,
+    chatConversation?.id,
+    chatFollowUpSuggestion,
+  ]);
+
+  useEffect(() => {
+    if (
+      !chatConnection ||
+      !chatConversation?.id ||
+      chatMessages.length !== 8 ||
+      chatDeepSuggestion
+    ) {
+      return;
+    }
+
+    const consumedStages = getConsumedChatSuggestionStages(
+      chatConversation.id
+    );
+
+    if (consumedStages.includes(8)) {
+      return;
+    }
+
+    setChatDeepSuggestion({
+      connection: chatConnection,
+      question: getDeepFollowUpForConnection(chatConnection),
+    });
+    markChatSuggestionStageAsShown(chatConversation.id, 8);
+  }, [
+    chatMessages.length,
+    chatConnection,
+    chatConversation?.id,
+    chatDeepSuggestion,
+  ]);
+
+  function getCommonConnections(profile) {
+    if (!profile) return [];
+
+    const connectionFields = [
+      "intention",
+      "habits",
+      "hobbies",
+      "personality",
+      "relationship",
+      "interests",
+      "languages",
+    ];
+
+    const common = [];
+
+    connectionFields.forEach((field) => {
+      const currentValues = Array.isArray(profileForm[field])
+        ? profileForm[field].filter(Boolean)
+        : [];
+      const profileValues = Array.isArray(profile[field])
+        ? profile[field].filter(Boolean)
+        : [];
+
+      profileValues.forEach((value) => {
+        if (currentValues.includes(value) && !common.includes(value)) {
+          common.push(value);
+        }
+      });
+    });
+
+    return common;
+  }
+
+  function getFollowUpForConnection(connection) {
+    const questions = {
+      "Música": ["E qual música você colocaria para tocar agora?", "Qual música combina com o seu momento hoje?", "Tem alguma música que sempre melhora seu dia?"] ,
+      "Viagens": ["Tem algum lugar que ainda está na sua lista de sonhos?", "Qual destino você gostaria de conhecer agora?", "Você prefere viajar para descansar ou viver uma aventura?"] ,
+      "Praia": ["Você prefere praia para relaxar ou para curtir?", "Qual praia você voltaria sem pensar duas vezes?", "O que não pode faltar em um dia perfeito na praia?"] ,
+      "Natureza": ["Você prefere uma trilha ou um lugar tranquilo para ficar?", "Qual lugar na natureza você gostaria de conhecer?", "Você curte mais montanha, praia ou cachoeira?"] ,
+      "Games": ["Qual jogo você mais recomenda para alguém conhecer?", "Qual jogo você consegue jogar por horas?", "Você prefere jogar sozinho ou com amigos?"] ,
+      "Filmes e séries": ["Tem algum filme ou série que você sempre reassiste?", "Qual série você indicaria sem medo de errar?", "Você é mais de filme ou série?"] ,
+      "Gastronomia": ["Qual lugar você indicaria para comer bem?", "Qual comida você escolheria para um jantar especial?", "Qual restaurante você gostaria de conhecer?"] ,
+      "Culinária": ["Qual prato você faria para impressionar alguém?", "O que você mais gosta de cozinhar?", "Qual receita você aprendeu e ficou orgulhoso?"] ,
+      "Animais": ["Você é mais de cachorro, gato ou os dois?", "Qual animal você teria se pudesse escolher qualquer um?", "Você tem alguma história engraçada com um animal?"] ,
+      "Festas": ["Qual é o seu tipo de rolê favorito?", "Você prefere festa grande ou rolê mais tranquilo?", "Qual foi um rolê que você lembra até hoje?"] ,
+      "Fotografia": ["O que você mais gosta de fotografar?", "Você fotografa mais pessoas, lugares ou momentos?", "Qual foto sua você mais gosta?"] ,
+      "Tecnologia": ["Qual tecnologia você acha que mudou mais sua rotina?", "Qual aplicativo você usa todos os dias?", "Tem alguma tecnologia que você gostaria de experimentar?"] ,
+      "Cinema": ["Qual filme você indicaria para uma noite tranquila?", "Qual filme você gostaria de rever no cinema?", "Qual gênero de filme mais combina com você?"] ,
+      "Moda": ["Você gosta de montar looks ou vai no básico?", "Qual peça você mais gosta de usar?", "Seu estilo muda dependendo do lugar?"] ,
+      "Negócios": ["Você tem algum projeto ou ideia que gostaria de tirar do papel?", "Você gosta mais de criar ou executar ideias?", "Qual negócio você teria vontade de abrir?"] ,
+      "Finanças": ["Você é mais de guardar, investir ou aproveitar?", "Você gosta de planejar o dinheiro ou prefere ir vivendo?", "Tem algum objetivo financeiro que você está buscando?"] ,
+      "Espiritualidade": ["O que costuma deixar seu dia mais leve?", "O que te ajuda a manter a cabeça tranquila?", "Existe algum hábito que te traz paz?"] ,
+      "Inglês": ["Você aprendeu inglês por estudo, viagem ou por conta própria?", "Você gosta de consumir conteúdo em inglês?", "Qual lugar você gostaria de conhecer para praticar inglês?"] ,
+      "Espanhol": ["Você gostaria de conhecer algum país de língua espanhola?", "Você aprendeu espanhol por estudo ou por interesse?", "Qual país da América Latina você teria vontade de conhecer?"] ,
+      "Francês": ["Qual lugar da França você gostaria de conhecer?", "Você curte a cultura francesa?", "Você teria vontade de aprender francês?"] ,
+      "Italiano": ["Você teria vontade de conhecer a Itália?", "Qual cidade italiana você gostaria de conhecer?", "Você gosta mais de comida, cultura ou paisagens da Itália?"] ,
+      "Alemão": ["Você gostaria de conhecer algum lugar onde se fala alemão?", "Você teria vontade de aprender alemão?", "Qual cidade da Alemanha você gostaria de conhecer?"] ,
+      "Libras": ["Como você conheceu a Libras?", "Você usa Libras no dia a dia?", "O que despertou seu interesse por Libras?"] ,
+      "Relacionamento": ["O que faz uma conexão valer a pena para você?", "O que você mais valoriza quando conhece alguém?", "Para você, o que deixa uma relação leve?"] ,
+      "Conhecer": ["O que mais chamou sua atenção no MOON?", "O que você gostaria de encontrar por aqui?", "Que tipo de pessoa costuma despertar sua curiosidade?"] ,
+      "Casual": ["Qual seria um rolê perfeito para sair da rotina?", "Você prefere algo planejado ou espontâneo?", "O que torna um encontro casual divertido para você?"] ,
+      "Amizade": ["O que faz você querer manter alguém por perto?", "O que você mais valoriza em uma amizade?", "Você é do tipo que faz amizade rápido?"] ,
+      "Conversar": ["Qual assunto sempre consegue prender sua atenção?", "Sobre o que você poderia conversar por horas?", "Que assunto faz você esquecer da hora?"] ,
+      "Ainda não sei": ["O que faria uma conversa aqui ficar realmente boa?", "O que você espera descobrir por aqui?", "Você prefere deixar as coisas acontecerem naturalmente?"] ,
+    };
+
+    const options = questions[connection];
+    if (!options) return `E o que mais você curte em ${connection}?`;
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  function getDeepFollowUpForConnection(connection) {
+    const questions = {
+      "Música": ["Se vocês pudessem ir juntos a um show, quem você escolheria ver?", "Qual música você colocaria para marcar um momento especial?", "Qual artista você gostaria de descobrir junto com alguém?"] ,
+      "Viagens": ["Qual viagem você faria de novo sem pensar duas vezes?", "Que destino teria tudo a ver com vocês dois?", "Se pudesse embarcar amanhã, para onde iria?"] ,
+      "Praia": ["Qual seria o seu dia perfeito na praia com alguém?", "Você escolheria nascer do sol ou pôr do sol na praia?", "Qual praia seria perfeita para um rolê a dois?"] ,
+      "Natureza": ["Qual lugar você gostaria de conhecer acompanhado?", "Você toparia uma aventura na natureza com alguém?", "Qual seria o passeio perfeito ao ar livre?"] ,
+      "Games": ["Qual jogo você gostaria de jogar com alguém?", "Você ensinaria seu jogo favorito para alguém?", "Qual seria o jogo perfeito para uma noite juntos?"] ,
+      "Filmes e séries": ["Qual filme você assistiria com alguém numa noite perfeita?", "Que série vocês poderiam começar juntos?", "Qual filme diz muito sobre o seu gosto?"] ,
+      "Gastronomia": ["Qual experiência gastronômica você gostaria de viver com alguém?", "Qual lugar seria perfeito para um jantar a dois?", "Você escolheria um restaurante novo ou seu lugar favorito?"] ,
+      "Culinária": ["Qual prato você gostaria de preparar junto com alguém?", "Você toparia cozinhar em dupla? O que fariam?", "Qual receita seria divertida de fazer juntos?"] ,
+      "Animais": ["Você toparia um rolê que envolvesse animais?", "Qual passeio com animais você gostaria de fazer?", "Você teria um pet junto com alguém?"] ,
+      "Festas": ["Qual seria o rolê perfeito para vocês dois?", "Vocês seriam os primeiros a chegar ou os últimos a sair?", "Qual tipo de festa combinaria com vocês?"] ,
+      "Fotografia": ["Que lugar você gostaria de fotografar acompanhado?", "Você curtiria fazer um passeio só para fotografar juntos?", "Que momento você gostaria de registrar com alguém?"] ,
+      "Tecnologia": ["Que tecnologia você gostaria de experimentar com alguém?", "Qual gadget você gostaria de testar junto?", "Que novidade tecnológica mais te deixa curioso?"] ,
+      "Cinema": ["Qual filme seria perfeito para assistir juntos?", "Qual sessão de cinema você escolheria para um encontro?", "Você escolheria filme conhecido ou uma descoberta nova?"] ,
+      "Moda": ["Você curtiria montar um look para um encontro?", "Você pediria opinião de alguém para escolher uma roupa?", "Qual seria o estilo de um encontro perfeito para você?"] ,
+      "Negócios": ["Você gostaria de construir algum projeto com alguém?", "Que ideia você adoraria tirar do papel acompanhado?", "Você trabalharia bem em dupla com alguém que combina com você?"] ,
+      "Finanças": ["Qual seria uma experiência que você gostaria de viver com alguém?", "Você gosta de planejar uma viagem ou experiência juntos?", "Qual sonho você gostaria de realizar acompanhado?"] ,
+      "Espiritualidade": ["O que você gostaria de compartilhar com alguém que te faz bem?", "Que hábito de paz você gostaria de viver acompanhado?", "O que torna uma conexão especial para você?"] ,
+      "Inglês": ["Qual lugar você gostaria de conhecer para praticar inglês?", "Você toparia uma viagem para praticar inglês juntos?", "Que filme ou série em inglês vocês poderiam assistir juntos?"] ,
+      "Espanhol": ["Qual país você conheceria acompanhado?", "Você faria uma viagem pela América Latina com alguém?", "Qual cidade de língua espanhola seria um bom destino a dois?"] ,
+      "Francês": ["Que lugar você gostaria de conhecer na França?", "Você toparia uma viagem para praticar francês?", "Qual experiência francesa você gostaria de viver?"] ,
+      "Italiano": ["Qual seria o seu roteiro ideal pela Itália?", "Qual cidade italiana seria perfeita para conhecer acompanhado?", "Você faria uma viagem gastronômica pela Itália?"] ,
+      "Alemão": ["Qual lugar de língua alemã você gostaria de conhecer?", "Você faria uma viagem pela Alemanha acompanhado?", "Qual cidade alemã despertaria sua curiosidade?"] ,
+      "Libras": ["Que experiência você gostaria de compartilhar usando Libras?", "Você gostaria de aprender mais Libras junto com alguém?", "Que situação seria legal vivenciar usando Libras?"] ,
+      "Relacionamento": ["O que você gostaria de construir com alguém que combina com você?", "O que faz você sentir que existe uma conexão de verdade?", "Que tipo de relação faria sentido para você hoje?"] ,
+      "Conhecer": ["O que faria você querer continuar conhecendo alguém?", "O que precisa acontecer para uma conversa virar vontade de se encontrar?", "Que detalhe faz você querer conhecer alguém melhor?"] ,
+      "Casual": ["Qual seria um encontro leve e sem roteiro para você?", "Que tipo de encontro espontâneo você toparia?", "O que faria um encontro casual ficar inesquecível?"] ,
+      "Amizade": ["Que tipo de amizade você gostaria de encontrar aqui?", "Qual rolê você faria com um novo amigo?", "O que faz uma amizade sair do superficial?"] ,
+      "Conversar": ["Que assunto você poderia conversar por horas com alguém?", "Qual conversa você gostaria de ter hoje?", "O que faz você querer continuar uma conversa?"] ,
+      "Ainda não sei": ["O que faria você perceber que vale a pena continuar essa conversa?", "Você prefere descobrir a conexão aos poucos?", "O que faria você querer conhecer alguém pessoalmente?"] ,
+    };
+
+    const options = questions[connection];
+    if (!options) return `O que você gostaria de viver relacionado a ${connection}?`;
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  function getIcebreakerForConnection(connection) {
+    const questions = {
+      "Música": ["Qual música você não cansa de ouvir?", "Que música você colocaria para começar uma conversa?", "Qual artista você sempre acaba ouvindo?"] ,
+      "Viagens": ["Qual lugar você mais gostou de conhecer?", "Qual destino está no topo da sua lista?", "Qual viagem mais marcou você?"] ,
+      "Praia": ["Qual é a sua praia favorita?", "Você tem uma praia que considera especial?", "Praia para relaxar ou para curtir?"] ,
+      "Natureza": ["Qual lugar na natureza você gostaria de conhecer?", "Você prefere trilha, cachoeira ou praia?", "Qual lugar ao ar livre você mais gosta?"] ,
+      "Games": ["Qual jogo você mais gosta de jogar?", "Qual jogo você indicaria para alguém?", "Qual game sempre te prende?"] ,
+      "Filmes e séries": ["Qual filme ou série você recomenda?", "Qual série você terminou e amou?", "Qual filme você sempre indica?"] ,
+      "Gastronomia": ["Qual comida você escolheria para um jantar perfeito?", "Qual comida você nunca enjoa?", "Qual lugar você mais gosta de comer?"] ,
+      "Culinária": ["Você gosta de cozinhar? O que faz de melhor?", "Qual prato você sabe fazer muito bem?", "Você cozinha mais por hobby ou necessidade?"] ,
+      "Animais": ["Você tem algum animal de estimação?", "Você é mais de cachorro ou gato?", "Qual animal você gostaria de ter?"] ,
+      "Festas": ["Você é mais de festa ou de um rolê tranquilo?", "Qual é o seu tipo de festa favorito?", "Você curte sair ou prefere um rolê mais reservado?"] ,
+      "Fotografia": ["Você gosta de fotografar o quê?", "O que mais chama sua atenção para fotografar?", "Você gosta mais de foto de pessoas ou lugares?"] ,
+      "Tecnologia": ["Qual tecnologia você não vive sem?", "Qual aplicativo você mais usa?", "Você curte testar novidades tecnológicas?"] ,
+      "Cinema": ["Qual filme você viu recentemente e gostou?", "Qual filme você poderia rever várias vezes?", "Qual gênero você mais gosta no cinema?"] ,
+      "Moda": ["Você curte moda ou escolhe mais pelo conforto?", "Como você definiria seu estilo?", "Tem alguma peça que você sempre usa?"] ,
+      "Negócios": ["Você gosta de conversar sobre negócios e ideias?", "Você tem alguma ideia de negócio?", "Você se imagina empreendendo algum dia?"] ,
+      "Finanças": ["Você curte falar sobre dinheiro e investimentos?", "Você gosta de planejar suas finanças?", "Você é mais de guardar ou aproveitar?"] ,
+      "Espiritualidade": ["O que traz paz para você?", "Você tem algum hábito que te ajuda a desacelerar?", "O que costuma deixar seu dia melhor?"] ,
+      "Inglês": ["Você costuma usar inglês no dia a dia?", "Você gosta de consumir coisas em inglês?", "Como você começou a aprender inglês?"] ,
+      "Espanhol": ["Você fala espanhol ou está aprendendo?", "Você gosta de ouvir espanhol?", "Qual país de língua espanhola você gostaria de conhecer?"] ,
+      "Francês": ["Você gosta da cultura francesa?", "Você teria vontade de conhecer a França?", "Você já estudou francês?"] ,
+      "Italiano": ["Você fala italiano ou tem vontade de aprender?", "Você teria vontade de conhecer a Itália?", "Você gosta da cultura italiana?"] ,
+      "Alemão": ["Você fala alemão ou está aprendendo?", "Você teria vontade de conhecer a Alemanha?", "O que mais te chama atenção na cultura alemã?"] ,
+      "Libras": ["Você já teve contato com Libras?", "O que despertou seu interesse por Libras?", "Você gostaria de aprender mais Libras?"] ,
+      "Relacionamento": ["O que você procura conhecer por aqui?", "O que você mais valoriza em uma conexão?", "O que faz você se interessar por alguém?"] ,
+      "Conhecer": ["O que fez você entrar no MOON?", "O que você espera encontrar por aqui?", "O que te fez querer conhecer pessoas novas?"] ,
+      "Casual": ["O que você gosta de fazer quando quer sair da rotina?", "Qual seria um rolê espontâneo perfeito?", "O que costuma te tirar da rotina?"] ,
+      "Amizade": ["O que você valoriza em uma amizade?", "O que faz você confiar em alguém?", "Você costuma fazer amizade rápido?"] ,
+      "Conversar": ["Sobre o que você poderia conversar por horas?", "Qual assunto nunca fica chato para você?", "Que tipo de conversa prende sua atenção?"] ,
+      "Ainda não sei": ["O que você espera encontrar por aqui?", "O que você gostaria de descobrir no MOON?", "Você prefere deixar a conexão acontecer naturalmente?"] ,
+    };
+
+    const options = questions[connection];
+    if (!options) return `Vi que vocês também têm interesse em ${connection}. Quer conversar sobre isso?`;
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
   async function openProfileDetails(profile) {
     if (!profile?.id) return;
 
@@ -1641,10 +2395,57 @@ const chatMessagesBottomRef = useRef(null);
 
       const profiles = data || [];
 
-
       const { data: { user } } = await supabase.auth.getUser();
       const blockedIds = await getBlockedUserIds(user?.id);
       const visibleProfiles = profiles.filter((profile) => !blockedIds.has(profile.id) && profile.is_hidden !== true);
+
+      const visibleProfileIds = visibleProfiles.map((profile) => profile.id).filter(Boolean);
+
+      // Busca somente boosts ativos e ainda válidos para priorizar perfis impulsionados.
+      let activeBoostIds = new Set();
+      if (visibleProfileIds.length > 0) {
+        const nowIso = new Date().toISOString();
+        const { data: activeBoosts, error: boostError } = await supabase
+          .from("profile_boosts")
+          .select("user_id, starts_at, expires_at, status")
+          .in("user_id", visibleProfileIds)
+          .eq("status", "active")
+          .eq("active", true)
+          .gt("expires_at", nowIso)
+          .lte("starts_at", nowIso);
+
+        if (boostError) {
+          throw boostError;
+        }
+
+        activeBoostIds = new Set((activeBoosts || []).map((boost) => boost.user_id).filter(Boolean));
+      }
+
+      let profileDetailsMap = new Map();
+
+      if (visibleProfileIds.length > 0) {
+        const { data: profileDetails, error: profileDetailsError } = await supabase
+          .from("profiles")
+          .select("id, profession, education, intention, habits, hobbies, personality, relationship, interests, languages")
+          .in("id", visibleProfileIds);
+
+        if (profileDetailsError) {
+          throw profileDetailsError;
+        }
+
+        profileDetailsMap = new Map((profileDetails || []).map((profile) => [profile.id, profile]));
+      }
+
+      const enrichedVisibleProfiles = visibleProfiles
+        .map((profile) => ({
+          ...profile,
+          ...(profileDetailsMap.get(profile.id) || {}),
+          isBoosted: activeBoostIds.has(profile.id),
+        }))
+        .sort((a, b) => {
+          if (a.isBoosted === b.isBoosted) return 0;
+          return a.isBoosted ? -1 : 1;
+        });
 
       const { data: advertisementData, error: advertisementError } = await supabase
         .from("advertisements")
@@ -1660,7 +2461,7 @@ const chatMessagesBottomRef = useRef(null);
 
       const profilesWithPhotos =
         await Promise.all(
-          visibleProfiles.map(
+          enrichedVisibleProfiles.map(
             async (profile) => {
               const {
                 data: photoData,
@@ -2767,6 +3568,7 @@ const chatMessagesBottomRef = useRef(null);
         setChatConversation(null);
         setChatMessages([]);
         setChatText("");
+        setChatReplyToMessage(null);
         setChatTyping(false);
         setShowChatMenu(false);
         setScreen("inside");
@@ -2838,9 +3640,36 @@ const chatMessagesBottomRef = useRef(null);
       )
       .subscribe();
 
+    // Canal global: garante que quem foi bloqueado também perca imediatamente
+    // o acesso visual ao perfil de quem realizou o bloqueio.
+    const globalBlockChannel = supabase
+      .channel("moon-block-events")
+      .on(
+        "broadcast",
+        { event: "user_blocked" },
+        (payload) => {
+          const blockedUserId = payload?.payload?.blockedUserId;
+          const blockerId = payload?.payload?.blockerId;
+
+          if (blockedUserId !== currentUserId) return;
+          if (!isValidUuid(blockerId) || blockerId === currentUserId) return;
+
+          removeBlockedUserFromInterface(blockerId);
+          setBlockedUsers((current) => {
+            if (current.some((item) => item.id === blockerId)) return current;
+            return [
+              ...current,
+              { id: blockerId, name: "Usuário", birth_date: null },
+            ];
+          });
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(directBlockChannel);
+      supabase.removeChannel(globalBlockChannel);
     };
   }, [currentUserId, chatTarget?.id, selectedProfile?.id, selectedMapProfile?.id]);
 
@@ -2984,6 +3813,7 @@ const chatMessagesBottomRef = useRef(null);
         setChatConversation(null);
         setChatMessages([]);
         setChatText("");
+        setChatReplyToMessage(null);
         setChatTyping(false);
         setShowChatMenu(false);
         setScreen("conversations");
@@ -3012,17 +3842,35 @@ const chatMessagesBottomRef = useRef(null);
 
       await directBlockChannel.subscribe();
 
+      const blockPayload = {
+        blockerId: user.id,
+        blockedUserId: profile.id,
+      };
+
+      // Envia no canal individual e também no canal global.
+      // O segundo garante a remoção imediata do perfil para o usuário bloqueado.
       await directBlockChannel.send({
         type: "broadcast",
         event: "user_blocked",
-        payload: {
-          blockerId: user.id,
-          blockedUserId: profile.id,
-        },
+        payload: blockPayload,
+      });
+
+      const globalBlockChannel = supabase.channel("moon-block-events");
+      globalBlockChannel.on(
+        "broadcast",
+        { event: "user_blocked" },
+        () => {}
+      );
+      await globalBlockChannel.subscribe();
+      await globalBlockChannel.send({
+        type: "broadcast",
+        event: "user_blocked",
+        payload: blockPayload,
       });
 
       window.setTimeout(() => {
         supabase.removeChannel(directBlockChannel);
+        supabase.removeChannel(globalBlockChannel);
       }, 1500);
 
       // Depois do bloqueio, nunca deixamos a tela do perfil bloqueado aberta.
@@ -3064,16 +3912,58 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Usuário não encontrado.");
       }
 
+      const description = reportDescription.trim() || null;
+
       const { error } = await supabase
         .from("reports")
         .insert({
           reporter_id: user.id,
           reported_user_id: profile.id,
           reason: reportReason,
-          description: reportDescription.trim() || null,
+          description,
         });
 
       if (error) throw error;
+
+      if (reportReason === "Insistência após recusa") {
+        const messageIdMatch = description?.match(/mensagem\s+([0-9a-f-]{36})/i);
+        const evidenceMessageId = messageIdMatch?.[1] || null;
+
+        const { error: abusiveEventError } = await supabase
+          .from("abusive_approach_events")
+          .insert({
+            user_id: profile.id,
+            reported_by: user.id,
+            conversation_id: chatConversation?.id || null,
+            evidence_message_id: evidenceMessageId,
+            reason: "Insistência após recusa",
+            status: "pending",
+          });
+
+        if (abusiveEventError) {
+          console.error("ERRO AO REGISTRAR OCORRÊNCIA DE ABORDAGEM ABUSIVA:", abusiveEventError);
+          throw abusiveEventError;
+        }
+      }
+
+      if (reportReason === "Perfil falso") {
+        const { error: fakeProfileEventError } = await supabase
+          .from("fake_profile_events")
+          .insert({
+            user_id: profile.id,
+            reported_by: user.id,
+            conversation_id: chatConversation?.id || null,
+            evidence_message_id: null,
+            reason: "Perfil falso",
+            details: description,
+            status: "pending",
+          });
+
+        if (fakeProfileEventError) {
+          console.error("ERRO AO REGISTRAR OCORRÊNCIA DE PERFIL FALSO:", fakeProfileEventError);
+          throw fakeProfileEventError;
+        }
+      }
 
       setReportTarget(null);
       setReportReason("");
@@ -3141,17 +4031,44 @@ const chatMessagesBottomRef = useRef(null);
           if (matchError) {
             console.error("ERRO AO REGISTRAR MATCH:", matchError);
           } else {
-            const { error: matchNotificationError } = await supabase
+            const { data: existingMatchNotifications, error: notificationCheckError } = await supabase
               .from("notifications")
-              .insert({
+              .select("id, user_id, actor_id")
+              .eq("type", "match")
+              .or(`and(user_id.eq.${profileId},actor_id.eq.${user.id}),and(user_id.eq.${user.id},actor_id.eq.${profileId})`)
+              .limit(10);
+
+            if (notificationCheckError) {
+              console.error("ERRO AO VERIFICAR NOTIFICACOES DE MATCH:", notificationCheckError);
+            }
+
+            const existingPairs = new Set(
+              (existingMatchNotifications || []).map((item) => `${item.user_id}:${item.actor_id}`)
+            );
+
+            const notificationsToCreate = [
+              {
                 user_id: profileId,
                 actor_id: user.id,
                 type: "match",
                 is_read: false,
-              });
+              },
+              {
+                user_id: user.id,
+                actor_id: profileId,
+                type: "match",
+                is_read: false,
+              },
+            ].filter((item) => !existingPairs.has(`${item.user_id}:${item.actor_id}`));
 
-            if (matchNotificationError) {
-              console.error("ERRO AO CRIAR NOTIFICACAO DE MATCH:", matchNotificationError);
+            if (notificationsToCreate.length > 0) {
+              const { error: matchNotificationError } = await supabase
+                .from("notifications")
+                .insert(notificationsToCreate);
+
+              if (matchNotificationError) {
+                console.error("ERRO AO CRIAR NOTIFICACOES DE MATCH:", matchNotificationError);
+              }
             }
           }
 
@@ -3380,8 +4297,9 @@ const chatMessagesBottomRef = useRef(null);
         }
 
         try {
+          const bucket = chatMessage.message_type === "audio" ? "chat-audio" : "chat-media";
           const { data, error } = await supabase.storage
-            .from("chat-media")
+            .from(bucket)
             .createSignedUrl(chatMessage.media_url, 60 * 60);
 
           if (error) throw error;
@@ -3761,8 +4679,88 @@ const chatMessagesBottomRef = useRef(null);
     await loadConversations();
   }
 
+  async function loadAbusiveApproachRestriction(userId = currentUserId) {
+    if (!userId) {
+      setAbusiveRestrictionUntil(null);
+      return null;
+    }
+
+    setAbusiveRestrictionLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("abusive_approach_events")
+        .select("confirmed_at, status")
+        .eq("user_id", userId)
+        .eq("status", "confirmed")
+        .not("confirmed_at", "is", null)
+        .order("confirmed_at", { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+
+      const now = Date.now();
+      const activeRestriction = (data || [])
+        .map((event) => {
+          const confirmedAt = new Date(event.confirmed_at).getTime();
+          return Number.isFinite(confirmedAt)
+            ? confirmedAt + 24 * 60 * 60 * 1000
+            : null;
+        })
+        .filter((until) => until && until > now)
+        .sort((a, b) => b - a)[0] || null;
+
+      setAbusiveRestrictionUntil(activeRestriction);
+      return activeRestriction;
+    } catch (error) {
+      console.error("ERRO AO VERIFICAR RESTRIÇÃO DE ABORDAGEM ABUSIVA:", error);
+      setAbusiveRestrictionUntil(null);
+      return null;
+    } finally {
+      setAbusiveRestrictionLoading(false);
+    }
+  }
+
+  function getAbusiveRestrictionMessage(until = abusiveRestrictionUntil) {
+    if (!until) return "";
+
+    const remainingMs = Math.max(0, until - Date.now());
+    if (!remainingMs) return "";
+
+    const totalMinutes = Math.ceil(remainingMs / (1000 * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours > 0) {
+      return `Sua conta está com uma restrição temporária de abordagem. Tente novamente em ${hours}h${minutes ? ` ${minutes}min` : ""}.`;
+    }
+
+    return `Sua conta está com uma restrição temporária de abordagem. Tente novamente em ${Math.max(1, minutes)} min.`;
+  }
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setAbusiveRestrictionUntil(null);
+      return;
+    }
+
+    loadAbusiveApproachRestriction(currentUserId);
+
+    const interval = window.setInterval(() => {
+      loadAbusiveApproachRestriction(currentUserId);
+    }, 60000);
+
+    return () => window.clearInterval(interval);
+  }, [currentUserId]);
+
   async function handleChat(profile, origin = "inside") {
     if (!profile?.id) return;
+
+    const restrictionUntil = await loadAbusiveApproachRestriction(currentUserId);
+    if (restrictionUntil && restrictionUntil > Date.now()) {
+      setMessage(getAbusiveRestrictionMessage(restrictionUntil));
+      return;
+    }
 
     setMessage("");
     setChatLoading(true);
@@ -3804,6 +4802,8 @@ const chatMessagesBottomRef = useRef(null);
         throw error;
       }
 
+      let isNewConversation = false;
+
       if (!conversation) {
         const {
           data: newConversation,
@@ -3822,14 +4822,37 @@ const chatMessagesBottomRef = useRef(null);
         }
 
         conversation = newConversation;
+        isNewConversation = true;
       }
+
+      const commonConnections = getCommonConnections(profile);
+      const icebreakerConnection = commonConnections[0] || null;
+
+      setChatIcebreaker(
+        isNewConversation && icebreakerConnection
+          ? {
+              connection: icebreakerConnection,
+              question: getIcebreakerForConnection(icebreakerConnection),
+            }
+          : null
+      );
+      setChatConnection(
+        icebreakerConnection || null
+      );
+      setChatFollowUpSuggestion(null);
+      setChatDeepSuggestion(null);
 
       setCurrentUserId(user.id);
       setChatOrigin(origin);
       setChatTarget(profile);
       setChatConversation(conversation);
       setChatMessages([]);
+      setChatRevealedPhotoIds([]);
+      setChatRefusalMarkedAt(null);
+      setChatRefusalPending(false);
+      setDismissedInsistenceWarningMessageIds([]);
       setChatText("");
+      setChatReplyToMessage(null);
       setScreen("chat");
     } catch (error) {
       console.error(
@@ -3908,6 +4931,7 @@ const chatMessagesBottomRef = useRef(null);
         setChatConversation(null);
         setChatMessages([]);
         setChatText("");
+        setChatReplyToMessage(null);
       }
 
       showToast({
@@ -3978,14 +5002,120 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
-  async function handleSendMessage(event) {
-    event.preventDefault();
+  function normalizeModerationText(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
-    const content = chatText.trim();
+  function messageMayBeOffensive(content) {
+    const normalized = normalizeModerationText(content);
+    if (!normalized) return false;
 
-    if (!content || !chatConversation?.id) {
-      return;
-    }
+    const offensiveTerms = [
+      "idiota",
+      "idiot",
+      "imbecil",
+      "burro",
+      "burra",
+      "otario",
+      "otaria",
+      "babaca",
+      "retardado",
+      "retardada",
+      "inutil",
+      "lixo",
+      "nojento",
+      "nojenta",
+      "vagabundo",
+      "vagabunda",
+      "viado",
+      "bicha",
+      "maricas",
+      "gayzinho",
+      "gayzinha",
+      "puta",
+      "puto",
+      "filho da puta",
+      "fdp",
+      "vai se foder",
+      "vai tomar no cu"
+    ];
+
+    return offensiveTerms.some((term) => {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|\\s)${escaped}($|\\s)`, "i").test(normalized);
+    });
+  }
+
+  function messageMayBeThreatening(content) {
+    const normalized = normalizeModerationText(content);
+    if (!normalized) return false;
+
+    const threatPatterns = [
+      "vou te matar",
+      "vou matar voce",
+      "vou acabar com voce",
+      "vou acabar contigo",
+      "vou te pegar",
+      "vou te machucar",
+      "vou te agredir",
+      "vou bater em voce",
+      "vou bater em ti",
+      "vou te encontrar",
+      "vou atrás de voce",
+      "vou atras de voce",
+      "vou expor voce",
+      "vou expor voce para todo mundo",
+      "vou divulgar suas fotos",
+      "vou divulgar suas fotos intimas",
+      "vou postar suas fotos",
+      "vou postar suas fotos intimas",
+      "vou vazar suas fotos",
+      "vou vazar suas fotos intimas",
+      "vou divulgar seu video",
+      "vou divulgar seu vídeo",
+      "vou vazar seu video",
+      "vou vazar seu vídeo",
+      "se voce nao fizer",
+      "se você não fizer",
+      "se voce nao me mandar",
+      "se você não me mandar",
+      "vou contar para todo mundo",
+      "vou contar pra todo mundo",
+      "vou mostrar para todo mundo",
+      "vou mostrar pra todo mundo",
+      "vou publicar suas fotos",
+      "vou publicar seu video"
+    ];
+
+    return threatPatterns.some((term) => normalized.includes(normalizeModerationText(term)));
+  }
+
+  function dismissThreatMessageWarning(messageId) {
+    if (!messageId) return;
+    setDismissedThreatMessageIds((current) =>
+      current.includes(messageId) ? current : [...current, messageId]
+    );
+  }
+
+  function selectChatMessageForReply(chatMessage) {
+    if (!chatMessage?.id) return;
+    if (chatMessage.deleted_for_everyone) return;
+
+    setChatReplyToMessage(chatMessage);
+  }
+
+  function cancelChatReply() {
+    setChatReplyToMessage(null);
+  }
+
+  async function sendChatTextMessage(content) {
+    if (!content || !chatConversation?.id) return;
 
     try {
       const {
@@ -3996,6 +5126,12 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Usuário não encontrado.");
       }
 
+      const restrictionUntil = await loadAbusiveApproachRestriction(user.id);
+      if (restrictionUntil && restrictionUntil > Date.now()) {
+        setMessage(getAbusiveRestrictionMessage(restrictionUntil));
+        return;
+      }
+
       const { data: insertedMessage, error } = await supabase
         .from("messages")
         .insert({
@@ -4003,6 +5139,7 @@ const chatMessagesBottomRef = useRef(null);
           sender_id: user.id,
           content,
           message_type: "text",
+          reply_to_message_id: chatReplyToMessage?.id || null,
         })
         .select("*")
         .single();
@@ -4018,7 +5155,18 @@ const chatMessagesBottomRef = useRef(null);
         return [...currentMessages, insertedMessage];
       });
 
+      setChatIcebreaker(null);
+      setChatFollowUpSuggestion(null);
+      setChatDeepSuggestion(null);
       setChatText("");
+      setChatReplyToMessage(null);
+      if (chatRefusalPending) {
+        setChatRefusalMarkedAt(insertedMessage?.created_at || new Date().toISOString());
+        setChatRefusalPending(false);
+        setDismissedInsistenceWarningMessageIds([]);
+      }
+      setOffensiveWarning(false);
+      setOffensivePendingContent("");
       showToast({
         title: "Mensagem enviada",
         body: "Sua mensagem foi enviada.",
@@ -4036,7 +5184,92 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
+  async function handleSendMessage(event) {
+    event.preventDefault();
+
+    const content = chatText.trim();
+
+    if (!content || !chatConversation?.id) {
+      return;
+    }
+
+    if (messageMayBeThreatening(content)) {
+      setThreatPendingContent(content);
+      setThreatWarning(true);
+      return;
+    }
+
+    if (messageMayBeOffensive(content)) {
+      setOffensivePendingContent(content);
+      setOffensiveWarning(true);
+      return;
+    }
+
+    await sendChatTextMessage(content);
+  }
+
+  async function handleSendOffensiveMessage() {
+    const content = offensivePendingContent.trim();
+    if (!content) {
+      setOffensiveWarning(false);
+      return;
+    }
+
+    await sendChatTextMessage(content);
+  }
+
+  function cancelThreatMessage() {
+    setThreatWarning(false);
+    setThreatPendingContent("");
+    setChatText("");
+  }
+
+  useEffect(() => {
+    setDismissedOffensiveMessageIds([]);
+    setDismissedThreatMessageIds([]);
+  }, [chatConversation?.id]);
+
+  useEffect(() => {
+    setDismissedIntimateMessageIds([]);
+    setChatRevealedPhotoIds([]);
+  }, [chatConversation?.id]);
+
+  function dismissOffensiveMessageWarning(messageId) {
+    if (!messageId) return;
+    setDismissedOffensiveMessageIds((current) =>
+      current.includes(messageId) ? current : [...current, messageId]
+    );
+  }
+
+  function dismissInsistenceWarning(messageId) {
+    if (!messageId) return;
+    setDismissedInsistenceWarningMessageIds((current) =>
+      current.includes(messageId) ? current : [...current, messageId]
+    );
+  }
+
+  function markChatRefusal() {
+    const refusalMessage = "Obrigado, mas não tenho interesse em continuar a conversa.";
+    setChatText(refusalMessage);
+    setChatRefusalPending(true);
+  }
+
+  function openContextualOffensiveReport(messageId) {
+    setReportTarget(chatTarget || null);
+    setReportReason("");
+    setReportDescription(
+      messageId
+        ? `Denúncia contextual relacionada à mensagem ${messageId}.`
+        : "Denúncia contextual relacionada a uma mensagem recebida."
+    );
+  }
+
   function openChatMediaPicker(mode) {
+    if (abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now()) {
+      setMessage(getAbusiveRestrictionMessage());
+      return;
+    }
+
     setShowChatAttachMenu(false);
     setChatMediaMode(mode);
 
@@ -4124,6 +5357,7 @@ const chatMessagesBottomRef = useRef(null);
           message_type: isVideo ? "video" : "image",
           media_url: filePath,
           media_expires_at: expiresAt,
+          is_intimate: chatMediaIntimate,
         })
         .select("*")
         .single();
@@ -4155,9 +5389,213 @@ const chatMessagesBottomRef = useRef(null);
     } finally {
       setChatMediaLoading(false);
       setChatMediaMode(null);
+      setChatMediaIntimate(false);
       event.target.value = "";
     }
   }
+
+  function stopChatAudioTimer() {
+    if (chatAudioTimerRef.current) {
+      clearInterval(chatAudioTimerRef.current);
+      chatAudioTimerRef.current = null;
+    }
+  }
+
+  function stopChatAudioStream() {
+    if (chatAudioStreamRef.current) {
+      chatAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+      chatAudioStreamRef.current = null;
+    }
+  }
+
+  function getSupportedAudioMimeType() {
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+    ];
+
+    return candidates.find((type) => {
+      try {
+        return typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type);
+      } catch (error) {
+        return false;
+      }
+    }) || "";
+  }
+
+  async function startChatAudioRecording() {
+    if (!chatConversation?.id || !currentUserId) return;
+
+    const restrictionActive = Boolean(
+      abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now()
+    );
+
+    if (restrictionActive) {
+      setMessage("O envio de mensagens está temporariamente restrito.");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setMessage("Seu navegador não oferece gravação de áudio.");
+      return;
+    }
+
+    try {
+      setMessage("");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getSupportedAudioMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      chatAudioStreamRef.current = stream;
+      chatAudioRecorderRef.current = recorder;
+      chatAudioChunksRef.current = [];
+      setChatAudioSeconds(0);
+      setChatAudioRecording(true);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) {
+          chatAudioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setMessage("Não foi possível gravar o áudio.");
+        setChatAudioRecording(false);
+        stopChatAudioTimer();
+        stopChatAudioStream();
+      };
+
+      recorder.onstop = async () => {
+        stopChatAudioTimer();
+        stopChatAudioStream();
+        setChatAudioRecording(false);
+
+        const chunks = chatAudioChunksRef.current;
+        chatAudioChunksRef.current = [];
+
+        if (!chunks.length || !chatConversation?.id || !currentUserId) {
+          return;
+        }
+
+        const finalMimeType = recorder.mimeType || mimeType || "audio/webm";
+        const extension = finalMimeType.includes("mp4") ? "m4a" : "webm";
+        const audioBlob = new Blob(chunks, { type: finalMimeType });
+
+        if (audioBlob.size > 10 * 1024 * 1024) {
+          setMessage("O áudio deve ter no máximo 10 MB.");
+          return;
+        }
+
+        setChatMediaLoading(true);
+        setMessage("");
+
+        try {
+          const fileName = `${crypto.randomUUID()}.${extension}`;
+          const filePath = `${currentUserId}/${chatConversation.id}/${fileName}`;
+          const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+          const { error: uploadError } = await supabase.storage
+            .from("chat-audio")
+            .upload(filePath, audioBlob, {
+              contentType: finalMimeType,
+              upsert: false,
+            });
+
+          if (uploadError) throw uploadError;
+
+          const { data: insertedMessage, error } = await supabase
+            .from("messages")
+            .insert({
+              conversation_id: chatConversation.id,
+              sender_id: currentUserId,
+              content: "Áudio",
+              message_type: "audio",
+              media_url: filePath,
+              media_expires_at: expiresAt,
+              is_intimate: false,
+            })
+            .select("*")
+            .single();
+
+          if (error) {
+            await supabase.storage.from("chat-audio").remove([filePath]);
+            throw error;
+          }
+
+          const [hydratedMessage] = await hydrateChatMessages([insertedMessage]);
+
+          setChatMessages((currentMessages) => {
+            if (!hydratedMessage || currentMessages.some((item) => item.id === hydratedMessage.id)) {
+              return currentMessages;
+            }
+            return [...currentMessages, hydratedMessage];
+          });
+
+          showToast({
+            title: "Áudio enviado",
+            body: "Este áudio ficará disponível por 10 minutos.",
+          });
+        } catch (error) {
+          console.error("ERRO AO ENVIAR ÁUDIO DA CONVERSA:", error);
+          setMessage(error.message || "Não foi possível enviar o áudio.");
+        } finally {
+          setChatMediaLoading(false);
+        }
+      };
+
+      recorder.start();
+      chatAudioTimerRef.current = setInterval(() => {
+        setChatAudioSeconds((seconds) => {
+          if (seconds >= 119) {
+            if (chatAudioRecorderRef.current?.state === "recording") {
+              chatAudioRecorderRef.current.stop();
+            }
+            return seconds;
+          }
+          return seconds + 1;
+        });
+      }, 1000);
+    } catch (error) {
+      console.error("ERRO AO INICIAR GRAVAÇÃO DE ÁUDIO:", error);
+      stopChatAudioTimer();
+      stopChatAudioStream();
+      setChatAudioRecording(false);
+      setMessage(
+        error?.name === "NotAllowedError"
+          ? "Permita o acesso ao microfone para gravar áudio."
+          : "Não foi possível acessar o microfone."
+      );
+    }
+  }
+
+  function stopChatAudioRecording() {
+    const recorder = chatAudioRecorderRef.current;
+    if (!recorder) return;
+
+    stopChatAudioTimer();
+
+    if (recorder.state === "recording") {
+      recorder.stop();
+    } else {
+      stopChatAudioStream();
+      setChatAudioRecording(false);
+    }
+
+    chatAudioRecorderRef.current = null;
+  }
+
+  useEffect(() => {
+    return () => {
+      stopChatAudioTimer();
+      if (chatAudioRecorderRef.current?.state === "recording") {
+        chatAudioRecorderRef.current.stop();
+      }
+      stopChatAudioStream();
+    };
+  }, []);
 
   async function handleSendLocation() {
     if (!chatConversation?.id || !currentUserId) return;
@@ -4871,6 +6309,24 @@ const chatMessagesBottomRef = useRef(null);
               profileForm.position,
             availability:
               profileForm.availability,
+            profession:
+              profileForm.profession,
+            education:
+              profileForm.education,
+            intention:
+              profileForm.intention,
+            habits:
+              profileForm.habits,
+            hobbies:
+              profileForm.hobbies,
+            personality:
+              profileForm.personality,
+            relationship:
+              profileForm.relationship,
+            interests:
+              profileForm.interests,
+            languages:
+              profileForm.languages,
             last_active_at:
               new Date().toISOString(),
             updated_at:
@@ -6036,12 +7492,27 @@ const filteredConversations = conversations
       {legalPage && (
         <section
           style={{
-            width: "100%",
-            maxWidth: "760px",
-            minHeight: "100vh",
-            padding: "30px 20px 50px",
+            position: "fixed",
+            inset: 0,
+            zIndex: 5000,
+            width: "100vw",
+            height: "100vh",
+            overflowY: "auto",
+            boxSizing: "border-box",
+            background: "#050505",
+            display: "flex",
+            justifyContent: "center",
+            padding: "24px 16px 60px",
           }}
         >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "760px",
+              minHeight: "100%",
+              boxSizing: "border-box",
+            }}
+          >
 
           <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
             <button
@@ -6063,13 +7534,25 @@ const filteredConversations = conversations
             .legal-document p { margin: 0 0 16px; }
             .legal-document h2 { color: #d6b97d; font-size: 10px; font-weight: 500; letter-spacing: 1.4px; margin: 28px 0 10px; }
             .legal-document strong { color: #d8d0c1; font-weight: 500; }
+            @media (max-width: 600px) {
+              .legal-document { font-size: 10px; line-height: 1.8; }
+              .legal-document h2 { font-size: 9px; margin-top: 24px; }
+            }
             .back-button {
               border: 1px solid #c9b58a !important;
               color: #c9b58a !important;
             }
           `}</style>
 
-          <div style={{ border: "1px solid #242424", background: "#0b0b0b", padding: "28px" }}>
+          <div
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              border: "1px solid #242424",
+              background: "#0b0b0b",
+              padding: "clamp(20px, 4vw, 32px)",
+            }}
+          >
             <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px", marginBottom: "10px" }}>
               MOON / {legalPage === "terms" ? "TERMOS DE USO" : legalPage === "privacy" ? "POLÍTICA DE PRIVACIDADE" : "POLÍTICA DE COOKIES"}
             </div>
@@ -6269,6 +7752,16 @@ const filteredConversations = conversations
             )}
           </div>
 
+          <div style={{ display: "flex", justifyContent: "center", marginTop: "30px" }}>
+            <button
+              className="back-button"
+              type="button"
+              onClick={() => { setLegalPage(null); setMessage(""); }}
+            >
+              VOLTAR
+            </button>
+          </div>
+        </div>
         </section>
       )}
 
@@ -6569,6 +8062,17 @@ const filteredConversations = conversations
                     </div>
                   ))}
                 </div>
+                <div style={{ marginTop: "28px", padding: "20px", borderRadius: "16px", border: "1px solid rgba(214,185,125,.18)", background: "rgba(214,185,125,.035)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
+                    <div>
+                      <div className="moon-eyebrow">ADMINISTRAÇÃO</div>
+                      <h2 style={{ margin: "6px 0 4px" }}>🚀 Boost de perfis</h2>
+                      <p style={{ margin: 0 }}>Impulsione um perfil manualmente na descoberta.</p>
+                    </div>
+                    <button type="button" onClick={() => { setScreen("adminBoosts"); loadAdminBoosts(); }} style={{ padding: "10px 16px", borderRadius: "999px", border: "1px solid rgba(214,185,125,.32)", background: "rgba(214,185,125,.07)", color: "#d6b97d", fontSize: "9px", fontWeight: 700, letterSpacing: ".13em", cursor: "pointer" }}>GERENCIAR BOOSTS →</button>
+                  </div>
+                </div>
+
                 <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
                   <button
                     type="button"
@@ -6590,6 +8094,70 @@ const filteredConversations = conversations
                 </div>
               </>
             ) : <p>Nenhum dado disponível.</p>}
+          </section>
+        </main>
+      )}
+
+      {screen === "adminBoosts" && isAdmin && (
+        <main className="moon-page">
+          <section className="moon-panel" style={{ maxWidth: "1100px", margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
+              <div><div className="moon-eyebrow">MOON</div><h1>Boost administrativo</h1><p>Conceda boosts para o usuário ativar quando quiser.</p></div>
+              <button type="button" onClick={() => setScreen("admin")} style={{ padding: "10px 18px", borderRadius: "999px", border: "1px solid rgba(214,185,125,.28)", background: "transparent", color: "#d6b97d", fontSize: "10px", fontWeight: 600, letterSpacing: ".16em", cursor: "pointer" }}>← VOLTAR</button>
+            </div>
+
+            <div style={{ padding: "18px", border: "1px solid rgba(255,255,255,.10)", borderRadius: "14px", background: "rgba(255,255,255,.025)" }}>
+              <div style={{ color: "#d6b97d", fontSize: "9px", letterSpacing: ".14em", marginBottom: "10px" }}>CONCEDER BOOST</div>
+              <input value={adminBoostSearch} onChange={(event) => searchAdminBoostProfiles(event.target.value)} placeholder="Buscar perfil pelo nome..." style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.12)", background: "#0b0b0b", color: "#eee", outline: "none" }} />
+              {adminBoostProfiles.length > 0 && (
+                <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                  {adminBoostProfiles.map((profile) => (
+                    <button key={profile.id} type="button" onClick={() => { setAdminBoostSelectedProfile(profile); setAdminBoostProfiles([]); setAdminBoostSearch(profile.name || ""); }} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.08)", background: "#0d0d0d", color: "#eee", cursor: "pointer", textAlign: "left" }}>
+                      {profile.profile_photo_url ? <img src={profile.profile_photo_url} alt="" style={{ width: "34px", height: "34px", borderRadius: "50%", objectFit: "cover" }} /> : <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: "#1b1b1b" }} />}
+                      <span>{profile.name || "Perfil"}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {adminBoostSelectedProfile && <div style={{ marginTop: "10px", color: "#d6b97d", fontSize: "10px" }}>Selecionado: <strong>{adminBoostSelectedProfile.name}</strong></div>}
+              <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginTop: "14px" }}>
+                <select value={adminBoostDuration} onChange={(event) => setAdminBoostDuration(event.target.value)} style={{ padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.12)", background: "#0b0b0b", color: "#eee" }}>
+                  <option value="6">6 horas</option><option value="12">12 horas</option><option value="24">24 horas</option><option value="48">48 horas</option><option value="72">72 horas</option><option value="168">7 dias</option>
+                </select>
+                <button type="button" onClick={createAdminBoost} disabled={!adminBoostSelectedProfile || adminBoostSaving} style={{ padding: "12px 18px", borderRadius: "999px", border: "1px solid rgba(214,185,125,.35)", background: "rgba(214,185,125,.09)", color: "#d6b97d", fontSize: "9px", fontWeight: 700, letterSpacing: ".13em", cursor: adminBoostSaving ? "default" : "pointer", opacity: !adminBoostSelectedProfile || adminBoostSaving ? .5 : 1 }}>{adminBoostSaving ? "CONCEDENDO..." : "CONCEDER BOOST"}</button>
+              </div>
+            </div>
+
+            <div style={{ marginTop: "24px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}><h2 style={{ margin: 0 }}>Boosts concedidos</h2><button type="button" onClick={loadAdminBoosts} style={{ background: "transparent", border: 0, color: "#d6b97d", cursor: "pointer", fontSize: "10px" }}>↻ ATUALIZAR</button></div>
+              {adminBoostLoading ? <p>Carregando boosts...</p> : adminBoosts.length === 0 ? <p>Nenhum boost registrado.</p> : (
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {adminBoosts.map((boost) => {
+                    const activeNow = boost.status === "active" && boost.active && boost.expires_at && new Date(boost.expires_at).getTime() > Date.now();
+                    const statusLabel = boost.status === "available"
+                      ? "DISPONÍVEL"
+                      : activeNow
+                        ? "ATIVO"
+                        : boost.status === "cancelled"
+                          ? "CANCELADO"
+                          : "ENCERRADO";
+                    const statusColor = boost.status === "available" || activeNow ? "#d6b97d" : "#777";
+                    return <article key={boost.id} style={{ padding: "14px", borderRadius: "12px", border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.02)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                        <div>
+                          <strong>{boost.profile?.name || boost.user_id}</strong>
+                          <div style={{ color: "#777", fontSize: "9px", marginTop: "5px" }}>Duração: {boost.duration_hours || 24}h{boost.status === "available" ? " • Aguardando ativação do usuário" : boost.expires_at ? ` • Até ${new Date(boost.expires_at).toLocaleString("pt-BR")}` : ""}</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ color: statusColor, fontSize: "9px", letterSpacing: ".1em" }}>{statusLabel}</span>
+                          {(boost.status === "available" || activeNow) && <button type="button" onClick={() => deactivateAdminBoost(boost.id)} style={{ padding: "8px 12px", borderRadius: "999px", border: "1px solid rgba(255,255,255,.12)", background: "transparent", color: "#aaa", fontSize: "8px", cursor: "pointer" }}>{boost.status === "available" ? "CANCELAR" : "ENCERRAR"}</button>}
+                        </div>
+                      </div>
+                    </article>;
+                  })}
+                </div>
+              )}
+            </div>
           </section>
         </main>
       )}
@@ -7611,6 +9179,78 @@ const filteredConversations = conversations
         </main>
       )}
 
+      {screen === "myBoosts" && (
+        <section
+          style={{
+            width: "100%",
+            maxWidth: "700px",
+            minHeight: "100vh",
+            padding: "30px 20px 50px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
+            <div>
+              <div className="moon-eyebrow">MOON</div>
+              <h1 style={{ margin: "6px 0 4px" }}>Meus Boosts</h1>
+              <p style={{ margin: 0, color: "#8f8b84", fontSize: "12px" }}>Ative quando quiser. O tempo só começa depois da ativação.</p>
+            </div>
+            <button type="button" onClick={() => setScreen("profile")} style={{ padding: "10px 18px", borderRadius: "999px", border: "1px solid rgba(214,185,125,.28)", background: "transparent", color: "#d6b97d", fontSize: "10px", fontWeight: 600, letterSpacing: ".16em", cursor: "pointer" }}>← VOLTAR</button>
+          </div>
+
+          {userActiveBoost && (
+            <div style={{ marginBottom: "18px", padding: "22px", borderRadius: "16px", border: "1px solid rgba(214,185,125,.45)", background: "rgba(214,185,125,.07)", textAlign: "center" }}>
+              <div style={{ color: "#d6b97d", fontSize: "9px", letterSpacing: ".16em", marginBottom: "10px" }}>BOOST ATIVO</div>
+              <div style={{ color: "#f4ead7", fontSize: "34px", letterSpacing: "3px", fontVariantNumeric: "tabular-nums" }}>{formatBoostCountdown(boostSecondsLeft)}</div>
+              <div style={{ marginTop: "8px", color: "#aaa59b", fontSize: "11px" }}>Seu perfil está sendo impulsionado na descoberta.</div>
+            </div>
+          )}
+
+          {message && <p style={{ color: "#c9b58a", fontSize: "11px", textAlign: "center", lineHeight: 1.6 }}>{message}</p>}
+
+          {userBoostsLoading ? (
+            <MoonSkeleton rows={3} />
+          ) : userBoosts.length === 0 ? (
+            <div style={{ padding: "30px 20px", borderRadius: "14px", border: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.02)", textAlign: "center", color: "#77736b", fontSize: "12px", lineHeight: 1.7 }}>
+              Você ainda não recebeu nenhum Boost.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: "10px" }}>
+              {userBoosts.map((boost) => {
+                const isAvailable = boost.status === "available";
+                const isActive = boost.status === "active" && boost.active && boost.expires_at && new Date(boost.expires_at).getTime() > Date.now();
+                const isUsed = boost.status === "used";
+                const isCancelled = boost.status === "cancelled";
+
+                return (
+                  <article key={boost.id} style={{ padding: "18px", borderRadius: "14px", border: isAvailable ? "1px solid rgba(214,185,125,.30)" : "1px solid rgba(255,255,255,.08)", background: isAvailable ? "rgba(214,185,125,.045)" : "rgba(255,255,255,.02)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ color: isAvailable || isActive ? "#d6b97d" : "#77736b", fontSize: "9px", letterSpacing: ".15em", marginBottom: "7px" }}>
+                          {isAvailable ? "DISPONÍVEL" : isActive ? "ATIVO" : isUsed ? "UTILIZADO" : isCancelled ? "CANCELADO" : "ENCERRADO"}
+                        </div>
+                        <strong style={{ color: "#f4ead7", fontSize: "16px" }}>🚀 Boost de {boost.duration_hours}h</strong>
+                        {isActive && boost.expires_at && <div style={{ color: "#77736b", fontSize: "9px", marginTop: "6px" }}>Termina em {new Date(boost.expires_at).toLocaleString("pt-BR")}</div>}
+                      </div>
+
+                      {isAvailable && (
+                        <button
+                          type="button"
+                          onClick={() => activateUserBoost(boost.id)}
+                          disabled={Boolean(boostActivatingId) || Boolean(userActiveBoost)}
+                          style={{ padding: "11px 18px", borderRadius: "999px", border: "1px solid rgba(214,185,125,.42)", background: "rgba(214,185,125,.10)", color: "#d6b97d", fontSize: "9px", fontWeight: 700, letterSpacing: ".13em", cursor: boostActivatingId || userActiveBoost ? "default" : "pointer", opacity: boostActivatingId || userActiveBoost ? .5 : 1 }}
+                        >
+                          {boostActivatingId === boost.id ? "ATIVANDO..." : "ATIVAR BOOST"}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
       {screen === "settings" && (
         <section
           style={{
@@ -7803,6 +9443,85 @@ const filteredConversations = conversations
                   }
                 }} style={{ minWidth: "112px", height: "38px", border: readReceiptsEnabled ? "1px solid #c9b58a" : "1px solid #292929", background: readReceiptsEnabled ? "#15130f" : "transparent", color: readReceiptsEnabled ? "#c9b58a" : "#77736b", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer" }}>
                   {readReceiptsEnabled ? "ATIVADO" : "DESATIVADO"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: "18px", borderBottom: "1px solid #242424" }}>
+              <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px", marginBottom: "7px", textAlign: "left" }}>
+                CONTEÚDO ÍNTIMO
+              </div>
+              <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.5", marginBottom: "12px", maxWidth: "520px" }}>
+                Escolha como o MOON deve lidar com conteúdo íntimo recebido em conversas.
+              </div>
+              <div style={{ display: "grid", gap: "7px" }}>
+                {[
+                  ["allow", "QUERO RECEBER", "Conteúdo íntimo recebido pode ser visualizado normalmente."],
+                  ["confirm", "PEDIR CONFIRMAÇÃO", "O conteúdo fica oculto até você decidir se quer visualizar."],
+                  ["block", "NÃO QUERO RECEBER", "Conteúdo íntimo recebido fica bloqueado."],
+                ].map(([value, label, description]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={async () => {
+                      const previousValue = intimateContentPreference;
+                      setIntimateContentPreference(value);
+                      setMessage("");
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) return;
+                      const { error } = await supabase
+                        .from("profiles")
+                        .update({ intimate_content_preference: value })
+                        .eq("id", user.id);
+                      if (error) {
+                        setIntimateContentPreference(previousValue);
+                        setMessage("Não foi possível atualizar a preferência de conteúdo íntimo.");
+                        console.error("ERRO AO ATUALIZAR PREFERÊNCIA DE CONTEÚDO ÍNTIMO:", error);
+                      }
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "12px 13px",
+                      border: intimateContentPreference === value ? "1px solid #c9b58a" : "1px solid #292929",
+                      background: intimateContentPreference === value ? "#15130f" : "transparent",
+                      color: intimateContentPreference === value ? "#c9b58a" : "#77736b",
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ fontSize: "9px", letterSpacing: "1.2px", marginBottom: "5px" }}>{label}</div>
+                    <div style={{ fontSize: "8px", lineHeight: "1.5", color: "#66625b" }}>{description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ padding: "18px", borderBottom: "1px solid #242424" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "18px" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.8px", marginBottom: "7px", textAlign: "left" }}>
+                    PROTEÇÃO DE FOTOS
+                  </div>
+                  <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.5", maxWidth: "420px" }}>
+                    Fotos recebidas ficam borradas até você decidir se quer visualizar.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextValue = !chatPhotoConfirmationEnabled;
+                    setChatPhotoConfirmationEnabled(nextValue);
+                    try {
+                      if (currentUserId) {
+                        window.localStorage.setItem(`moon-chat-photo-confirmation-${currentUserId}`, String(nextValue));
+                      }
+                    } catch (error) {
+                      console.error("ERRO AO SALVAR PROTEÇÃO DE FOTOS:", error);
+                    }
+                  }}
+                  style={{ minWidth: "112px", height: "38px", border: chatPhotoConfirmationEnabled ? "1px solid #c9b58a" : "1px solid #292929", background: chatPhotoConfirmationEnabled ? "#15130f" : "transparent", color: chatPhotoConfirmationEnabled ? "#c9b58a" : "#77736b", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer" }}
+                >
+                  {chatPhotoConfirmationEnabled ? "ATIVADO" : "DESATIVADO"}
                 </button>
               </div>
             </div>
@@ -8522,6 +10241,8 @@ const filteredConversations = conversations
                         {profileForm.sexuality && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.sexuality}</span></div>}
                         {profileForm.position && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.position}</span></div>}
                         {profileForm.availability && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.availability}</span></div>}
+                        {profileForm.profession && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>PROFISSÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.profession}</span></div>}
+                        {profileForm.education && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>EDUCAÇÃO / ESTUDOS</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.education}</span></div>}
                       </div>
 
 
@@ -8544,6 +10265,26 @@ const filteredConversations = conversations
                         }}
                       >
                         EDITAR PERFIL
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setScreen("myBoosts"); setMessage(""); }}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          height: "48px",
+                          background: "rgba(214, 185, 125, 0.04)",
+                          border: "1px solid #c9b58a",
+                          borderRadius: "2px",
+                          color: "#c9b58a",
+                          fontSize: "10px",
+                          letterSpacing: "2px",
+                          fontWeight: "500",
+                          cursor: "pointer",
+                        }}
+                      >
+                        🚀 MEUS BOOSTS
                       </button>
 
                       <button
@@ -8743,6 +10484,100 @@ const filteredConversations = conversations
                     ))}
                   </div>
                 </div>
+
+                <div style={{ marginBottom: "22px" }}>
+                  <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>PROFISSÃO</p>
+                  <input
+                    type="text"
+                    name="profession"
+                    value={profileForm.profession}
+                    onChange={handleProfileChange}
+                    placeholder="Ex.: Designer, empresário, estudante..."
+                    maxLength={80}
+                    style={{
+                      width: "100%",
+                      height: "48px",
+                      boxSizing: "border-box",
+                      background: "rgba(201, 181, 138, 0.035)",
+                      border: "1px solid #292929",
+                      borderRadius: "2px",
+                      color: "#f4ead7",
+                      padding: "0 14px",
+                      outline: "none",
+                      fontFamily: "inherit",
+                      fontSize: "13px",
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: "22px" }}>
+                  <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>EDUCAÇÃO / ESTUDOS</p>
+                  <input
+                    type="text"
+                    name="education"
+                    value={profileForm.education}
+                    onChange={handleProfileChange}
+                    placeholder="Ex.: Publicidade, Administração, ensino médio..."
+                    maxLength={100}
+                    style={{
+                      width: "100%",
+                      height: "48px",
+                      boxSizing: "border-box",
+                      background: "rgba(201, 181, 138, 0.035)",
+                      border: "1px solid #292929",
+                      borderRadius: "2px",
+                      color: "#f4ead7",
+                      padding: "0 14px",
+                      outline: "none",
+                      fontFamily: "inherit",
+                      fontSize: "13px",
+                    }}
+                  />
+                </div>
+
+                {[
+                  { label: "INTENÇÃO", key: "intention", options: ["Relacionamento", "Conhecer", "Casual", "Amizade", "Conversar", "Ainda não sei"] },
+                  { label: "VÍCIOS / HÁBITOS", key: "habits", options: ["Fuma", "Não fuma", "Bebe", "Não bebe"] },
+                  { label: "HOBBIES E ESTILO DE VIDA", key: "hobbies", options: ["Academia", "Esportes", "Praia", "Natureza", "Viagens", "Games", "Filmes e séries", "Música", "Culinária", "Gastronomia", "Leitura", "Arte", "Fotografia", "Festas", "Animais", "Carros", "Tecnologia", "Cultura"] },
+                  { label: "PERSONALIDADE", key: "personality", options: ["Extrovertido", "Introvertido", "Comunicativo", "Reservado", "Romântico", "Carinhoso", "Aventureiro", "Tranquilo", "Divertido", "Sério", "Espontâneo", "Caseiro", "Sociável"] },
+                  { label: "RELACIONAMENTO", key: "relationship", options: ["Solteiro", "Relacionamento aberto", "Monogâmico", "Não monogâmico"] },
+                  { label: "INTERESSES", key: "interests", options: ["Gastronomia", "Moda", "Negócios", "Finanças", "Cinema", "Política", "Espiritualidade"] },
+                  { label: "IDIOMAS", key: "languages", options: ["Português", "Inglês", "Espanhol", "Francês", "Italiano", "Alemão", "Libras", "Outro"] },
+                ].map((section) => (
+                  <div key={section.key} style={{ marginBottom: "22px" }}>
+                    <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>{section.label}</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
+                      {section.options.map((option) => {
+                        const selected = profileForm[section.key].includes(option);
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() =>
+                              setProfileForm((current) => ({
+                                ...current,
+                                [section.key]: selected
+                                  ? current[section.key].filter((item) => item !== option)
+                                  : [...current[section.key], option],
+                              }))
+                            }
+                            style={{
+                              minHeight: "44px",
+                              border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                              background: selected ? "#15130f" : "#0b0b0b",
+                              color: selected ? "#f4ead7" : "#c9b58a",
+                              fontSize: "10px",
+                              letterSpacing: "0.7px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {option}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
 
                 <textarea
                   name="bio"
@@ -9451,6 +11286,11 @@ const filteredConversations = conversations
                 setChatConversation(null);
                 setChatMessages([]);
                 setChatText("");
+                setChatReplyToMessage(null);
+                setChatIcebreaker(null);
+                setChatConnection(null);
+                setChatFollowUpSuggestion(null);
+                setChatDeepSuggestion(null);
                 setShowChatMenu(false);
                 setShowChatAttachMenu(false);
                 setChatMediaMode(null);
@@ -9587,6 +11427,127 @@ const filteredConversations = conversations
           </div>
 
 
+          {chatIcebreaker && chatMessages.length === 0 && (
+            <div
+              style={{
+                margin: "22px 0 4px",
+                padding: "16px",
+                border: "1px solid rgba(201,181,138,0.32)",
+                background: "rgba(201,181,138,0.045)",
+              }}
+            >
+              <div
+                style={{
+                  color: "#c9b58a",
+                  fontSize: "8px",
+                  letterSpacing: "1.8px",
+                  marginBottom: "9px",
+                }}
+              >
+                UMA IDEIA PRA COMEÇAR
+              </div>
+              <div
+                style={{
+                  color: "#f4ead7",
+                  fontSize: "12px",
+                  lineHeight: "1.6",
+                  marginBottom: "5px",
+                }}
+              >
+                Vocês dois têm <strong>{chatIcebreaker.connection}</strong> em comum.
+              </div>
+              <div
+                style={{
+                  color: "#77736b",
+                  fontSize: "11px",
+                  lineHeight: "1.6",
+                  marginBottom: "12px",
+                }}
+              >
+                {chatIcebreaker.question}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setChatText(chatIcebreaker.question || "");
+                }}
+                style={{
+                  width: "100%",
+                  minHeight: "38px",
+                  border: "1px solid #c9b58a",
+                  background: "transparent",
+                  color: "#c9b58a",
+                  fontSize: "9px",
+                  letterSpacing: "1.5px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                USAR COMO MENSAGEM
+              </button>
+            </div>
+          )}
+
+          {threatWarning && (
+            <div
+              style={{
+                marginBottom: "14px",
+                border: "1px solid rgba(211,107,95,0.55)",
+                background: "#120d0c",
+                padding: "14px",
+              }}
+            >
+              <div style={{ color: "#d36b5f", fontSize: "10px", letterSpacing: "1.4px", marginBottom: "8px" }}>
+                ⚠️ ESSA MENSAGEM NÃO PODE SER ENVIADA.
+              </div>
+              <div style={{ color: "#9a817c", fontSize: "10px", lineHeight: "1.6", marginBottom: "12px" }}>
+                Ameaças, chantagem e exposição de outras pessoas não são permitidas no MOON.
+              </div>
+              <button
+                type="button"
+                onClick={cancelThreatMessage}
+                style={{ minHeight: "38px", border: "1px solid rgba(211,107,95,0.5)", background: "transparent", color: "#d36b5f", padding: "0 14px", fontSize: "9px", letterSpacing: "1px", cursor: "pointer" }}
+              >
+                EDITAR MENSAGEM
+              </button>
+            </div>
+          )}
+
+          {offensiveWarning && (
+            <div
+              style={{
+                marginBottom: "14px",
+                border: "1px solid rgba(201,181,138,0.45)",
+                background: "#11100e",
+                padding: "14px",
+              }}
+            >
+              <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "1.4px", marginBottom: "8px" }}>
+                ⚠️ ESSA MENSAGEM PODE SER OFENSIVA.
+              </div>
+              <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6", marginBottom: "12px" }}>
+                Revise a mensagem antes de enviar. Você pode editar ou continuar mesmo assim.
+              </div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={handleSendOffensiveMessage}
+                  style={{ minHeight: "38px", border: "1px solid #c9b58a", background: "#15130f", color: "#c9b58a", padding: "0 14px", fontSize: "9px", letterSpacing: "1px", cursor: "pointer" }}
+                >
+                  ENVIAR MESMO ASSIM
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setOffensiveWarning(false); setOffensivePendingContent(""); setChatText(offensivePendingContent); }}
+                  style={{ minHeight: "38px", border: "1px solid #292929", background: "transparent", color: "#77736b", padding: "0 14px", fontSize: "9px", letterSpacing: "1px", cursor: "pointer" }}
+                >
+                  EDITAR
+                </button>
+              </div>
+            </div>
+          )}
+
           <div
             ref={chatMessagesContainerRef}
             style={{
@@ -9616,6 +11577,9 @@ const filteredConversations = conversations
               chatMessages.map((chatMessage) => (
                 <div
                   key={chatMessage.id}
+                  id={`moon-chat-message-${chatMessage.id}`}
+                  onClick={() => selectChatMessageForReply(chatMessage)}
+                  title={chatMessage.deleted_for_everyone ? undefined : "Responder mensagem"}
                   style={{
                     alignSelf:
                       chatMessage.sender_id === currentUserId
@@ -9637,8 +11601,93 @@ const filteredConversations = conversations
                         : "#f4ead7",
                     fontSize: "12px",
                     lineHeight: "1.5",
+                    cursor: chatMessage.deleted_for_everyone ? "default" : "pointer",
+                    transition: "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease",
+                    boxShadow:
+                      chatReplyToMessage?.id === chatMessage.id
+                        ? "0 0 0 1px rgba(201,181,138,0.35), 0 8px 24px rgba(0,0,0,0.22)"
+                        : "none",
+                    transform:
+                      chatReplyToMessage?.id === chatMessage.id
+                        ? "translateY(-1px)"
+                        : "translateY(0)",
                   }}
                 >
+                  {chatMessage.reply_to_message_id && (() => {
+                    const repliedMessage = chatMessages.find(
+                      (message) => message.id === chatMessage.reply_to_message_id
+                    );
+
+                    if (!repliedMessage) return null;
+
+                    const repliedContent = repliedMessage.deleted_for_everyone
+                      ? "Mensagem excluída."
+                      : repliedMessage.message_type === "text"
+                        ? repliedMessage.content || "Mensagem"
+                        : repliedMessage.message_type === "image"
+                          ? "Foto"
+                          : repliedMessage.message_type === "video"
+                            ? "Vídeo"
+                            : repliedMessage.message_type === "audio"
+                              ? "Áudio"
+                              : repliedMessage.message_type === "location"
+                                ? "Localização"
+                                : "Mensagem";
+
+                    return (
+                      <div
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const element = document.getElementById(
+                            `moon-chat-message-${repliedMessage.id}`
+                          );
+                          element?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                          });
+                        }}
+                        style={{
+                          marginBottom: "9px",
+                          padding: "7px 9px",
+                          borderLeft: "2px solid #c9b58a",
+                          background:
+                            chatMessage.sender_id === currentUserId
+                              ? "rgba(5,5,5,0.12)"
+                              : "rgba(201,181,138,0.07)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "8px",
+                            letterSpacing: "1px",
+                            color:
+                              chatMessage.sender_id === currentUserId
+                                ? "#3b3427"
+                                : "#c9b58a",
+                            marginBottom: "3px",
+                          }}
+                        >
+                          {repliedMessage.sender_id === currentUserId
+                            ? "VOCÊ"
+                            : chatTarget?.name || "PERFIL"}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "9px",
+                            lineHeight: "1.35",
+                            opacity: 0.78,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {repliedContent}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {chatMessage.deleted_for_everyone ? (
                     <div style={{ fontStyle: "italic", opacity: 0.65 }}>
                       Mensagem excluída.
@@ -9661,6 +11710,19 @@ const filteredConversations = conversations
                         <div style={{ fontSize: "10px", opacity: 0.7 }}>Localização indisponível.</div>
                       )}
                     </div>
+                  ) : chatMessage.message_type === "audio" ? (
+                    <div style={{ minWidth: "220px", maxWidth: "100%" }}>
+                      <div style={{ fontSize: "9px", letterSpacing: "1px", marginBottom: "7px", opacity: 0.75 }}>
+                        {chatMessage.media_expired ? "ÁUDIO EXPIRADO" : "ÁUDIO"}
+                      </div>
+                      {chatMessage.media_expired ? (
+                        <div style={{ fontSize: "10px", opacity: 0.7 }}>Este áudio não está mais disponível.</div>
+                      ) : chatMessage.media_signed_url ? (
+                        <audio src={captureShieldActive ? undefined : chatMessage.media_signed_url} controls preload="metadata" style={{ width: "100%", maxWidth: "280px" }} onContextMenu={(event) => event.preventDefault()} />
+                      ) : (
+                        <div style={{ fontSize: "10px", opacity: 0.7 }}>Carregando áudio...</div>
+                      )}
+                    </div>
                   ) : chatMessage.message_type === "image" || chatMessage.message_type === "video" ? (
                     <div>
                       <div style={{ fontSize: "10px", letterSpacing: "1px", marginBottom: "8px", opacity: 0.8 }}>
@@ -9669,7 +11731,119 @@ const filteredConversations = conversations
                       {chatMessage.media_expired ? (
                         <div style={{ fontSize: "10px", opacity: 0.7 }}>Esta mídia não está mais disponível.</div>
                       ) : chatMessage.media_signed_url ? (
-                        chatMessage.message_type === "video" ? (
+                        chatMessage.sender_id !== currentUserId &&
+                        chatMessage.is_intimate &&
+                        intimateContentPreference === "block" ? (
+                          <div style={{ width: "260px", maxWidth: "100%", padding: "22px 18px", border: "1px solid #292929", background: "#101010", textAlign: "center" }}>
+                            <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "1.3px", marginBottom: "8px" }}>
+                              CONTEÚDO ÍNTIMO BLOQUEADO
+                            </div>
+                            <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.5" }}>
+                              Você escolheu não receber conteúdo íntimo.
+                            </div>
+                          </div>
+                        ) : chatMessage.sender_id !== currentUserId &&
+                          chatMessage.is_intimate &&
+                          intimateContentPreference === "confirm" &&
+                          !chatRevealedPhotoIds.includes(chatMessage.id) ? (
+                          <div style={{ width: "260px", maxWidth: "100%", padding: "22px 18px", border: "1px solid rgba(201,181,138,0.35)", background: "#101010", textAlign: "center" }}>
+                            <div style={{ color: "#c9b58a", fontSize: "11px", letterSpacing: "1.2px", marginBottom: "8px" }}>
+                              🔒 CONTEÚDO ÍNTIMO
+                            </div>
+                            <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.5", marginBottom: "16px" }}>
+                              Esta mídia foi marcada como conteúdo íntimo. Você quer visualizar?
+                            </div>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button type="button" onClick={() => setChatRevealedPhotoIds((ids) => ids.includes(chatMessage.id) ? ids : [...ids, chatMessage.id])} style={{ flex: 1, minHeight: "34px", border: "1px solid #c9b58a", background: "#15130f", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.1px", cursor: "pointer" }}>VER</button>
+                              <button type="button" onClick={() => setDismissedIntimateMessageIds((ids) => ids.includes(chatMessage.id) ? ids : [...ids, chatMessage.id])} style={{ flex: 1, minHeight: "34px", border: "1px solid #292929", background: "transparent", color: "#77736b", fontSize: "9px", letterSpacing: "1.1px", cursor: "pointer" }}>NÃO VER</button>
+                            </div>
+                          </div>
+                        ) : chatMessage.message_type === "image" &&
+                        chatMessage.sender_id !== currentUserId &&
+                        chatPhotoConfirmationEnabled &&
+                        !chatRevealedPhotoIds.includes(chatMessage.id) ? (
+                          <div style={{ width: "260px", maxWidth: "100%" }}>
+                            <div
+                              style={{
+                                position: "relative",
+                                width: "100%",
+                                height: "260px",
+                                overflow: "hidden",
+                                background: "#101010",
+                                border: "1px solid #292929",
+                              }}
+                            >
+                              <img
+                                src={captureShieldActive ? undefined : chatMessage.media_signed_url}
+                                alt="Foto recebida"
+                                {...protectedMediaProps}
+                                style={{
+                                  display: "block",
+                                  width: "100%",
+                                  height: "100%",
+                                  objectFit: "cover",
+                                  filter: "blur(18px)",
+                                  transform: "scale(1.08)",
+                                  opacity: captureShieldActive ? 0 : 0.72,
+                                }}
+                              />
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  inset: 0,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  padding: "20px",
+                                  textAlign: "center",
+                                  background: "rgba(5,5,5,0.42)",
+                                }}
+                              >
+                                <div style={{ color: "#f4ead7", fontSize: "12px", letterSpacing: "1px", marginBottom: "7px" }}>
+                                  Foto recebida
+                                </div>
+                                <div style={{ color: "#aaa59b", fontSize: "10px", lineHeight: "1.5", marginBottom: "16px" }}>
+                                  Esta foto está oculta.
+                                </div>
+                                <div style={{ display: "flex", gap: "8px", width: "100%", maxWidth: "210px" }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setChatRevealedPhotoIds((currentIds) => currentIds.includes(chatMessage.id) ? currentIds : [...currentIds, chatMessage.id])}
+                                    style={{
+                                      flex: 1,
+                                      minHeight: "34px",
+                                      border: "1px solid #c9b58a",
+                                      background: "#15130f",
+                                      color: "#c9b58a",
+                                      fontSize: "9px",
+                                      letterSpacing: "1.2px",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    VER
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setChatRevealedPhotoIds((currentIds) => currentIds.filter((id) => id !== chatMessage.id))}
+                                    style={{
+                                      flex: 1,
+                                      minHeight: "34px",
+                                      border: "1px solid #292929",
+                                      background: "rgba(0,0,0,0.3)",
+                                      color: "#77736b",
+                                      fontSize: "9px",
+                                      letterSpacing: "1.2px",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    NÃO VER
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : chatMessage.message_type === "video" ? (
                           <video
                             src={captureShieldActive ? undefined : chatMessage.media_signed_url}
                             controls
@@ -9692,6 +11866,141 @@ const filteredConversations = conversations
                   ) : (
                     <div>{chatMessage.content}</div>
                   )}
+                  {chatMessage.sender_id !== currentUserId &&
+                    !chatMessage.deleted_for_everyone &&
+                    chatMessage.message_type === "text" &&
+                    messageMayBeThreatening(chatMessage.content) &&
+                    !dismissedThreatMessageIds.includes(chatMessage.id) && (
+                    <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(211,107,95,0.28)" }}>
+                      <div style={{ color: "#d36b5f", fontSize: "9px", letterSpacing: "1px", lineHeight: "1.5", marginBottom: "7px" }}>
+                        ⚠️ ISSO ACONTECEU COM VOCÊ?
+                      </div>
+                      <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.5", marginBottom: "9px" }}>
+                        Ameaças, chantagem e exposição são tratadas como questões de segurança no MOON.
+                      </div>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => {
+                          setReportTarget(chatTarget || null);
+                          setReportReason("Me senti ameaçado");
+                          setReportDescription(`Denúncia de segurança relacionada à mensagem ${chatMessage.id}.`);
+                          dismissThreatMessageWarning(chatMessage.id);
+                        }} style={{ minHeight: "32px", border: "1px solid rgba(211,107,95,0.45)", background: "transparent", color: "#d36b5f", padding: "0 10px", fontSize: "8px", letterSpacing: "0.8px", cursor: "pointer" }}>
+                          DENUNCIAR
+                        </button>
+                        <button type="button" onClick={() => dismissThreatMessageWarning(chatMessage.id)} style={{ minHeight: "32px", border: "1px solid #292929", background: "transparent", color: "#77736b", padding: "0 10px", fontSize: "8px", letterSpacing: "0.8px", cursor: "pointer" }}>
+                          IGNORAR
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {chatMessage.sender_id !== currentUserId &&
+                    !chatMessage.deleted_for_everyone &&
+                    chatMessage.message_type === "text" &&
+                    messageMayBeOffensive(chatMessage.content) &&
+                    !dismissedOffensiveMessageIds.includes(chatMessage.id) && (
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        paddingTop: "10px",
+                        borderTop: "1px solid rgba(201,181,138,0.18)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#c9b58a",
+                          fontSize: "9px",
+                          letterSpacing: "1px",
+                          lineHeight: "1.5",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        ⚠️ ESSA MENSAGEM TE INCOMODOU?
+                      </div>
+                      <div
+                        style={{
+                          color: "#77736b",
+                          fontSize: "9px",
+                          lineHeight: "1.5",
+                          marginBottom: "9px",
+                        }}
+                      >
+                        Conte pra gente o que aconteceu.
+                      </div>
+                      <div style={{ display: "grid", gap: "5px" }}>
+                        {[
+                          "Fui ofendido",
+                          "Fui assediado",
+                          "Fui humilhado",
+                          "Recebi algo que não queria",
+                          "Me senti ameaçado",
+                          "Outro",
+                        ].map((reason) => (
+                          <button
+                            key={`${chatMessage.id}-${reason}`}
+                            type="button"
+                            onClick={() => {
+                              setReportTarget(chatTarget || null);
+                              setReportReason(reason);
+                              setReportDescription(`Denúncia contextual relacionada à mensagem ${chatMessage.id}.`);
+                              dismissOffensiveMessageWarning(chatMessage.id);
+                            }}
+                            style={{
+                              minHeight: "30px",
+                              border: "1px solid #292929",
+                              background: "transparent",
+                              color: "#8f8a81",
+                              textAlign: "left",
+                              padding: "0 8px",
+                              fontSize: "8px",
+                              letterSpacing: "0.6px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {reason}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => dismissOffensiveMessageWarning(chatMessage.id)}
+                          style={{
+                            minHeight: "30px",
+                            border: "1px solid #292929",
+                            background: "transparent",
+                            color: "#77736b",
+                            fontSize: "8px",
+                            letterSpacing: "0.8px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          FOI ENGANO
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {chatMessage.sender_id !== currentUserId &&
+                    !chatMessage.deleted_for_everyone &&
+                    chatMessage.message_type === "text" &&
+                    chatRefusalMarkedAt &&
+                    chatMessage.created_at &&
+                    new Date(chatMessage.created_at).getTime() > new Date(chatRefusalMarkedAt).getTime() &&
+                    !dismissedInsistenceWarningMessageIds.includes(chatMessage.id) && (
+                    <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(201,181,138,0.18)" }}>
+                      <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1px", lineHeight: "1.5", marginBottom: "8px" }}>
+                        ⚠️ VOCÊ JÁ DISSE QUE NÃO TINHA INTERESSE.
+                      </div>
+                      <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.5", marginBottom: "9px" }}>
+                        Essa pessoa continuou a conversa depois da sua recusa. Você pode ignorar, denunciar ou bloquear.
+                      </div>
+                      <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => { dismissInsistenceWarning(chatMessage.id); setReportTarget(chatTarget || null); setReportReason("Insistência após recusa"); setReportDescription(`Denúncia contextual relacionada à insistência após recusa na mensagem ${chatMessage.id}.`); }} style={{ minHeight: "30px", border: "1px solid #292929", background: "transparent", color: "#8f8a81", padding: "0 8px", fontSize: "8px", letterSpacing: "0.6px", cursor: "pointer" }}>DENUNCIAR</button>
+                        <button type="button" onClick={() => { dismissInsistenceWarning(chatMessage.id); handleBlock(chatTarget); }} style={{ minHeight: "30px", border: "1px solid rgba(211,107,95,0.45)", background: "transparent", color: "#d36b5f", padding: "0 8px", fontSize: "8px", letterSpacing: "0.6px", cursor: "pointer" }}>BLOQUEAR</button>
+                        <button type="button" onClick={() => dismissInsistenceWarning(chatMessage.id)} style={{ minHeight: "30px", border: "1px solid #292929", background: "transparent", color: "#77736b", padding: "0 8px", fontSize: "8px", letterSpacing: "0.6px", cursor: "pointer" }}>IGNORAR</button>
+                      </div>
+                    </div>
+                  )}
+
                   {chatMessage.sender_id === currentUserId && (
                     <div
                       style={{
@@ -9747,6 +12056,139 @@ const filteredConversations = conversations
             />
           </div>
 
+          {abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now() && (
+            <div
+              style={{
+                margin: "0 0 12px",
+                padding: "14px 16px",
+                border: "1px solid rgba(211,107,95,0.35)",
+                background: "rgba(211,107,95,0.035)",
+              }}
+            >
+              <div
+                style={{
+                  color: "#d36b5f",
+                  fontSize: "9px",
+                  letterSpacing: "1.5px",
+                  marginBottom: "7px",
+                }}
+              >
+                RESTRIÇÃO TEMPORÁRIA
+              </div>
+              <div
+                style={{
+                  color: "#8f8a81",
+                  fontSize: "10px",
+                  lineHeight: "1.5",
+                }}
+              >
+                {getAbusiveRestrictionMessage()}
+              </div>
+            </div>
+          )}
+
+          {chatFollowUpSuggestion && chatMessages.length >= 4 && (
+            <div
+              style={{
+                margin: "0 0 12px",
+                padding: "14px 16px",
+                border: "1px solid rgba(201,181,138,0.25)",
+                background: "rgba(201,181,138,0.035)",
+              }}
+            >
+              <div
+                style={{
+                  color: "#c9b58a",
+                  fontSize: "8px",
+                  letterSpacing: "1.7px",
+                  marginBottom: "8px",
+                }}
+              >
+                UMA IDEIA PRA CONTINUAR
+              </div>
+              <div
+                style={{
+                  color: "#77736b",
+                  fontSize: "11px",
+                  lineHeight: "1.6",
+                  marginBottom: "11px",
+                }}
+              >
+                {chatFollowUpSuggestion.question}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setChatText(chatFollowUpSuggestion.question || "");
+                }}
+                style={{
+                  width: "100%",
+                  minHeight: "36px",
+                  border: "1px solid #292929",
+                  background: "transparent",
+                  color: "#c9b58a",
+                  fontSize: "9px",
+                  letterSpacing: "1.4px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                USAR COMO MENSAGEM
+              </button>
+            </div>
+          )}
+
+          {chatDeepSuggestion && chatMessages.length >= 8 && (
+            <div
+              style={{
+                margin: "0 0 12px",
+                padding: "14px 16px",
+                border: "1px solid rgba(201,181,138,0.18)",
+                background: "rgba(201,181,138,0.02)",
+              }}
+            >
+              <div
+                style={{
+                  color: "#c9b58a",
+                  fontSize: "8px",
+                  letterSpacing: "1.7px",
+                  marginBottom: "8px",
+                }}
+              >
+                E AGORA?
+              </div>
+              <div
+                style={{
+                  color: "#77736b",
+                  fontSize: "11px",
+                  lineHeight: "1.6",
+                  marginBottom: "11px",
+                }}
+              >
+                {chatDeepSuggestion.question}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setChatText(chatDeepSuggestion.question || "");
+                }}
+                style={{
+                  width: "100%",
+                  minHeight: "36px",
+                  border: "1px solid #292929",
+                  background: "transparent",
+                  color: "#c9b58a",
+                  fontSize: "9px",
+                  letterSpacing: "1.4px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                USAR COMO MENSAGEM
+              </button>
+            </div>
+          )}
+
           {chatTyping && (
             <div
               style={{
@@ -9761,6 +12203,110 @@ const filteredConversations = conversations
               Digitando...
             </div>
           )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+            <button type="button" onClick={markChatRefusal} style={{ minHeight: "30px", border: "1px solid #292929", background: "transparent", color: "#77736b", padding: "0 10px", fontSize: "8px", letterSpacing: "1px", cursor: "pointer" }}>
+              NÃO TENHO INTERESSE
+            </button>
+          </div>
+
+          {chatAudioRecording && (
+            <div style={{ marginBottom: "10px", padding: "10px 12px", border: "1px solid #292929", background: "#0b0b0b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+              <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1px" }}>
+                🎙 GRAVANDO · {String(Math.floor(chatAudioSeconds / 60)).padStart(2, "0")}:{String(chatAudioSeconds % 60).padStart(2, "0")}
+              </div>
+              <button type="button" onClick={stopChatAudioRecording} style={{ minHeight: "34px", border: "1px solid #c9b58a", background: "transparent", color: "#c9b58a", padding: "0 12px", fontSize: "8px", letterSpacing: "1px", cursor: "pointer" }}>
+                PARAR E ENVIAR
+              </button>
+            </div>
+          )}
+
+          {chatReplyToMessage && (
+            <div
+              style={{
+                marginBottom: "10px",
+                padding: "10px 12px",
+                border: "1px solid #292929",
+                borderLeft: "2px solid #c9b58a",
+                background: "#101010",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                animation: "moonReplyPreviewIn 180ms ease-out",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    color: "#c9b58a",
+                    fontSize: "8px",
+                    letterSpacing: "1.2px",
+                    marginBottom: "4px",
+                  }}
+                >
+                  RESPONDENDO A{" "}
+                  {chatReplyToMessage.sender_id === currentUserId
+                    ? "VOCÊ"
+                    : chatTarget?.name || "PERFIL"}
+                </div>
+                <div
+                  style={{
+                    color: "#77736b",
+                    fontSize: "10px",
+                    lineHeight: "1.4",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {chatReplyToMessage.message_type === "text"
+                    ? chatReplyToMessage.content || "Mensagem"
+                    : chatReplyToMessage.message_type === "image"
+                      ? "Foto"
+                      : chatReplyToMessage.message_type === "video"
+                        ? "Vídeo"
+                        : chatReplyToMessage.message_type === "audio"
+                          ? "Áudio"
+                          : chatReplyToMessage.message_type === "location"
+                            ? "Localização"
+                            : "Mensagem"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={cancelChatReply}
+                aria-label="Cancelar resposta"
+                title="Cancelar resposta"
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  border: "1px solid #292929",
+                  background: "transparent",
+                  color: "#77736b",
+                  cursor: "pointer",
+                  fontSize: "15px",
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          <style>{`
+            @keyframes moonReplyPreviewIn {
+              from {
+                opacity: 0;
+                transform: translateY(5px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            }
+          `}</style>
 
           <form
             onSubmit={handleSendMessage}
@@ -9830,6 +12376,13 @@ const filteredConversations = conversations
                     padding: "6px",
                   }}
                 >
+                  <button
+                    type="button"
+                    onClick={() => setChatMediaIntimate((value) => !value)}
+                    style={{ width: "100%", minHeight: "40px", border: chatMediaIntimate ? "1px solid #c9b58a" : "1px solid #292929", background: chatMediaIntimate ? "#15130f" : "transparent", color: chatMediaIntimate ? "#c9b58a" : "#77736b", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}
+                  >
+                    {chatMediaIntimate ? "✓ CONTEÚDO ÍNTIMO" : "MARCAR COMO ÍNTIMO"}
+                  </button>
                   <button type="button" onClick={() => openChatMediaPicker("camera")} style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>
                     CÂMERA · FOTO
                   </button>
@@ -9838,6 +12391,21 @@ const filteredConversations = conversations
                   </button>
                   <button type="button" onClick={() => openChatMediaPicker("video")} style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>
                     VÍDEO TEMPORÁRIO
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowChatAttachMenu(false);
+                      if (chatAudioRecording) {
+                        stopChatAudioRecording();
+                      } else {
+                        startChatAudioRecording();
+                      }
+                    }}
+                    disabled={chatMediaLoading || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
+                    style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: chatAudioRecording ? "#d36b5f" : "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer", opacity: chatMediaLoading ? 0.45 : 1 }}
+                  >
+                    {chatAudioRecording ? `⏹ PARAR ÁUDIO · ${String(Math.floor(chatAudioSeconds / 60)).padStart(2, "0")}:${String(chatAudioSeconds % 60).padStart(2, "0")}` : "🎙 GRAVAR ÁUDIO"}
                   </button>
                   <button type="button" onClick={handleSendLocation} style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>
                     ENVIAR LOCALIZAÇÃO
@@ -9898,7 +12466,8 @@ const filteredConversations = conversations
                   }, 1200);
                 }
               }}
-              placeholder="Escreva uma mensagem..."
+              placeholder={abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now() ? "Abordagem temporariamente restrita" : "Escreva uma mensagem..."}
+              disabled={Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
               style={{
                 flex: 1,
                 height: "48px",
@@ -9912,7 +12481,7 @@ const filteredConversations = conversations
 
             <button
               type="submit"
-              disabled={!chatText.trim()}
+              disabled={!chatText.trim() || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
               style={{
                 width: "58px",
                 height: "48px",
@@ -10110,7 +12679,59 @@ const filteredConversations = conversations
                       {selectedProfile.sexuality && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.sexuality}</span></div>}
                       {selectedProfile.position && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.position}</span></div>}
                       {selectedProfile.availability && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.availability}</span></div>}
+                      {selectedProfile.profession && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>PROFISSÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.profession}</span></div>}
+                      {selectedProfile.education && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>EDUCAÇÃO / ESTUDOS</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.education}</span></div>}
                     </div>
+
+                    {[
+                      { label: "INTENÇÃO", value: selectedProfile.intention },
+                      { label: "VÍCIOS / HÁBITOS", value: selectedProfile.habits },
+                      { label: "HOBBIES E ESTILO DE VIDA", value: selectedProfile.hobbies },
+                      { label: "PERSONALIDADE", value: selectedProfile.personality },
+                      { label: "RELACIONAMENTO", value: selectedProfile.relationship },
+                      { label: "INTERESSES", value: selectedProfile.interests },
+                      { label: "IDIOMAS", value: selectedProfile.languages },
+                    ].map((section) => {
+                      const values = Array.isArray(section.value) ? section.value.filter(Boolean) : [];
+                      if (!values.length) return null;
+
+                      return (
+                        <div key={section.label} style={{ marginBottom: "18px", background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}>
+                          <span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "9px" }}>{section.label}</span>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
+                            {values.map((value) => (
+                              <span key={value} style={{ border: "1px solid #292929", color: "#e9dfcd", padding: "7px 9px", fontSize: "10px", letterSpacing: "0.4px" }}>
+                                {value}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {(() => {
+                      const commonConnections = getCommonConnections(selectedProfile);
+
+                      if (!commonConnections.length) return null;
+
+                      return (
+                        <div style={{ marginBottom: "18px", background: "#0b0b0b", padding: "16px", border: "1px solid #202020" }}>
+                          <div style={{ color: "#f4ead7", fontSize: "12px", letterSpacing: "1.5px", marginBottom: "6px" }}>
+                            VOCÊS TÊM {commonConnections.length} {commonConnections.length === 1 ? "CONEXÃO" : "CONEXÕES"}
+                          </div>
+                          <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6", marginBottom: "12px" }}>
+                            Alguns interesses e formas de viver que vocês compartilham.
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
+                            {commonConnections.map((connection) => (
+                              <span key={connection} style={{ border: "1px solid #c9b58a", color: "#c9b58a", padding: "7px 9px", fontSize: "10px", letterSpacing: "0.4px" }}>
+                                {connection}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button type="button" onClick={() => { handleLike(selectedProfile.id, selectedProfile); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>CURTIR</button>
@@ -10273,24 +12894,34 @@ const filteredConversations = conversations
                 IDENTIDADE
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
-                {["Homem cis", "Homem trans", "Não binário"].map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setFilterDraftIdentity(filterDraftIdentity === option ? "" : option)}
-                    style={{
-                      minHeight: "44px",
-                      border: filterDraftIdentity === option ? "1px solid #c9b58a" : "1px solid #292929",
-                      background: filterDraftIdentity === option ? "#15130f" : "#0b0b0b",
-                      color: filterDraftIdentity === option ? "#f4ead7" : "#c9b58a",
-                      fontSize: "9px",
-                      letterSpacing: "0.7px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {option}
-                  </button>
-                ))}
+                {["Homem cis", "Não binário", "Homem trans", "Mulher trans", "Outra"].map((option) => {
+                  const selected = filterDraftIdentity.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftIdentity((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        minHeight: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "9px",
+                        letterSpacing: "0.7px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -10299,24 +12930,286 @@ const filteredConversations = conversations
                 SEXUALIDADE
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
-                {["Gay", "Bissexual", "Pansexual", "Outra"].map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setFilterDraftSexuality(filterDraftSexuality === option ? "" : option)}
-                    style={{
-                      height: "44px",
-                      border: filterDraftSexuality === option ? "1px solid #c9b58a" : "1px solid #292929",
-                      background: filterDraftSexuality === option ? "#15130f" : "#0b0b0b",
-                      color: filterDraftSexuality === option ? "#f4ead7" : "#c9b58a",
-                      fontSize: "10px",
-                      letterSpacing: "1px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {option}
-                  </button>
-                ))}
+                {["Gay", "Bissexual", "Pansexual", "Outra"].map((option) => {
+                  const selected = filterDraftSexuality.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftSexuality((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        height: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "10px",
+                        letterSpacing: "1px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                INTENÇÃO
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
+                {["Relacionamento", "Conhecer", "Casual", "Amizade", "Conversar", "Ainda não sei"].map((option) => {
+                  const selected = filterDraftIntention.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftIntention((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        minHeight: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "10px",
+                        letterSpacing: "1px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                VÍCIOS / HÁBITOS
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
+                {["Fuma", "Não fuma", "Bebe", "Não bebe"].map((option) => {
+                  const selected = filterDraftHabits.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftHabits((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        minHeight: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "10px",
+                        letterSpacing: "1px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                HOBBIES E ESTILO DE VIDA
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                {["Academia", "Esportes", "Praia", "Natureza", "Viagens", "Games", "Filmes e séries", "Música", "Culinária", "Gastronomia", "Leitura", "Arte", "Fotografia", "Festas", "Animais", "Carros", "Tecnologia", "Cultura"].map((option) => {
+                  const selected = filterDraftHobbies.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftHobbies((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        minHeight: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "10px",
+                        letterSpacing: "1px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                PERSONALIDADE
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                {["Extrovertido", "Introvertido", "Comunicativo", "Reservado", "Romântico", "Carinhoso", "Aventureiro", "Tranquilo", "Divertido", "Sério", "Espontâneo", "Caseiro", "Sociável"].map((option) => {
+                  const selected = filterDraftPersonality.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftPersonality((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        minHeight: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "10px",
+                        letterSpacing: "1px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                RELACIONAMENTO
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
+                {["Solteiro", "Relacionamento aberto", "Monogâmico", "Não monogâmico"].map((option) => {
+                  const selected = filterDraftRelationship.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftRelationship((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        minHeight: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "10px",
+                        letterSpacing: "1px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                INTERESSES
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                {["Gastronomia", "Moda", "Negócios", "Finanças", "Cinema", "Política", "Espiritualidade"].map((option) => {
+                  const selected = filterDraftInterests.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftInterests((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        minHeight: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "10px",
+                        letterSpacing: "1px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>
+                IDIOMAS
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                {["Português", "Inglês", "Espanhol", "Francês", "Italiano", "Alemão", "Libras", "Outro"].map((option) => {
+                  const selected = filterDraftLanguages.includes(option);
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setFilterDraftLanguages((current) =>
+                          current.includes(option)
+                            ? current.filter((item) => item !== option)
+                            : [...current, option]
+                        )
+                      }
+                      style={{
+                        minHeight: "44px",
+                        border: selected ? "1px solid #c9b58a" : "1px solid #292929",
+                        background: selected ? "#15130f" : "#0b0b0b",
+                        color: selected ? "#f4ead7" : "#c9b58a",
+                        fontSize: "10px",
+                        letterSpacing: "1px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -10693,11 +13586,72 @@ const filteredConversations = conversations
                 .filter((profile) => {
                   const age = calculateAge(profile.birth_date);
                   const matchesAge = age >= minAge && age <= maxAge;
-                  const matchesIdentity = !identityFilter || profile.gender === identityFilter;
-                  const matchesSexuality = !sexualityFilter || profile.sexuality === sexualityFilter;
-                  const matchesPosition = !positionFilter || profile.position === positionFilter;
-                  const matchesAvailability = !availabilityFilter || profile.availability === availabilityFilter;
-                  return matchesAge && matchesIdentity && matchesSexuality && matchesPosition && matchesAvailability;
+
+                  const matchesIdentity =
+                    identityFilter.length === 0 ||
+                    identityFilter.includes(profile.gender);
+
+                  const matchesSexuality =
+                    sexualityFilter.length === 0 ||
+                    sexualityFilter.includes(profile.sexuality);
+
+                  const matchesPosition =
+                    positionFilter.length === 0 ||
+                    positionFilter.includes(profile.position);
+
+                  const matchesAvailability =
+                    availabilityFilter.length === 0 ||
+                    availabilityFilter.includes(profile.availability);
+
+                  const matchesIntention =
+                    filterDraftIntention.length === 0 ||
+                    (Array.isArray(profile.intention) &&
+                      filterDraftIntention.some((item) => profile.intention.includes(item)));
+
+                  const matchesHabits =
+                    filterDraftHabits.length === 0 ||
+                    (Array.isArray(profile.habits) &&
+                      filterDraftHabits.some((item) => profile.habits.includes(item)));
+
+                  const matchesHobbies =
+                    filterDraftHobbies.length === 0 ||
+                    (Array.isArray(profile.hobbies) &&
+                      filterDraftHobbies.some((item) => profile.hobbies.includes(item)));
+
+                  const matchesPersonality =
+                    filterDraftPersonality.length === 0 ||
+                    (Array.isArray(profile.personality) &&
+                      filterDraftPersonality.some((item) => profile.personality.includes(item)));
+
+                  const matchesRelationship =
+                    filterDraftRelationship.length === 0 ||
+                    (Array.isArray(profile.relationship) &&
+                      filterDraftRelationship.some((item) => profile.relationship.includes(item)));
+
+                  const matchesInterests =
+                    filterDraftInterests.length === 0 ||
+                    (Array.isArray(profile.interests) &&
+                      filterDraftInterests.some((item) => profile.interests.includes(item)));
+
+                  const matchesLanguages =
+                    filterDraftLanguages.length === 0 ||
+                    (Array.isArray(profile.languages) &&
+                      filterDraftLanguages.some((item) => profile.languages.includes(item)));
+
+                  return (
+                    matchesAge &&
+                    matchesIdentity &&
+                    matchesSexuality &&
+                    matchesPosition &&
+                    matchesAvailability &&
+                    matchesIntention &&
+                    matchesHabits &&
+                    matchesHobbies &&
+                    matchesPersonality &&
+                    matchesRelationship &&
+                    matchesInterests &&
+                    matchesLanguages
+                  );
                 })
                 .flatMap((profile, profileIndex) => {
                   const status = getOnlineStatus(profile.last_active_at);
@@ -11072,7 +14026,7 @@ const filteredConversations = conversations
                     letterSpacing: "2px",
                   }}
                 >
-                  DENUNCIAR PERFIL
+                  {reportDescription.startsWith("Denúncia contextual") ? "RELATAR MENSAGEM" : "DENUNCIAR PERFIL"}
                 </p>
 
                 <p
@@ -11083,7 +14037,9 @@ const filteredConversations = conversations
                     lineHeight: "1.6",
                   }}
                 >
-                  Por que você quer denunciar {reportTarget.name || "este perfil"}?
+                  {reportDescription.startsWith("Denúncia contextual")
+                    ? "Conte pra gente o que aconteceu com essa mensagem."
+                    : `Por que você quer denunciar ${reportTarget.name || "este perfil"}?`}
                 </p>
 
                 <div
@@ -11092,13 +14048,23 @@ const filteredConversations = conversations
                     gap: "8px",
                   }}
                 >
-                  {[
-                    "Perfil falso",
-                    "Conteúdo inadequado",
-                    "Assédio ou comportamento abusivo",
-                    "Spam ou publicidade",
-                    "Outro motivo",
-                  ].map((reason) => (
+                  {(reportDescription.startsWith("Denúncia contextual")
+                    ? [
+                        "Fui ofendido",
+                        "Fui assediado",
+                        "Fui humilhado",
+                        "Recebi algo que não queria",
+                        "Me senti ameaçado",
+                        "Outro",
+                      ]
+                    : [
+                        "Perfil falso",
+                        "Conteúdo inadequado",
+                        "Assédio ou comportamento abusivo",
+                        "Spam ou publicidade",
+                        "Outro motivo",
+                      ]
+                  ).map((reason) => (
                     <button
                       key={reason}
                       type="button"
