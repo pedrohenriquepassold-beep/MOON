@@ -3,148 +3,6 @@ import { Circle, CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } f
 import "leaflet/dist/leaflet.css";
 
 function MoonSkeleton({ rows = 3, compact = false }) {
-  {showIosInstallGuide && (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="moon-ios-install-title"
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        background: "rgba(0,0,0,0.82)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "20px",
-      }}
-      onClick={() => setShowIosInstallGuide(false)}
-    >
-      <div
-        onClick={(event) => event.stopPropagation()}
-        style={{
-          width: "100%",
-          maxWidth: "390px",
-          maxHeight: "calc(100vh - 40px)",
-          overflowY: "auto",
-          border: "1px solid #292929",
-          background: "#0b0b0b",
-          padding: "28px 22px",
-          boxSizing: "border-box",
-        }}
-      >
-        <div
-          style={{
-            textAlign: "center",
-            color: "#c9b58a",
-            fontSize: "9px",
-            letterSpacing: "2px",
-            marginBottom: "10px",
-          }}
-        >
-          MOON
-        </div>
-
-        <h2
-          id="moon-ios-install-title"
-          style={{
-            margin: "0 0 10px",
-            textAlign: "center",
-            color: "#f4ead7",
-            fontSize: "19px",
-            fontWeight: 400,
-            letterSpacing: "0.6px",
-          }}
-        >
-          ADICIONE A MOON AO CELULAR
-        </h2>
-
-        <p
-          style={{
-            margin: "0 0 24px",
-            textAlign: "center",
-            color: "#77736b",
-            fontSize: "10px",
-            lineHeight: "1.6",
-          }}
-        >
-          No iPhone, a instalação é feita pelo menu Compartilhar do Safari.
-        </p>
-
-        <div
-          style={{
-            borderTop: "1px solid #242424",
-            borderBottom: "1px solid #242424",
-            padding: "18px 0",
-          }}
-        >
-          {[
-            ["01", "Abra a MOON no Safari."],
-            ["02", "Toque no botão Compartilhar do navegador."],
-            ["03", "Role o menu e toque em “Adicionar à Tela de Início”."],
-            ["04", "Confirme tocando em “Adicionar”."],
-          ].map(([number, text]) => (
-            <div
-              key={number}
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: "12px",
-                marginBottom: number === "04" ? 0 : "16px",
-              }}
-            >
-              <div
-                style={{
-                  width: "25px",
-                  height: "25px",
-                  border: "1px solid #c9b58a",
-                  color: "#c9b58a",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "8px",
-                  letterSpacing: "0.5px",
-                  flexShrink: 0,
-                }}
-              >
-                {number}
-              </div>
-
-              <div
-                style={{
-                  color: "#aaa59b",
-                  fontSize: "10px",
-                  lineHeight: "1.55",
-                  paddingTop: "3px",
-                }}
-              >
-                {text}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setShowIosInstallGuide(false)}
-          style={{
-            width: "100%",
-            height: "44px",
-            marginTop: "20px",
-            border: "1px solid #c9b58a",
-            background: "#15130f",
-            color: "#c9b58a",
-            fontSize: "9px",
-            letterSpacing: "1.6px",
-            cursor: "pointer",
-          }}
-        >
-          ENTENDI
-        </button>
-      </div>
-    </div>
-  )}
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "8px" : "12px", padding: compact ? "8px 0" : "20px 0" }}>
       {Array.from({ length: rows }).map((_, index) => (
@@ -6632,6 +6490,147 @@ const filteredConversations = conversations
     );
   }
 
+  {showIosInstallGuide && (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="moon-ios-install-title"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.82)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px",
+      }}
+      onClick={() => setShowIosInstallGuide(false)}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: "390px",
+          maxHeight: "calc(100vh - 40px)",
+          overflowY: "auto",
+          border: "1px solid #292929",
+          background: "#0b0b0b",
+          padding: "28px 22px",
+          boxSizing: "border-box",
+        }}
+      >
+        <div
+          style={{
+            textAlign: "center",
+            color: "#c9b58a",
+            fontSize: "9px",
+            letterSpacing: "2px",
+            marginBottom: "10px",
+          }}
+        >
+          MOON
+        </div>
+
+        <h2
+          id="moon-ios-install-title"
+          style={{
+            margin: "0 0 10px",
+            textAlign: "center",
+            color: "#f4ead7",
+            fontSize: "19px",
+            fontWeight: 400,
+            letterSpacing: "0.6px",
+          }}
+        >
+          ADICIONE A MOON AO CELULAR
+        </h2>
+
+        <p
+          style={{
+            margin: "0 0 24px",
+            textAlign: "center",
+            color: "#77736b",
+            fontSize: "10px",
+            lineHeight: "1.6",
+          }}
+        >
+          No iPhone, a instalação é feita pelo menu Compartilhar do Safari.
+        </p>
+
+        <div
+          style={{
+            borderTop: "1px solid #242424",
+            borderBottom: "1px solid #242424",
+            padding: "18px 0",
+          }}
+        >
+          {[
+            ["01", "Abra a MOON no Safari."],
+            ["02", "Toque no botão Compartilhar do navegador."],
+            ["03", "Role o menu e toque em “Adicionar à Tela de Início”."],
+            ["04", "Confirme tocando em “Adicionar”."],
+          ].map(([number, text]) => (
+            <div
+              key={number}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "12px",
+                marginBottom: number === "04" ? 0 : "16px",
+              }}
+            >
+              <div
+                style={{
+                  width: "25px",
+                  height: "25px",
+                  border: "1px solid #c9b58a",
+                  color: "#c9b58a",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "8px",
+                  letterSpacing: "0.5px",
+                  flexShrink: 0,
+                }}
+              >
+                {number}
+              </div>
+
+              <div
+                style={{
+                  color: "#aaa59b",
+                  fontSize: "10px",
+                  lineHeight: "1.55",
+                  paddingTop: "3px",
+                }}
+              >
+                {text}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowIosInstallGuide(false)}
+          style={{
+            width: "100%",
+            height: "44px",
+            marginTop: "20px",
+            border: "1px solid #c9b58a",
+            background: "#15130f",
+            color: "#c9b58a",
+            fontSize: "9px",
+            letterSpacing: "1.6px",
+            cursor: "pointer",
+          }}
+        >
+          ENTENDI
+        </button>
+      </div>
+    </div>
+  )}
   return (
     <main className="moon-app">
       {captureShieldActive && (
