@@ -3638,15 +3638,12 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Você não pode bloquear seu próprio perfil.");
       }
 
-      const { error: blockError } = await supabase
-        .from("blocked_users")
-        .upsert(
-          [
-            { user_id: user.id, blocked_user_id: profile.id },
-            { user_id: profile.id, blocked_user_id: user.id },
-          ],
-          { onConflict: "user_id,blocked_user_id", ignoreDuplicates: true }
-        );
+      const { error: blockError } = await supabase.rpc(
+        "block_user",
+        {
+          p_blocked_user_id: profile.id,
+        }
+      );
 
       if (blockError) throw blockError;
 
@@ -5209,36 +5206,19 @@ const chatMessagesBottomRef = useRef(null);
   }
 
   function getSupportedAudioMimeType() {
-    if (typeof MediaRecorder === "undefined") {
-      return "";
-    }
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+    ];
 
-    const isIOS =
-      /iPad|iPhone|iPod/.test(window.navigator.userAgent) &&
-      !window.MSStream;
-
-    const candidates = isIOS
-      ? [
-          "audio/mp4;codecs=mp4a.40.2",
-          "audio/mp4",
-          "audio/webm;codecs=opus",
-          "audio/webm",
-        ]
-      : [
-          "audio/webm;codecs=opus",
-          "audio/webm",
-          "audio/mp4",
-        ];
-
-    return (
-      candidates.find((type) => {
-        try {
-          return MediaRecorder.isTypeSupported(type);
-        } catch (error) {
-          return false;
-        }
-      }) || ""
-    );
+    return candidates.find((type) => {
+      try {
+        return typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type);
+      } catch (error) {
+        return false;
+      }
+    }) || "";
   }
 
   async function startChatAudioRecording() {
@@ -5264,30 +5244,11 @@ const chatMessagesBottomRef = useRef(null);
 
     try {
       setMessage("");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = getSupportedAudioMimeType();
-
-      let recorder;
-
-      try {
-        recorder = mimeType
-          ? new MediaRecorder(stream, { mimeType })
-          : new MediaRecorder(stream);
-      } catch (recorderError) {
-        console.warn(
-          "MEDIARECORDER COM MIME ESPECÍFICO FALHOU, TENTANDO PADRÃO:",
-          recorderError
-        );
-
-        recorder = new MediaRecorder(stream);
-      }
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
 
       chatAudioStreamRef.current = stream;
       chatAudioRecorderRef.current = recorder;
@@ -5303,10 +5264,7 @@ const chatMessagesBottomRef = useRef(null);
 
       recorder.onerror = (event) => {
         console.error("ERRO DO MEDIARECORDER:", event);
-        setMessage(
-          event?.error?.message ||
-          "Não foi possível gravar o áudio. Verifique a permissão do microfone e tente novamente."
-        );
+        setMessage("Não foi possível gravar o áudio. Verifique a permissão do microfone e tente novamente.");
         setChatAudioRecording(false);
         stopChatAudioTimer();
         stopChatAudioStream();
