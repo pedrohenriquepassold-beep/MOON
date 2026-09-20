@@ -3715,6 +3715,13 @@ const chatMessagesBottomRef = useRef(null);
         current.filter((item) => item.id !== profile.id)
       );
 
+      // Se a conversa com este usuário ainda estiver aberta,
+      // libera o chat imediatamente após o desbloqueio.
+      if (chatTarget?.id === profile.id) {
+        setChatBlocked(false);
+        setMessage("");
+      }
+
       setSelectedProfile((current) =>
         current?.id === profile.id ? null : current
       );
