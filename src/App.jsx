@@ -1109,25 +1109,14 @@ const chatMessagesBottomRef = useRef(null);
         return;
       }
 
-      const startsAt = new Date();
-      const expiresAt = new Date(
-        startsAt.getTime() + Math.max(1, Number(boost.duration_hours) || 24) * 60 * 60 * 1000
+      const { error: activationError } = await supabase.rpc(
+        "activate_profile_boost",
+        {
+          p_boost_id: boostId,
+        }
       );
 
-      const { error: updateError } = await supabase
-        .from("profile_boosts")
-        .update({
-          status: "active",
-          active: true,
-          starts_at: startsAt.toISOString(),
-          expires_at: expiresAt.toISOString(),
-          activated_at: startsAt.toISOString(),
-        })
-        .eq("id", boostId)
-        .eq("user_id", currentUserId)
-        .eq("status", "available");
-
-      if (updateError) throw updateError;
+      if (activationError) throw activationError;
 
       setMessage("Boost ativado. Seu perfil já está sendo impulsionado. 🚀");
       await loadUserBoosts();
@@ -5347,33 +5336,16 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
-  function isIOSDevice() {
-    return /iPad|iPhone|iPod/.test(window.navigator.userAgent) ||
-      (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
-  }
-
   function getSupportedAudioMimeType() {
-    if (typeof MediaRecorder === "undefined") {
-      return "";
-    }
-
-    const candidates = isIOSDevice()
-      ? [
-          "audio/mp4;codecs=mp4a.40.2",
-          "audio/mp4",
-          "audio/webm;codecs=opus",
-          "audio/webm",
-        ]
-      : [
-          "audio/webm;codecs=opus",
-          "audio/webm",
-          "audio/mp4;codecs=mp4a.40.2",
-          "audio/mp4",
-        ];
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+    ];
 
     return candidates.find((type) => {
       try {
-        return MediaRecorder.isTypeSupported(type);
+        return typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type);
       } catch (error) {
         return false;
       }
@@ -5403,28 +5375,11 @@ const chatMessagesBottomRef = useRef(null);
 
     try {
       setMessage("");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = getSupportedAudioMimeType();
-      let recorder;
-
-      try {
-        recorder = mimeType
-          ? new MediaRecorder(stream, { mimeType })
-          : new MediaRecorder(stream);
-      } catch (recorderError) {
-        console.warn(
-          "MEDIARECORDER COM MIME ESPECÍFICO FALHOU, TENTANDO PADRÃO:",
-          recorderError
-        );
-        recorder = new MediaRecorder(stream);
-      }
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
 
       chatAudioStreamRef.current = stream;
       chatAudioRecorderRef.current = recorder;
@@ -5528,15 +5483,7 @@ const chatMessagesBottomRef = useRef(null);
         }
       };
 
-      // No Safari/iPhone, alguns builds apresentam falhas intermitentes ao
-      // usar timeslice no MediaRecorder. Deixamos o navegador acumular os
-      // dados e recebemos o blob completo no evento onstop.
-      if (isIOSDevice()) {
-        recorder.start();
-      } else {
-        recorder.start(1000);
-      }
-
+      recorder.start(1000);
       chatAudioTimerRef.current = setInterval(() => {
         setChatAudioSeconds((seconds) => {
           if (seconds >= 119) {
