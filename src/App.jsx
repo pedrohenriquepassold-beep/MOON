@@ -195,6 +195,7 @@ const chatMessagesBottomRef = useRef(null);
   const [dismissedIntimateMessageIds, setDismissedIntimateMessageIds] = useState([]);
   const [showChatAttachMenu, setShowChatAttachMenu] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatBlocked, setChatBlocked] = useState(false);
   const [chatIcebreaker, setChatIcebreaker] = useState(null);
   const [chatConnection, setChatConnection] = useState(null);
   const [chatFollowUpSuggestion, setChatFollowUpSuggestion] = useState(null);
@@ -247,7 +248,7 @@ const chatMessagesBottomRef = useRef(null);
   const [adminBoostProfiles, setAdminBoostProfiles] = useState([]);
   const [adminBoostSearch, setAdminBoostSearch] = useState("");
   const [adminBoostSelectedProfile, setAdminBoostSelectedProfile] = useState(null);
-  const [adminBoostDuration, setAdminBoostDuration] = useState("24");
+  const [adminBoostDuration, setAdminBoostDuration] = useState("1");
   const [adminBoostLoading, setAdminBoostLoading] = useState(false);
   const [adminBoostSaving, setAdminBoostSaving] = useState(false);
   const [userBoosts, setUserBoosts] = useState([]);
@@ -872,7 +873,7 @@ const chatMessagesBottomRef = useRef(null);
       if (ids.length) {
         const { data: rows, error: profileError } = await supabase
           .from("profiles")
-          .select("id, name, profile_photo_url")
+          .select("id, name")
           .in("id", ids);
         if (profileError) throw profileError;
         profiles = rows || [];
@@ -889,61 +890,105 @@ const chatMessagesBottomRef = useRef(null);
 
   async function searchAdminBoostProfiles(value) {
     setAdminBoostSearch(value);
-    if (!value.trim()) { setAdminBoostProfiles([]); return; }
+    setAdminBoostSelectedProfile(null);
+
+    const searchValue = value.trim();
+    if (!searchValue) {
+      setAdminBoostProfiles([]);
+      return;
+    }
+
     try {
+      const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(searchValue);
+
+      if (isUuid) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, name")
+          .eq("id", searchValue)
+          .limit(1);
+
+        if (error) throw error;
+
+        setAdminBoostProfiles(data || []);
+        return;
+      }
+
+      if (searchValue.includes("@")) {
+        const { data, error } = await supabase.rpc(
+          "admin_find_user_by_email",
+          {
+            p_email: searchValue,
+          }
+        );
+
+        if (error) throw error;
+
+        setAdminBoostProfiles(data || []);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, name, profile_photo_url")
-        .ilike("name", `%${value.trim()}%`)
+        .select("id, name")
+        .ilike("name", `%${searchValue}%`)
         .limit(12);
+
       if (error) throw error;
+
       setAdminBoostProfiles(data || []);
     } catch (error) {
       console.error("ERRO AO BUSCAR PERFIS PARA BOOST:", error);
-      setMessage(error.message || "Não foi possível buscar o perfil.");
+      setAdminBoostProfiles([]);
+      setMessage(error.message || "Não foi possível buscar o usuário.");
     }
   }
 
   async function createAdminBoost() {
     const admin = await checkAdminStatus();
-    if (!admin || !adminBoostSelectedProfile) {
-      setMessage("Selecione um perfil.");
+    if (!admin) {
+      setMessage("Acesso restrito.");
       return;
     }
+
+    if (!adminBoostSelectedProfile?.id) {
+      setMessage("Selecione um usuário para conceder o Boost.");
+      return;
+    }
+
+    const hours = Number(adminBoostDuration);
+    if (![1, 3, 5].includes(hours)) {
+      setMessage("Selecione uma duração válida: 1h, 3h ou 5h.");
+      return;
+    }
+
     setAdminBoostSaving(true);
+    setMessage("");
+
     try {
-      const hours = Math.max(1, Number(adminBoostDuration) || 24);
-      const { error } = await supabase.from("profile_boosts").insert({
-        user_id: adminBoostSelectedProfile.id,
-        duration_hours: hours,
-        status: "available",
-        active: false,
-        starts_at: null,
-        expires_at: null,
-        activated_at: null,
-      });
+      const { data: boostId, error } = await supabase.rpc(
+        "admin_grant_profile_boost",
+        {
+          target_user_id: adminBoostSelectedProfile.id,
+          boost_duration_hours: hours,
+        }
+      );
+
       if (error) throw error;
 
-      const { error: notificationError } = await supabase
-        .from("notifications")
-        .insert({
-          user_id: adminBoostSelectedProfile.id,
-          type: "boost",
-          is_read: false,
-        });
-
-      if (notificationError) {
-        console.error("ERRO AO CRIAR NOTIFICACAO DE BOOST:", notificationError);
+      if (!boostId) {
+        throw new Error("O Boost não foi criado.");
       }
 
-      setMessage("Boost concedido. O usuário poderá ativá-lo quando quiser.");
+      setMessage("Boost concedido. O usuário recebeu o Boost disponível para ativação.");
       setAdminBoostSelectedProfile(null);
       setAdminBoostSearch("");
       setAdminBoostProfiles([]);
+      setAdminBoostDuration("1");
       await loadAdminBoosts();
     } catch (error) {
-      console.error("ERRO AO CRIAR BOOST:", error);
-      setMessage(error.message || "Não foi possível ativar o boost.");
+      console.error("ERRO AO CONCEDER BOOST:", error);
+      setMessage(error?.message || "Não foi possível conceder o Boost.");
     } finally {
       setAdminBoostSaving(false);
     }
@@ -1837,7 +1882,7 @@ const chatMessagesBottomRef = useRef(null);
     }
 
     if (await isUserBlocked(profile.id)) {
-      setMessage("Este perfil está bloqueado.");
+      setMessage("ESTA CONTA ESTÁ INDISPONÍVEL");
       setSelectedProfile(null);
       setSelectedProfilePhotos([]);
       setShowSelectedProfileMenu(false);
@@ -2150,7 +2195,7 @@ const chatMessagesBottomRef = useRef(null);
     if (!profile?.id) return;
 
     if (await isUserBlocked(profile.id)) {
-      setMessage("Este perfil está bloqueado.");
+      setMessage("ESTA CONTA ESTÁ INDISPONÍVEL");
       setSelectedProfile(null);
       setSelectedProfilePhotos([]);
       setShowSelectedProfileMenu(false);
@@ -2898,6 +2943,15 @@ const chatMessagesBottomRef = useRef(null);
   }, [screen, selectedMapPoint, userLocation.latitude, userLocation.longitude, mapRadius]);
 
   async function handleMapProfileSelect(profile) {
+    if (!profile?.id) return;
+
+    if (await isUserBlocked(profile.id)) {
+      setMessage("ESTA CONTA ESTÁ INDISPONÍVEL");
+      setSelectedMapProfile(null);
+      setSelectedMapProfileLoading(false);
+      return;
+    }
+
     setSelectedMapProfileLoading(true);
     setSelectedMapProfile({ ...profile, photoUrl: null });
 
@@ -3360,9 +3414,8 @@ const chatMessagesBottomRef = useRef(null);
       setViewedProfiles((current) =>
         current.filter((profile) => !blockedIds.includes(profile.id))
       );
-      setConversations((current) =>
-        current.filter((conversation) => !blockedIds.includes(conversation.profile?.id))
-      );
+      // Conversas existentes permanecem no histórico mesmo após o bloqueio.
+      // O bloqueio impede novas interações, mas não apaga a conversa.
     } catch (error) {
       console.error("ERRO AO CARREGAR BLOQUEADOS:", error);
       setMessage("Não foi possível carregar os usuários bloqueados.");
@@ -3415,15 +3468,12 @@ const chatMessagesBottomRef = useRef(null);
       setViewedProfiles((current) =>
         current.filter((item) => item.id !== otherUserId)
       );
-      setConversations((current) =>
-        current.filter(
-          (conversation) => conversation.profile?.id !== otherUserId
-        )
-      );
-
+      // A conversa existente permanece no histórico. O bloqueio será
+      // aplicado às ações de abrir perfil e enviar novas mensagens.
       if (chatTarget?.id === otherUserId) {
         setChatTarget(null);
         setChatConversation(null);
+        setChatBlocked(false);
         setChatMessages([]);
         setChatText("");
         setChatReplyToMessage(null);
@@ -3547,8 +3597,9 @@ const chatMessagesBottomRef = useRef(null);
       const { error } = await supabase
         .from("blocked_users")
         .delete()
-        .eq("user_id", user.id)
-        .eq("blocked_user_id", profile.id);
+        .or(
+          `and(user_id.eq.${user.id},blocked_user_id.eq.${profile.id}),and(user_id.eq.${profile.id},blocked_user_id.eq.${user.id})`
+        );
 
       if (error) throw error;
 
@@ -3590,7 +3641,10 @@ const chatMessagesBottomRef = useRef(null);
       const { error: blockError } = await supabase
         .from("blocked_users")
         .upsert(
-          { user_id: user.id, blocked_user_id: profile.id },
+          [
+            { user_id: user.id, blocked_user_id: profile.id },
+            { user_id: profile.id, blocked_user_id: user.id },
+          ],
           { onConflict: "user_id,blocked_user_id", ignoreDuplicates: true }
         );
 
@@ -3608,57 +3662,18 @@ const chatMessagesBottomRef = useRef(null);
         ];
       });
 
-      setNearbyProfiles((current) =>
-        current.filter((item) => item.id !== profile.id)
-      );
-      setMapProfiles((current) =>
-        current.filter((item) => item.id !== profile.id)
-      );
-      setLikedProfiles((current) =>
-        current.filter((item) => item.id !== profile.id)
-      );
-      setViewedProfiles((current) =>
-        current.filter((item) => item.id !== profile.id)
-      );
-
-      const { data: userConversations, error: conversationsError } = await supabase
-        .from("conversations")
-        .select("id, user_one_id, user_two_id")
-        .or(
-          `and(user_one_id.eq.${user.id},user_two_id.eq.${profile.id}),and(user_one_id.eq.${profile.id},user_two_id.eq.${user.id})`
-        );
-
-      if (conversationsError) throw conversationsError;
-
-      const conversationIds = (userConversations || []).map((conversation) => conversation.id);
-
-      if (conversationIds.length) {
-        const { error: deleteConversationsError } = await supabase
-          .from("conversations")
-          .delete()
-          .in("id", conversationIds);
-
-        if (deleteConversationsError) throw deleteConversationsError;
-      }
+      setNearbyProfiles((current) => current.filter((item) => item.id !== profile.id));
+      setMapProfiles((current) => current.filter((item) => item.id !== profile.id));
+      setLikedProfiles((current) => current.filter((item) => item.id !== profile.id));
+      setViewedProfiles((current) => current.filter((item) => item.id !== profile.id));
 
       setConversations((current) =>
-        current.filter((conversation) => conversation.profile?.id !== profile.id)
+        current.map((conversation) =>
+          conversation.profile?.id === profile.id
+            ? { ...conversation, isBlocked: true }
+            : conversation
+        )
       );
-      setPinnedConversationIds((currentIds) => {
-        const conversationIdSet = new Set(conversationIds);
-        const nextIds = currentIds.filter((id) => !conversationIdSet.has(id));
-
-        try {
-          window.localStorage.setItem(
-            `moon_pinned_conversations_${user.id}`,
-            JSON.stringify(nextIds)
-          );
-        } catch (error) {
-          console.error("ERRO AO ATUALIZAR CONVERSAS FIXADAS:", error);
-        }
-
-        return nextIds;
-      });
 
       const wasCurrentChat =
         chatTarget?.id === profile.id ||
@@ -3669,11 +3684,13 @@ const chatMessagesBottomRef = useRef(null);
       if (wasCurrentChat) {
         setChatTarget(null);
         setChatConversation(null);
+        setChatBlocked(false);
         setChatMessages([]);
         setChatText("");
         setChatReplyToMessage(null);
         setChatTyping(false);
         setShowChatMenu(false);
+        setChatBlocked(false);
         setScreen("conversations");
       }
 
@@ -3688,71 +3705,33 @@ const chatMessagesBottomRef = useRef(null);
         setSelectedMapProfileLoading(false);
       }
 
-      const directBlockChannel = supabase.channel(
-        `moon-direct-block-${profile.id}`
-      );
-
-      directBlockChannel.on(
-        "broadcast",
-        { event: "user_blocked" },
-        () => {}
-      );
-
+      const blockPayload = { blockerId: user.id, blockedUserId: profile.id };
+      const directBlockChannel = supabase.channel(`moon-direct-block-${profile.id}`);
       await directBlockChannel.subscribe();
-
-      const blockPayload = {
-        blockerId: user.id,
-        blockedUserId: profile.id,
-      };
-
-      // Envia no canal individual e também no canal global.
-      // O segundo garante a remoção imediata do perfil para o usuário bloqueado.
-      await directBlockChannel.send({
-        type: "broadcast",
-        event: "user_blocked",
-        payload: blockPayload,
-      });
+      await directBlockChannel.send({ type: "broadcast", event: "user_blocked", payload: blockPayload });
 
       const globalBlockChannel = supabase.channel("moon-block-events");
-      globalBlockChannel.on(
-        "broadcast",
-        { event: "user_blocked" },
-        () => {}
-      );
       await globalBlockChannel.subscribe();
-      await globalBlockChannel.send({
-        type: "broadcast",
-        event: "user_blocked",
-        payload: blockPayload,
-      });
+      await globalBlockChannel.send({ type: "broadcast", event: "user_blocked", payload: blockPayload });
 
       window.setTimeout(() => {
         supabase.removeChannel(directBlockChannel);
         supabase.removeChannel(globalBlockChannel);
       }, 1500);
 
-      // Depois do bloqueio, nunca deixamos a tela do perfil bloqueado aberta.
-      // O usuário volta imediatamente para a Discovery já com o perfil removido.
-      setSelectedProfile(null);
-      setSelectedProfilePhotos([]);
-      setSelectedProfileFromMap(false);
-      setShowSelectedProfileMenu(false);
-      setShowChatMenu(false);
-      setScreen("inside");
-
-      // Confirma o estado persistido no banco e mantém a lista de bloqueados
-      // sincronizada com a seção de Configurações.
       await loadBlockedUsers();
 
       showToast({
         title: "Perfil bloqueado",
-        body: "O perfil foi bloqueado e removido das suas conexões.",
+        body: "A conta ficou indisponível para os dois perfis. A conversa existente foi mantida no histórico.",
       });
     } catch (error) {
-      console.error("ERRO AO BLOQUEAR PERFIL:", error);
-      setMessage(error.message || "Não foi possível bloquear este perfil.");
+      console.error("ERRO AO BLOQUEAR USUÁRIO:", error);
+      setChatBlocked(false);
+      setMessage(error?.message || "Não foi possível bloquear este perfil.");
     }
   }
+
   async function handleReport(profile) {
     if (!profile?.id) return;
 
@@ -4266,9 +4245,7 @@ const chatMessagesBottomRef = useRef(null);
                 ? conversation.user_two_id
                 : conversation.user_one_id;
 
-            if (blockedIds.has(otherUserId)) {
-              return null;
-            }
+            const isBlockedConversation = blockedIds.has(otherUserId);
 
             const { data: profile, error: profileError } =
               await supabase
@@ -4330,6 +4307,7 @@ const chatMessagesBottomRef = useRef(null);
                   ? lastMessageData[0]
                   : null,
               unreadCount: unreadCount || 0,
+              isBlocked: isBlockedConversation,
             };
           })
         );
@@ -4624,61 +4602,37 @@ const chatMessagesBottomRef = useRef(null);
     setChatLoading(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não encontrado.");
 
-      if (!user) {
-        throw new Error("Usuário não encontrado.");
-      }
+      const firstUserId = user.id < profile.id ? user.id : profile.id;
+      const secondUserId = user.id < profile.id ? profile.id : user.id;
 
-      if (await isUserBlocked(profile.id, user.id)) {
-        setMessage("Este perfil está bloqueado.");
+      let { data: conversation, error } = await supabase
+        .from("conversations")
+        .select("*")
+        .or(`and(user_one_id.eq.${firstUserId},user_two_id.eq.${secondUserId}),and(user_one_id.eq.${secondUserId},user_two_id.eq.${firstUserId})`)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const relationshipBlocked = await isUserBlocked(profile.id, user.id);
+
+      if (relationshipBlocked && !conversation) {
+        setMessage("ESTA CONTA ESTÁ INDISPONÍVEL");
         return;
-      }
-
-      const firstUserId =
-        user.id < profile.id
-          ? user.id
-          : profile.id;
-
-      const secondUserId =
-        user.id < profile.id
-          ? profile.id
-          : user.id;
-
-      let { data: conversation, error } =
-        await supabase
-          .from("conversations")
-          .select("*")
-          .or(
-            `and(user_one_id.eq.${firstUserId},user_two_id.eq.${secondUserId}),and(user_one_id.eq.${secondUserId},user_two_id.eq.${firstUserId})`
-          )
-          .maybeSingle();
-
-      if (error) {
-        throw error;
       }
 
       let isNewConversation = false;
 
       if (!conversation) {
-        const {
-          data: newConversation,
-          error: createError,
-        } = await supabase
+        const { data: newConversation, error: createError } = await supabase
           .from("conversations")
-          .insert({
-            user_one_id: firstUserId,
-            user_two_id: secondUserId,
-          })
+          .insert({ user_one_id: firstUserId, user_two_id: secondUserId })
           .select()
           .single();
 
-        if (createError) {
-          throw createError;
-        }
-
+        if (createError) throw createError;
         conversation = newConversation;
         isNewConversation = true;
       }
@@ -4688,22 +4642,17 @@ const chatMessagesBottomRef = useRef(null);
 
       setChatIcebreaker(
         isNewConversation && icebreakerConnection
-          ? {
-              connection: icebreakerConnection,
-              question: getIcebreakerForConnection(icebreakerConnection),
-            }
+          ? { connection: icebreakerConnection, question: getIcebreakerForConnection(icebreakerConnection) }
           : null
       );
-      setChatConnection(
-        icebreakerConnection || null
-      );
+      setChatConnection(icebreakerConnection || null);
       setChatFollowUpSuggestion(null);
       setChatDeepSuggestion(null);
-
       setCurrentUserId(user.id);
       setChatOrigin(origin);
       setChatTarget(profile);
       setChatConversation(conversation);
+      setChatBlocked(relationshipBlocked);
       setChatMessages([]);
       setChatRevealedPhotoIds([]);
       setChatRefusalMarkedAt(null);
@@ -4713,39 +4662,11 @@ const chatMessagesBottomRef = useRef(null);
       setChatReplyToMessage(null);
       setScreen("chat");
     } catch (error) {
-      console.error(
-        "ERRO AO ABRIR CONVERSA:",
-        error
-      );
-
-      setMessage(
-        error.message ||
-        "Não foi possível abrir a conversa."
-      );
+      console.error("ERRO AO ABRIR CONVERSA:", error);
+      setMessage(error.message || "Não foi possível abrir a conversa.");
     } finally {
       setChatLoading(false);
     }
-  }
-  function handleTogglePinnedConversation(conversationId) {
-    if (!conversationId || !currentUserId) return;
-
-    setPinnedConversationIds((currentIds) => {
-      const isPinned = currentIds.includes(conversationId);
-      const nextIds = isPinned
-        ? currentIds.filter((id) => id !== conversationId)
-        : [conversationId, ...currentIds];
-
-      try {
-        window.localStorage.setItem(
-          `moon_pinned_conversations_${currentUserId}`,
-          JSON.stringify(nextIds)
-        );
-      } catch (error) {
-        console.error("ERRO AO SALVAR CONVERSAS FIXADAS:", error);
-      }
-
-      return nextIds;
-    });
   }
 
   async function handleDeleteConversation(conversationId) {
@@ -4787,6 +4708,7 @@ const chatMessagesBottomRef = useRef(null);
       if (chatConversation?.id === conversationId) {
         setChatTarget(null);
         setChatConversation(null);
+        setChatBlocked(false);
         setChatMessages([]);
         setChatText("");
         setChatReplyToMessage(null);
@@ -4972,8 +4894,23 @@ const chatMessagesBottomRef = useRef(null);
     setChatReplyToMessage(null);
   }
 
+  async function ensureChatInteractionAllowed() {
+    if (!chatTarget?.id || !currentUserId) return false;
+
+    const blocked = await isUserBlocked(chatTarget.id, currentUserId);
+    if (blocked) {
+      setChatBlocked(true);
+      setMessage("ESTA CONTA ESTÁ INDISPONÍVEL");
+      return false;
+    }
+
+    setChatBlocked(false);
+    return true;
+  }
+
   async function sendChatTextMessage(content) {
     if (!content || !chatConversation?.id) return;
+    if (!(await ensureChatInteractionAllowed())) return;
 
     try {
       const {
@@ -5186,6 +5123,11 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
+    if (!(await ensureChatInteractionAllowed())) {
+      event.target.value = "";
+      return;
+    }
+
     setChatMediaLoading(true);
     setMessage("");
 
@@ -5294,6 +5236,10 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
+    if (!(await ensureChatInteractionAllowed())) {
+      return;
+    }
+
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setMessage("Seu navegador não oferece gravação de áudio.");
       return;
@@ -5314,16 +5260,19 @@ const chatMessagesBottomRef = useRef(null);
       setChatAudioRecording(true);
 
       recorder.ondataavailable = (event) => {
-        if (event.data?.size) {
+        if (event.data && event.data.size > 0) {
           chatAudioChunksRef.current.push(event.data);
         }
       };
 
-      recorder.onerror = () => {
-        setMessage("Não foi possível gravar o áudio.");
+      recorder.onerror = (event) => {
+        console.error("ERRO DO MEDIARECORDER:", event);
+        setMessage("Não foi possível gravar o áudio. Verifique a permissão do microfone e tente novamente.");
         setChatAudioRecording(false);
         stopChatAudioTimer();
         stopChatAudioStream();
+        chatAudioRecorderRef.current = null;
+        chatAudioChunksRef.current = [];
       };
 
       recorder.onstop = async () => {
@@ -5335,6 +5284,8 @@ const chatMessagesBottomRef = useRef(null);
         chatAudioChunksRef.current = [];
 
         if (!chunks.length || !chatConversation?.id || !currentUserId) {
+          setChatMediaLoading(false);
+          setMessage("Não foi possível gerar o arquivo de áudio. Tente gravar novamente.");
           return;
         }
 
@@ -5404,7 +5355,7 @@ const chatMessagesBottomRef = useRef(null);
         }
       };
 
-      recorder.start();
+      recorder.start(1000);
       chatAudioTimerRef.current = setInterval(() => {
         setChatAudioSeconds((seconds) => {
           if (seconds >= 119) {
@@ -5421,10 +5372,19 @@ const chatMessagesBottomRef = useRef(null);
       stopChatAudioTimer();
       stopChatAudioStream();
       setChatAudioRecording(false);
+      const audioErrorMessages = {
+        NotAllowedError: "Permita o acesso ao microfone para gravar áudio.",
+        PermissionDeniedError: "Permita o acesso ao microfone para gravar áudio.",
+        NotFoundError: "Nenhum microfone foi encontrado neste dispositivo.",
+        NotReadableError: "O microfone está sendo usado por outro aplicativo ou não está disponível.",
+        OverconstrainedError: "O navegador não conseguiu configurar o microfone.",
+        SecurityError: "O navegador bloqueou o acesso ao microfone por segurança.",
+      };
+
       setMessage(
-        error?.name === "NotAllowedError"
-          ? "Permita o acesso ao microfone para gravar áudio."
-          : "Não foi possível acessar o microfone."
+        audioErrorMessages[error?.name] ||
+        error?.message ||
+        "Não foi possível acessar o microfone."
       );
     }
   }
@@ -5460,6 +5420,10 @@ const chatMessagesBottomRef = useRef(null);
 
     setShowChatAttachMenu(false);
     setMessage("");
+
+    if (!(await ensureChatInteractionAllowed())) {
+      return;
+    }
 
     if (!navigator.geolocation) {
       setMessage("Seu dispositivo não oferece localização pelo navegador.");
@@ -8107,21 +8071,21 @@ const filteredConversations = conversations
 
             <div style={{ padding: "18px", border: "1px solid rgba(255,255,255,.10)", borderRadius: "14px", background: "rgba(255,255,255,.025)" }}>
               <div style={{ color: "#d6b97d", fontSize: "9px", letterSpacing: ".14em", marginBottom: "10px" }}>CONCEDER BOOST</div>
-              <input value={adminBoostSearch} onChange={(event) => searchAdminBoostProfiles(event.target.value)} placeholder="Buscar perfil pelo nome..." style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.12)", background: "#0b0b0b", color: "#eee", outline: "none" }} />
+              <input value={adminBoostSearch} onChange={(event) => searchAdminBoostProfiles(event.target.value)} placeholder="Buscar por nome, e-mail ou ID..." style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.12)", background: "#0b0b0b", color: "#eee", outline: "none" }} />
               {adminBoostProfiles.length > 0 && (
                 <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
                   {adminBoostProfiles.map((profile) => (
                     <button key={profile.id} type="button" onClick={() => { setAdminBoostSelectedProfile(profile); setAdminBoostProfiles([]); setAdminBoostSearch(profile.name || ""); }} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.08)", background: "#0d0d0d", color: "#eee", cursor: "pointer", textAlign: "left" }}>
-                      {profile.profile_photo_url ? <img src={profile.profile_photo_url} alt="" style={{ width: "34px", height: "34px", borderRadius: "50%", objectFit: "cover" }} /> : <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: "#1b1b1b" }} />}
-                      <span>{profile.name || "Perfil"}</span>
+                      <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: "#1b1b1b", display: "flex", alignItems: "center", justifyContent: "center", color: "#d6b97d", fontSize: "12px" }}>{profile.name?.charAt(0)?.toUpperCase() || "P"}</div>
+                      <span style={{ display: "flex", flexDirection: "column", gap: "3px" }}><strong>{profile.name || "Perfil"}</strong><small style={{ color: "#888", fontSize: "9px" }}>{profile.id}</small></span>
                     </button>
                   ))}
                 </div>
               )}
-              {adminBoostSelectedProfile && <div style={{ marginTop: "10px", color: "#d6b97d", fontSize: "10px" }}>Selecionado: <strong>{adminBoostSelectedProfile.name}</strong></div>}
+              {adminBoostSelectedProfile && <div style={{ marginTop: "10px", color: "#d6b97d", fontSize: "10px" }}>Selecionado: <strong>{adminBoostSelectedProfile.name || "Perfil"}</strong>{` · ${adminBoostSelectedProfile.id}`}</div>}
               <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginTop: "14px" }}>
                 <select value={adminBoostDuration} onChange={(event) => setAdminBoostDuration(event.target.value)} style={{ padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.12)", background: "#0b0b0b", color: "#eee" }}>
-                  <option value="6">6 horas</option><option value="12">12 horas</option><option value="24">24 horas</option><option value="48">48 horas</option><option value="72">72 horas</option><option value="168">7 dias</option>
+                  <option value="1">1 hora</option><option value="3">3 horas</option><option value="5">5 horas</option>
                 </select>
                 <button type="button" onClick={createAdminBoost} disabled={!adminBoostSelectedProfile || adminBoostSaving} style={{ padding: "12px 18px", borderRadius: "999px", border: "1px solid rgba(214,185,125,.35)", background: "rgba(214,185,125,.09)", color: "#d6b97d", fontSize: "9px", fontWeight: 700, letterSpacing: ".13em", cursor: adminBoostSaving ? "default" : "pointer", opacity: !adminBoostSelectedProfile || adminBoostSaving ? .5 : 1 }}>{adminBoostSaving ? "CONCEDENDO..." : "CONCEDER BOOST"}</button>
               </div>
@@ -9535,22 +9499,71 @@ const filteredConversations = conversations
                 <button
                   type="button"
                   onClick={async () => {
+                    if (!currentUserId) {
+                      setMessage("Usuário não encontrado.");
+                      return;
+                    }
+
                     const nextValue = !isProfileHidden;
+                    const previousValue = isProfileHidden;
+
                     setIsProfileHidden(nextValue);
                     setMessage("");
 
-                    const { data: { user } } = await supabase.auth.getUser();
-                    if (!user) return;
+                    try {
+                      const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-                    const { error } = await supabase
-                      .from("profiles")
-                      .update({ is_hidden: nextValue, updated_at: new Date().toISOString() })
-                      .eq("id", user.id);
+                      if (userError) {
+                        throw userError;
+                      }
 
-                    if (error) {
-                      setIsProfileHidden(!nextValue);
-                      setMessage("Não foi possível atualizar a visibilidade do perfil.");
+                      if (!user?.id) {
+                        throw new Error("Usuário não encontrado.");
+                      }
+
+                      const { data: updatedProfile, error } = await supabase
+                        .from("profiles")
+                        .update({
+                          is_hidden: nextValue,
+                          updated_at: new Date().toISOString(),
+                        })
+                        .eq("id", user.id)
+                        .select("id, is_hidden")
+                        .single();
+
+                      if (error) {
+                        throw error;
+                      }
+
+                      if (!updatedProfile || updatedProfile.is_hidden !== nextValue) {
+                        throw new Error("Não foi possível confirmar a alteração de visibilidade.");
+                      }
+
+                      setIsProfileHidden(updatedProfile.is_hidden === true);
+
+                      if (userLocation.latitude !== null && userLocation.longitude !== null) {
+                        await loadNearbyProfiles(
+                          userLocation.latitude,
+                          userLocation.longitude
+                        );
+                      }
+
+                      if (screen === "map") {
+                        await loadMapProfiles();
+                      }
+
+                      setMessage(
+                        nextValue
+                          ? "Seu perfil está oculto para outros usuários."
+                          : "Seu perfil voltou a ficar visível."
+                      );
+                    } catch (error) {
+                      setIsProfileHidden(previousValue);
                       console.error("ERRO AO ATUALIZAR VISIBILIDADE:", error);
+                      setMessage(
+                        error?.message ||
+                        "Não foi possível atualizar a visibilidade do perfil."
+                      );
                     }
                   }}
                   style={{
@@ -11741,10 +11754,22 @@ const filteredConversations = conversations
                               Você escolheu não receber conteúdo íntimo.
                             </div>
                           </div>
+                        ) : chatMessage.message_type === "image" &&
+                          chatMessage.sender_id !== currentUserId &&
+                          dismissedIntimateMessageIds.includes(chatMessage.id) ? (
+                          <div style={{ width: "260px", maxWidth: "100%", padding: "22px 18px", border: "1px solid #292929", background: "#101010", textAlign: "center" }}>
+                            <div style={{ color: "#77736b", fontSize: "10px", letterSpacing: "1.2px", marginBottom: "8px" }}>
+                              FOTO NÃO VISUALIZADA
+                            </div>
+                            <div style={{ color: "#55524d", fontSize: "9px", lineHeight: "1.5" }}>
+                              Você escolheu não visualizar esta foto temporária.
+                            </div>
+                          </div>
                         ) : chatMessage.sender_id !== currentUserId &&
                           chatMessage.is_intimate &&
                           intimateContentPreference === "confirm" &&
-                          !chatRevealedPhotoIds.includes(chatMessage.id) ? (
+                          !chatRevealedPhotoIds.includes(chatMessage.id) &&
+                          !dismissedIntimateMessageIds.includes(chatMessage.id) ? (
                           <div style={{ width: "260px", maxWidth: "100%", padding: "22px 18px", border: "1px solid rgba(201,181,138,0.35)", background: "#101010", textAlign: "center" }}>
                             <div style={{ color: "#c9b58a", fontSize: "11px", letterSpacing: "1.2px", marginBottom: "8px" }}>
                               🔒 CONTEÚDO ÍNTIMO
@@ -11824,7 +11849,11 @@ const filteredConversations = conversations
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => setChatRevealedPhotoIds((currentIds) => currentIds.filter((id) => id !== chatMessage.id))}
+                                    onClick={() => setDismissedIntimateMessageIds((currentIds) =>
+                                      currentIds.includes(chatMessage.id)
+                                        ? currentIds
+                                        : [...currentIds, chatMessage.id]
+                                    )}
                                     style={{
                                       flex: 1,
                                       minHeight: "34px",
@@ -12401,7 +12430,7 @@ const filteredConversations = conversations
                         startChatAudioRecording();
                       }
                     }}
-                    disabled={chatMediaLoading || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
+                    disabled={chatBlocked || chatMediaLoading || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
                     style={{ width: "100%", height: "40px", border: "none", background: "transparent", color: chatAudioRecording ? "#d36b5f" : "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer", opacity: chatMediaLoading ? 0.45 : 1 }}
                   >
                     {chatAudioRecording ? `⏹ PARAR ÁUDIO · ${String(Math.floor(chatAudioSeconds / 60)).padStart(2, "0")}:${String(chatAudioSeconds % 60).padStart(2, "0")}` : "🎙 GRAVAR ÁUDIO"}
@@ -12465,8 +12494,8 @@ const filteredConversations = conversations
                   }, 1200);
                 }
               }}
-              placeholder={abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now() ? "Abordagem temporariamente restrita" : "Escreva uma mensagem..."}
-              disabled={Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
+              placeholder={chatBlocked ? "ESTA CONTA ESTÁ INDISPONÍVEL" : abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now() ? "Abordagem temporariamente restrita" : "Escreva uma mensagem..."}
+              disabled={chatBlocked || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
               style={{
                 flex: 1,
                 height: "48px",
