@@ -3573,6 +3573,43 @@ const chatMessagesBottomRef = useRef(null);
         }
       )
       .on(
+        "broadcast",
+        { event: "user_unblocked" },
+        async (payload) => {
+          const unblockedUserId = payload?.payload?.unblockedUserId;
+          const unblockerId = payload?.payload?.unblockerId;
+
+          if (unblockedUserId !== currentUserId) return;
+          if (!isValidUuid(unblockerId) || unblockerId === currentUserId) return;
+
+          setChatBlocked(false);
+
+          if (
+            userLocation.latitude !== null &&
+            userLocation.longitude !== null
+          ) {
+            await Promise.all([
+              loadNearbyProfiles(
+                userLocation.latitude,
+                userLocation.longitude
+              ),
+              loadMapProfiles(
+                userLocation.latitude,
+                userLocation.longitude,
+                mapRadius
+              ),
+            ]);
+          }
+
+          await Promise.all([
+            loadLikedProfiles(),
+            loadMatchedProfiles(),
+            loadConversations(),
+            loadBlockedUsers(),
+          ]);
+        }
+      )
+      .on(
         "postgres_changes",
         {
           event: "DELETE",
@@ -3646,6 +3683,34 @@ const chatMessagesBottomRef = useRef(null);
 
       if (error) throw error;
 
+      const unblockPayload = {
+        unblockerId: user.id,
+        unblockedUserId: profile.id,
+      };
+
+      const directUnblockChannel = supabase.channel(
+        `moon-direct-unblock-${profile.id}`
+      );
+      await directUnblockChannel.subscribe();
+      await directUnblockChannel.send({
+        type: "broadcast",
+        event: "user_unblocked",
+        payload: unblockPayload,
+      });
+
+      const globalUnblockChannel = supabase.channel("moon-unblock-events");
+      await globalUnblockChannel.subscribe();
+      await globalUnblockChannel.send({
+        type: "broadcast",
+        event: "user_unblocked",
+        payload: unblockPayload,
+      });
+
+      window.setTimeout(() => {
+        supabase.removeChannel(directUnblockChannel);
+        supabase.removeChannel(globalUnblockChannel);
+      }, 1500);
+
       setBlockedUsers((current) =>
         current.filter((item) => item.id !== profile.id)
       );
@@ -3711,15 +3776,9 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Você não pode bloquear seu próprio perfil.");
       }
 
-      const { error: blockError } = await supabase
-        .from("blocked_users")
-        .upsert(
-          [
-            { user_id: user.id, blocked_user_id: profile.id },
-            { user_id: profile.id, blocked_user_id: user.id },
-          ],
-          { onConflict: "user_id,blocked_user_id", ignoreDuplicates: true }
-        );
+      const { error: blockError } = await supabase.rpc("block_user", {
+        p_blocked_user_id: profile.id,
+      });
 
       if (blockError) throw blockError;
 
