@@ -3572,6 +3572,52 @@ const chatMessagesBottomRef = useRef(null);
           });
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "blocked_users",
+        },
+        async (payload) => {
+          const row = payload?.old;
+          if (!row) return;
+
+          const affectsCurrentUser =
+            row.user_id === currentUserId ||
+            row.blocked_user_id === currentUserId;
+
+          if (!affectsCurrentUser) return;
+
+          const otherUserId =
+            row.user_id === currentUserId
+              ? row.blocked_user_id
+              : row.user_id;
+
+          if (!isValidUuid(otherUserId) || otherUserId === currentUserId) return;
+
+          setBlockedUsers((current) =>
+            current.filter((item) => item.id !== otherUserId)
+          );
+
+          if (userLocation.latitude !== null && userLocation.longitude !== null) {
+            await Promise.all([
+              loadNearbyProfiles(userLocation.latitude, userLocation.longitude),
+              loadMapProfiles(
+                userLocation.latitude,
+                userLocation.longitude,
+                mapRadius
+              ),
+            ]);
+          }
+
+          await Promise.all([
+            loadLikedProfiles(),
+            loadMatchedProfiles(),
+            loadConversations(),
+          ]);
+        }
+      )
       .subscribe();
 
     return () => {
@@ -3594,27 +3640,54 @@ const chatMessagesBottomRef = useRef(null);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não encontrado.");
 
-      const { error } = await supabase
-        .from("blocked_users")
-        .delete()
-        .or(
-          `and(user_id.eq.${user.id},blocked_user_id.eq.${profile.id}),and(user_id.eq.${profile.id},blocked_user_id.eq.${user.id})`
-        );
+      const { error } = await supabase.rpc("unblock_user", {
+        p_blocked_user_id: profile.id,
+      });
 
       if (error) throw error;
 
-      setBlockedUsers((current) => current.filter((item) => item.id !== profile.id));
-      showToast({ icon: "↩", title: "Usuário desbloqueado", body: "O perfil foi desbloqueado." });
+      setBlockedUsers((current) =>
+        current.filter((item) => item.id !== profile.id)
+      );
+
+      setSelectedProfile((current) =>
+        current?.id === profile.id ? null : current
+      );
+      setSelectedMapProfile((current) =>
+        current?.id === profile.id ? null : current
+      );
+
+      showToast({
+        icon: "↩",
+        title: "Usuário desbloqueado",
+        body: "O perfil foi desbloqueado e voltou a ficar disponível.",
+      });
+
+      const refreshTasks = [loadBlockedUsers()];
 
       if (userLocation.latitude !== null && userLocation.longitude !== null) {
-        await loadNearbyProfiles(userLocation.latitude, userLocation.longitude);
+        refreshTasks.push(
+          loadNearbyProfiles(userLocation.latitude, userLocation.longitude),
+          loadMapProfiles(
+            userLocation.latitude,
+            userLocation.longitude,
+            mapRadius
+          )
+        );
       }
+
+      refreshTasks.push(
+        loadLikedProfiles(),
+        loadMatchedProfiles(),
+        loadConversations()
+      );
+
+      await Promise.all(refreshTasks);
     } catch (error) {
       console.error("ERRO AO DESBLOQUEAR USUÁRIO:", error);
       setMessage(error.message || "Não foi possível desbloquear o usuário.");
     }
   }
-
   async function handleBlock(profile) {
     if (!isValidUuid(profile?.id)) {
       console.error("TENTATIVA DE BLOQUEIO COM ID INVÁLIDO:", profile?.id);
@@ -3638,12 +3711,15 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Você não pode bloquear seu próprio perfil.");
       }
 
-      const { error: blockError } = await supabase.rpc(
-        "block_user",
-        {
-          p_blocked_user_id: profile.id,
-        }
-      );
+      const { error: blockError } = await supabase
+        .from("blocked_users")
+        .upsert(
+          [
+            { user_id: user.id, blocked_user_id: profile.id },
+            { user_id: profile.id, blocked_user_id: user.id },
+          ],
+          { onConflict: "user_id,blocked_user_id", ignoreDuplicates: true }
+        );
 
       if (blockError) throw blockError;
 
