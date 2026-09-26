@@ -209,6 +209,7 @@ const chatMessagesBottomRef = useRef(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [statusClock, setStatusClock] = useState(Date.now());
   const [captureShieldActive, setCaptureShieldActive] = useState(false);
+  const screenshotNoticeCooldownRef = useRef(0);
   const [isAdmin, setIsAdmin] = useState(false);
   const [abusiveRestrictionUntil, setAbusiveRestrictionUntil] = useState(null);
   const [abusiveRestrictionLoading, setAbusiveRestrictionLoading] = useState(false);
@@ -823,6 +824,12 @@ const chatMessagesBottomRef = useRef(null);
             showToast({
               title: "Vocês se conectaram",
               body: "Você tem um novo Match na MOON.",
+            });
+          } else if (notification.type === "screenshot") {
+            playNotificationSound();
+            showToast({
+              title: "📸 CAPTURA DE TELA",
+              body: "A outra pessoa tirou uma captura de tela.",
             });
           } else if (notification.type === "boost") {
             playNotificationSound();
@@ -2530,12 +2537,47 @@ const chatMessagesBottomRef = useRef(null);
     window.addEventListener("blur", handleBlur);
     window.addEventListener("focus", handleFocus);
 
+    const handlePrintScreen = async (event) => {
+      if (event.key !== "PrintScreen") return;
+      if (!currentUserId) return;
+
+      const targetProfile =
+        screen === "chat"
+          ? chatTarget
+          : selectedProfile;
+
+      if (!targetProfile?.id || targetProfile.id === currentUserId) return;
+
+      const now = Date.now();
+      if (now - screenshotNoticeCooldownRef.current < 5000) return;
+      screenshotNoticeCooldownRef.current = now;
+
+      const context = screen === "chat" ? "chat" : "profile";
+
+      try {
+        await supabase.rpc("notify_screenshot_capture", {
+          p_target_user_id: targetProfile.id,
+          p_context: context,
+        });
+
+        showToast({
+          title: "CAPTURA REGISTRADA",
+          body: "O outro usuário foi avisado sobre a captura.",
+        });
+      } catch (error) {
+        console.error("ERRO AO REGISTRAR CAPTURA:", error);
+      }
+    };
+
+    window.addEventListener("keydown", handlePrintScreen);
+
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleBlur);
       window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("keydown", handlePrintScreen);
     };
-  }, []);
+  }, [currentUserId, screen, chatTarget, selectedProfile]);
 
   const protectedMediaProps = {
     draggable: false,
@@ -3699,10 +3741,35 @@ const chatMessagesBottomRef = useRef(null);
       );
 
       // Se a conversa com este usuário ainda estiver aberta,
-      // libera o chat imediatamente após o desbloqueio.
+      // libera o chat e restaura a conversa existente após o desbloqueio.
       if (chatTarget?.id === profile.id) {
         setChatBlocked(false);
         setMessage("");
+
+        const { data: refreshedConversation, error: conversationError } =
+          await supabase
+            .from("conversations")
+            .select("*")
+            .or(
+              `and(user_one_id.eq.${user.id},user_two_id.eq.${profile.id}),and(user_one_id.eq.${profile.id},user_two_id.eq.${user.id})`
+            )
+            .maybeSingle();
+
+        if (conversationError) throw conversationError;
+
+        if (refreshedConversation) {
+          const { data: reopenedConversation, error: reopenError } =
+            await supabase.rpc("reopen_conversation_after_unblock", {
+              p_conversation_id: refreshedConversation.id,
+            });
+
+          if (reopenError) throw reopenError;
+
+          setChatConversation(reopenedConversation);
+          setChatRefusalMarkedAt(null);
+          setChatRefusalPending(false);
+          setDismissedInsistenceWarningMessageIds([]);
+        }
       }
 
       setSelectedProfile((current) =>
@@ -6763,11 +6830,9 @@ const filteredConversations = conversations
         @keyframes moonAppEnter {
           from {
             opacity: 0;
-            transform: scale(0.985);
           }
           to {
             opacity: 1;
-            transform: scale(1);
           }
         }
       `}</style>
@@ -11471,16 +11536,19 @@ const filteredConversations = conversations
             width: "100%",
             maxWidth: "700px",
             minHeight: "100vh",
-            padding: "30px 20px",
+            padding: "120px 20px 30px",
             display: "flex",
             flexDirection: "column",
           }}
         >
           <div
             style={{
-              position: "sticky",
+              position: "fixed",
               top: 0,
-              zIndex: 100,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "min(700px, calc(100% - 40px))",
+              zIndex: 1000,
               display: "flex",
               alignItems: "center",
               gap: "14px",
