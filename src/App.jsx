@@ -55,6 +55,8 @@ function App() {
   const [mapCenterRequest, setMapCenterRequest] = useState(null);
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+  const [splashFading, setSplashFading] = useState(false);
   const [ageVerified, setAgeVerified] = useState(false);
   const [message, setMessage] = useState("");
   const [pwaInstallAvailable, setPwaInstallAvailable] = useState(false);
@@ -200,8 +202,6 @@ const chatMessagesBottomRef = useRef(null);
   const [threatPendingContent, setThreatPendingContent] = useState("");
   const [dismissedThreatMessageIds, setDismissedThreatMessageIds] = useState([]);
   const [dismissedOffensiveMessageIds, setDismissedOffensiveMessageIds] = useState([]);
-  const [chatRefusalMarkedAt, setChatRefusalMarkedAt] = useState(null);
-  const [chatRefusalPending, setChatRefusalPending] = useState(false);
   const [dismissedInsistenceWarningMessageIds, setDismissedInsistenceWarningMessageIds] = useState([]);
   const [chatPhotoConfirmationEnabled, setChatPhotoConfirmationEnabled] = useState(false);
   const [intimateContentPreference, setIntimateContentPreference] = useState("confirm");
@@ -4191,6 +4191,42 @@ const chatMessagesBottomRef = useRef(null);
         }
       )
       .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "conversations",
+          filter: `id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const updatedConversation = payload.new;
+
+          if (!isMounted || !updatedConversation?.id) return;
+
+          setChatConversation((currentConversation) =>
+            currentConversation?.id === updatedConversation.id
+              ? { ...currentConversation, ...updatedConversation }
+              : currentConversation
+          );
+
+          if (updatedConversation.ended_by_interest_at) {
+            setChatText("");
+            setChatReplyToMessage(null);
+            setChatTyping(false);
+            setShowChatAttachMenu(false);
+            setMessage("CONVERSA ENCERRADA");
+          }
+
+          setConversations((currentConversations) =>
+            currentConversations.map((conversation) =>
+              conversation.id === updatedConversation.id
+                ? { ...conversation, ...updatedConversation }
+                : conversation
+            )
+          );
+        }
+      )
+      .on(
         "broadcast",
         {
           event: "typing",
@@ -4777,8 +4813,6 @@ const chatMessagesBottomRef = useRef(null);
       setChatBlocked(relationshipBlocked);
       setChatMessages([]);
       setChatRevealedPhotoIds([]);
-      setChatRefusalMarkedAt(null);
-      setChatRefusalPending(false);
       setDismissedInsistenceWarningMessageIds([]);
       setChatText("");
       setChatReplyToMessage(null);
@@ -5019,6 +5053,11 @@ const chatMessagesBottomRef = useRef(null);
   async function ensureChatInteractionAllowed() {
     if (!chatTarget?.id || !currentUserId) return false;
 
+    if (chatConversation?.ended_by_interest_at) {
+      setMessage("ESTA CONVERSA FOI ENCERRADA");
+      return false;
+    }
+
     const blocked = await isUserBlocked(chatTarget.id, currentUserId);
     if (blocked) {
       setChatBlocked(true);
@@ -5077,11 +5116,6 @@ const chatMessagesBottomRef = useRef(null);
       setChatDeepSuggestion(null);
       setChatText("");
       setChatReplyToMessage(null);
-      if (chatRefusalPending) {
-        setChatRefusalMarkedAt(insertedMessage?.created_at || new Date().toISOString());
-        setChatRefusalPending(false);
-        setDismissedInsistenceWarningMessageIds([]);
-      }
       setOffensiveWarning(false);
       setOffensivePendingContent("");
       showToast({
@@ -5165,10 +5199,68 @@ const chatMessagesBottomRef = useRef(null);
     );
   }
 
-  function markChatRefusal() {
-    const refusalMessage = "Obrigado, mas não tenho interesse em continuar a conversa.";
-    setChatText(refusalMessage);
-    setChatRefusalPending(true);
+  async function handleChatRefusal() {
+    if (!chatConversation?.id || !currentUserId || chatConversation?.ended_by_interest_at) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Encerrar esta conversa? As mensagens antigas continuarão no histórico, mas nenhum dos dois poderá enviar novas mensagens."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "end_conversation_by_interest",
+        {
+          p_conversation_id: chatConversation.id,
+        }
+      );
+
+      if (error) throw error;
+
+      const endedConversation = Array.isArray(data) ? data[0] : data;
+
+      if (!endedConversation?.id) {
+        throw new Error("Não foi possível confirmar o encerramento da conversa.");
+      }
+
+      setChatConversation((current) =>
+        current
+          ? {
+              ...current,
+              ...(endedConversation || {}),
+            }
+          : current
+      );
+      setChatText("");
+      setChatReplyToMessage(null);
+      setChatTyping(false);
+      setShowChatAttachMenu(false);
+      setMessage("CONVERSA ENCERRADA");
+
+      setConversations((currentConversations) =>
+        currentConversations.map((conversation) =>
+          conversation.id === chatConversation.id
+            ? {
+                ...conversation,
+                ...(endedConversation || {}),
+              }
+            : conversation
+        )
+      );
+
+      showToast({
+        title: "Conversa encerrada",
+        body: "Nenhum dos dois poderá enviar novas mensagens nesta conversa.",
+      });
+    } catch (error) {
+      console.error("ERRO AO ENCERRAR CONVERSA:", error);
+      setMessage(
+        error.message || "Não foi possível encerrar a conversa."
+      );
+    }
   }
 
   function openContextualOffensiveReport(messageId) {
@@ -6335,20 +6427,189 @@ const filteredConversations = conversations
     };
   }, []);
 
-  if (checkingSession) {
+  useEffect(() => {
+    const splashTimer = window.setTimeout(() => {
+      setSplashFading(true);
+
+      window.setTimeout(() => {
+        setShowSplash(false);
+      }, 450);
+    }, 3000);
+
+    return () => window.clearTimeout(splashTimer);
+  }, []);
+
+  if (checkingSession || showSplash) {
     return (
-      <main className="moon-app">
+      <main
+      className="moon-app"
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        background: "#050505",
+      }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(circle at 50% 15%, rgba(214,191,150,0.22) 0%, rgba(201,181,138,0.11) 20%, rgba(201,181,138,0.035) 42%, rgba(0,0,0,0) 68%), radial-gradient(circle at 12% 70%, rgba(201,181,138,0.075) 0%, rgba(0,0,0,0) 42%), radial-gradient(circle at 88% 72%, rgba(201,181,138,0.065) 0%, rgba(0,0,0,0) 44%), radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(0,0,0,0.34) 100%)",
+        }}
+      />
 
-        <section className="home-screen">
 
-          <div className="moon-logo">
-            MOON
+        <section
+          aria-label="MOON"
+          style={{
+            width: "100%",
+            height: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            zIndex: 1,
+            background: "#050505",
+            opacity: splashFading ? 0 : 1,
+            transition: "opacity 450ms ease",
+          }}
+        >
+          <style>{`
+            @keyframes moonSplashLogo {
+              0% {
+                opacity: 0;
+                transform: scale(0.72);
+                letter-spacing: 24px;
+              }
+              18% {
+                opacity: 1;
+                transform: scale(0.86);
+                letter-spacing: 15px;
+              }
+              55% {
+                opacity: 1;
+                transform: scale(1);
+                letter-spacing: 10px;
+              }
+              78% {
+                opacity: 1;
+                transform: scale(1);
+                letter-spacing: 10px;
+              }
+              100% {
+                opacity: 0;
+                transform: scale(1.32);
+                letter-spacing: 8px;
+              }
+            }
+
+            @keyframes moonSplashGlow {
+              0% {
+                opacity: 0;
+                transform: scale(0.65);
+              }
+              35% {
+                opacity: 0.35;
+                transform: scale(0.9);
+              }
+              70% {
+                opacity: 0.7;
+                transform: scale(1);
+              }
+              100% {
+                opacity: 0;
+                transform: scale(1.45);
+              }
+            }
+
+            @keyframes moonSplashTagline {
+              0%, 48% {
+                opacity: 0;
+                transform: translateY(8px);
+              }
+              60% {
+                opacity: 1;
+                transform: translateY(0);
+              }
+              88% {
+                opacity: 1;
+                transform: translateY(0);
+              }
+              100% {
+                opacity: 0;
+                transform: translateY(-4px);
+              }
+            }
+
+            .moon-splash-logo {
+              animation: moonSplashLogo 2.8s cubic-bezier(.22,.61,.36,1) forwards;
+              will-change: transform, opacity, letter-spacing;
+            }
+
+            .moon-splash-glow {
+              animation: moonSplashGlow 2.8s ease-out forwards;
+              will-change: transform, opacity;
+            }
+
+            .moon-splash-tagline {
+              animation: moonSplashTagline 2.8s ease-out forwards;
+              will-change: transform, opacity;
+            }
+          `}</style>
+
+          <div
+            style={{
+              position: "absolute",
+              width: "min(82vw, 470px)",
+              height: "min(82vw, 470px)",
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(214,191,150,0.18) 0%, rgba(214,191,150,0.07) 30%, rgba(0,0,0,0) 68%)",
+              filter: "blur(12px)",
+            }}
+            className="moon-splash-glow"
+          />
+
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+            }}
+          >
+            <div
+              className="moon-splash-logo moon-logo"
+              style={{
+                margin: 0,
+                color: "#f3ead9",
+                textShadow:
+                  "0 0 18px rgba(214,191,150,0.18), 0 0 42px rgba(214,191,150,0.08)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              MOON
+            </div>
+
+            <div
+              className="moon-splash-tagline"
+              style={{
+                marginTop: "18px",
+                color: "#d6bf96",
+                fontSize: "11px",
+                letterSpacing: "5px",
+                fontWeight: 400,
+                whiteSpace: "nowrap",
+              }}
+            >
+              FIND YOUR NIGHT.
+            </div>
           </div>
-
-          <p className="moon-tagline">
-            FIND YOUR NIGHT.
-          </p>
-
         </section>
 
       </main>
@@ -6497,7 +6758,40 @@ const filteredConversations = conversations
     </div>
   )}
   return (
-    <main className="moon-app">
+    <>
+      <style>{`
+        @keyframes moonAppEnter {
+          from {
+            opacity: 0;
+            transform: scale(0.985);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
+      <main
+        className="moon-app"
+        style={{
+          animation: "moonAppEnter 500ms ease-out both",
+          position: "relative",
+          overflow: "hidden",
+          background: "#050505",
+        }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(circle at 50% 15%, rgba(214,191,150,0.22) 0%, rgba(201,181,138,0.11) 20%, rgba(201,181,138,0.035) 42%, rgba(0,0,0,0) 68%), radial-gradient(circle at 12% 70%, rgba(201,181,138,0.075) 0%, rgba(0,0,0,0) 42%), radial-gradient(circle at 88% 72%, rgba(201,181,138,0.065) 0%, rgba(0,0,0,0) 44%), radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(0,0,0,0.34) 100%)",
+        }}
+      />
+
       {captureShieldActive && (
         <div
           aria-hidden="true"
@@ -10324,7 +10618,7 @@ const filteredConversations = conversations
                       boxSizing: "border-box",
                       background: "rgba(201, 181, 138, 0.035)",
                       border: "1px solid #292929",
-                      borderRadius: "2px",
+                      borderRadius: "10px",
                       color: "#f4ead7",
                       padding: "0 14px",
                       outline: "none",
@@ -10366,7 +10660,7 @@ const filteredConversations = conversations
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>IDENTIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                     {["Homem cis", "Homem trans", "Não binário"].map((option) => (
-                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, gender: option })} style={{ height: "44px", border: profileForm.gender === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.gender === option ? "#15130f" : "#0b0b0b", color: profileForm.gender === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "0.7px", cursor: "pointer" }}>{option}</button>
+                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, gender: option })} style={{ height: "44px", border: profileForm.gender === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.gender === option ? "#15130f" : "#0b0b0b", color: profileForm.gender === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "0.7px", cursor: "pointer", borderRadius: "10px" }}>{option}</button>
                     ))}
                   </div>
                 </div>
@@ -10375,7 +10669,7 @@ const filteredConversations = conversations
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>SEXUALIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
                     {["Gay", "Bissexual", "Pansexual", "Outra"].map((option) => (
-                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, sexuality: option })} style={{ height: "44px", border: profileForm.sexuality === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.sexuality === option ? "#15130f" : "#0b0b0b", color: profileForm.sexuality === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, sexuality: option })} style={{ height: "44px", border: profileForm.sexuality === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.sexuality === option ? "#15130f" : "#0b0b0b", color: profileForm.sexuality === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer", borderRadius: "10px" }}>{option}</button>
                     ))}
                   </div>
                 </div>
@@ -10384,7 +10678,7 @@ const filteredConversations = conversations
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>POSIÇÃO</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                     {["Ativo", "Passivo", "Versátil"].map((option) => (
-                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, position: option })} style={{ height: "44px", border: profileForm.position === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.position === option ? "#15130f" : "#0b0b0b", color: profileForm.position === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, position: option })} style={{ height: "44px", border: profileForm.position === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.position === option ? "#15130f" : "#0b0b0b", color: profileForm.position === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer", borderRadius: "10px" }}>{option}</button>
                     ))}
                   </div>
                 </div>
@@ -10393,7 +10687,7 @@ const filteredConversations = conversations
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>DISPONIBILIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
                     {["Agora", "Mais tarde", "Outro dia", "Conversar"].map((option) => (
-                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, availability: option })} style={{ height: "44px", border: profileForm.availability === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.availability === option ? "#15130f" : "#0b0b0b", color: profileForm.availability === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>{option}</button>
+                      <button key={option} type="button" onClick={() => setProfileForm({ ...profileForm, availability: option })} style={{ height: "44px", border: profileForm.availability === option ? "1px solid #c9b58a" : "1px solid #292929", background: profileForm.availability === option ? "#15130f" : "#0b0b0b", color: profileForm.availability === option ? "#f4ead7" : "#c9b58a", fontSize: "10px", letterSpacing: "1px", cursor: "pointer", borderRadius: "10px" }}>{option}</button>
                     ))}
                   </div>
                 </div>
@@ -10413,7 +10707,7 @@ const filteredConversations = conversations
                       boxSizing: "border-box",
                       background: "rgba(201, 181, 138, 0.035)",
                       border: "1px solid #292929",
-                      borderRadius: "2px",
+                      borderRadius: "10px",
                       color: "#f4ead7",
                       padding: "0 14px",
                       outline: "none",
@@ -10438,7 +10732,7 @@ const filteredConversations = conversations
                       boxSizing: "border-box",
                       background: "rgba(201, 181, 138, 0.035)",
                       border: "1px solid #292929",
-                      borderRadius: "2px",
+                      borderRadius: "10px",
                       color: "#f4ead7",
                       padding: "0 14px",
                       outline: "none",
@@ -10482,6 +10776,7 @@ const filteredConversations = conversations
                               fontSize: "10px",
                               letterSpacing: "0.7px",
                               cursor: "pointer",
+                              borderRadius: "10px",
                             }}
                           >
                             {option}
@@ -10504,7 +10799,7 @@ const filteredConversations = conversations
                     boxSizing: "border-box",
                     background: "rgba(201, 181, 138, 0.035)",
                     border: "1px solid #292929",
-                    borderRadius: "2px",
+                    borderRadius: "10px",
                     color: "#f4ead7",
                     padding: "16px",
                     outline: "none",
@@ -10570,7 +10865,7 @@ const filteredConversations = conversations
             </p>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "24px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "24px", borderRadius: "10px" }}>
             {[
               ["conexoes", "CONEXÕES"],
               ["interesses", "INTERESSES"],
@@ -10587,6 +10882,7 @@ const filteredConversations = conversations
                 style={{
                   height: "42px",
                   border: `1px solid ${likesTab === tab ? "#c9b58a" : "#292929"}`,
+                  borderRadius: "10px",
                   background: likesTab === tab ? "#15130f" : "#0b0b0b",
                   color: likesTab === tab ? "#c9b58a" : "#77736b",
                   fontSize: "10px",
@@ -10815,6 +11111,7 @@ const filteredConversations = conversations
                   letterSpacing: "1.2px",
                   cursor: "pointer",
                   padding: "8px 5px",
+                  borderRadius: "10px",
                 }}
               >
                 {label}
@@ -10831,6 +11128,7 @@ const filteredConversations = conversations
                 padding: "70px 20px",
                 border: "1px solid #191919",
                 background: "#0b0b0b",
+                borderRadius: "10px",
               }}
             >
               <p
@@ -10886,6 +11184,7 @@ const filteredConversations = conversations
                       color: "#f4ead7",
                       cursor: "pointer",
                       textAlign: "left",
+                      borderRadius: "10px",
                     }}
                   >
                     <div
@@ -10896,6 +11195,7 @@ const filteredConversations = conversations
                         overflow: "hidden",
                         background: "#101010",
                         border: "1px solid #292929",
+                        borderRadius: "8px",
                       }}
                     >
                       {conversation.photoUrl ? (
@@ -11908,28 +12208,6 @@ const filteredConversations = conversations
                     </div>
                   )}
 
-                  {chatMessage.sender_id !== currentUserId &&
-                    !chatMessage.deleted_for_everyone &&
-                    chatMessage.message_type === "text" &&
-                    chatRefusalMarkedAt &&
-                    chatMessage.created_at &&
-                    new Date(chatMessage.created_at).getTime() > new Date(chatRefusalMarkedAt).getTime() &&
-                    !dismissedInsistenceWarningMessageIds.includes(chatMessage.id) && (
-                    <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(201,181,138,0.18)" }}>
-                      <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1px", lineHeight: "1.5", marginBottom: "8px" }}>
-                        ⚠️ VOCÊ JÁ DISSE QUE NÃO TINHA INTERESSE.
-                      </div>
-                      <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.5", marginBottom: "9px" }}>
-                        Essa pessoa continuou a conversa depois da sua recusa. Você pode ignorar, denunciar ou bloquear.
-                      </div>
-                      <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-                        <button type="button" onClick={() => { dismissInsistenceWarning(chatMessage.id); setReportTarget(chatTarget || null); setReportReason("Insistência após recusa"); setReportDescription(`Denúncia contextual relacionada à insistência após recusa na mensagem ${chatMessage.id}.`); }} style={{ minHeight: "30px", border: "1px solid #292929", background: "transparent", color: "#8f8a81", padding: "0 8px", fontSize: "8px", letterSpacing: "0.6px", cursor: "pointer" }}>DENUNCIAR</button>
-                        <button type="button" onClick={() => { dismissInsistenceWarning(chatMessage.id); handleBlock(chatTarget); }} style={{ minHeight: "30px", border: "1px solid rgba(211,107,95,0.45)", background: "transparent", color: "#d36b5f", padding: "0 8px", fontSize: "8px", letterSpacing: "0.6px", cursor: "pointer" }}>BLOQUEAR</button>
-                        <button type="button" onClick={() => dismissInsistenceWarning(chatMessage.id)} style={{ minHeight: "30px", border: "1px solid #292929", background: "transparent", color: "#77736b", padding: "0 8px", fontSize: "8px", letterSpacing: "0.6px", cursor: "pointer" }}>IGNORAR</button>
-                      </div>
-                    </div>
-                  )}
-
                   {chatMessage.sender_id === currentUserId && (
                     <div
                       style={{
@@ -12133,11 +12411,29 @@ const filteredConversations = conversations
             </div>
           )}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
-            <button type="button" onClick={markChatRefusal} style={{ minHeight: "30px", border: "1px solid #292929", background: "transparent", color: "#77736b", padding: "0 10px", fontSize: "8px", letterSpacing: "1px", cursor: "pointer" }}>
-              NÃO TENHO INTERESSE
-            </button>
-          </div>
+          {chatConversation?.ended_by_interest_at ? (
+            <div
+              style={{
+                marginBottom: "10px",
+                padding: "11px 12px",
+                border: "1px solid rgba(201,181,138,0.28)",
+                background: "#101010",
+                color: "#c9b58a",
+                fontSize: "9px",
+                letterSpacing: "1px",
+                lineHeight: "1.5",
+                textAlign: "center",
+              }}
+            >
+              CONVERSA ENCERRADA · NOVAS MENSAGENS DESATIVADAS
+            </div>
+          ) : (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+              <button type="button" onClick={handleChatRefusal} style={{ minHeight: "30px", border: "1px solid #292929", background: "transparent", color: "#77736b", padding: "0 10px", fontSize: "8px", letterSpacing: "1px", cursor: "pointer" }}>
+                NÃO TENHO INTERESSE
+              </button>
+            </div>
+          )}
 
           {chatReplyToMessage && (
             <div
@@ -12264,7 +12560,7 @@ const filteredConversations = conversations
               <button
                 type="button"
                 onClick={() => setShowChatAttachMenu((value) => !value)}
-                disabled={chatMediaLoading}
+                disabled={chatMediaLoading || Boolean(chatConversation?.ended_by_interest_at)}
                 aria-label="Anexar conteúdo"
                 style={{
                   width: "48px",
@@ -12272,9 +12568,9 @@ const filteredConversations = conversations
                   border: "1px solid #292929",
                   background: "transparent",
                   color: "#c9b58a",
-                  cursor: chatMediaLoading ? "not-allowed" : "pointer",
+                  cursor: chatMediaLoading || chatConversation?.ended_by_interest_at ? "not-allowed" : "pointer",
                   fontSize: "22px",
-                  opacity: chatMediaLoading ? 0.45 : 1,
+                  opacity: chatMediaLoading || chatConversation?.ended_by_interest_at ? 0.45 : 1,
                 }}
               >
                 +
@@ -12369,8 +12665,8 @@ const filteredConversations = conversations
                   }, 1200);
                 }
               }}
-              placeholder={chatBlocked ? "ESTA CONTA ESTÁ INDISPONÍVEL" : abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now() ? "Abordagem temporariamente restrita" : "Escreva uma mensagem..."}
-              disabled={chatBlocked || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
+              placeholder={chatConversation?.ended_by_interest_at ? "CONVERSA ENCERRADA" : chatBlocked ? "ESTA CONTA ESTÁ INDISPONÍVEL" : abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now() ? "Abordagem temporariamente restrita" : "Escreva uma mensagem..."}
+              disabled={chatBlocked || Boolean(chatConversation?.ended_by_interest_at) || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
               style={{
                 flex: 1,
                 height: "48px",
@@ -12384,7 +12680,7 @@ const filteredConversations = conversations
 
             <button
               type="submit"
-              disabled={!chatText.trim() || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
+              disabled={!chatText.trim() || Boolean(chatConversation?.ended_by_interest_at) || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
               style={{
                 width: "58px",
                 height: "48px",
@@ -12466,68 +12762,7 @@ const filteredConversations = conversations
                     )}
                     <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px" }}>PERFIL MOON</div>
                   </div>
-                  <div style={{ position: "relative", display: "flex", gap: "7px", alignItems: "center" }}>
-                    <button
-                      type="button"
-                      onClick={() => setShowSelectedProfileMenu((value) => !value)}
-                      aria-label="Opções do perfil"
-                      style={{ width: "34px", height: "34px", border: "1px solid #292929", background: "transparent", color: "#c9b58a", cursor: "pointer", fontSize: "18px", lineHeight: "1" }}
-                    >
-                      ⋮
-                    </button>
-
-                    {showSelectedProfileMenu && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: "40px",
-                          right: "42px",
-                          width: "190px",
-                          background: "#0b0b0b",
-                          border: "1px solid #292929",
-                          boxShadow: "0 18px 45px rgba(0,0,0,0.55)",
-                          zIndex: 60,
-                          padding: "6px",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowSelectedProfileMenu(false);
-                            handleBlock(selectedProfile);
-                          }}
-                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
-                        >
-                          BLOQUEAR USUÁRIO
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowSelectedProfileMenu(false);
-                            setReportTarget(selectedProfile);
-                            setReportReason("");
-                            setMessage("");
-                          }}
-                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
-                        >
-                          DENUNCIAR USUÁRIO
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowSelectedProfileMenu(false);
-                            setLegalPage("privacy");
-                            setSelectedProfile(null);
-                          }}
-                          style={{ width: "100%", height: "42px", border: "none", background: "transparent", color: "#c9b58a", textAlign: "left", padding: "0 12px", fontSize: "9px", letterSpacing: "1.3px", cursor: "pointer" }}
-                        >
-                          PRIVACIDADE
-                        </button>
-                      </div>
-                    )}
-
+                  <div style={{ display: "flex", gap: "7px", alignItems: "center" }}>
                     <button
                       type="button"
                       onClick={() => { setShowSelectedProfileMenu(false); setSelectedProfile(null); }}
@@ -12649,6 +12884,7 @@ const filteredConversations = conversations
 
       {screen === "filters" && (
         <section
+          className="moon-filters-screen"
           style={{
             width: "100%",
             maxWidth: "620px",
@@ -12716,7 +12952,18 @@ const filteredConversations = conversations
             </button>
           </div>
 
+          <style>{`
+            .moon-filters-screen button,
+            .moon-filters-screen select {
+              border-radius: 10px;
+            }
+            .moon-filters-screen .moon-filters-card {
+              border-radius: 10px;
+            }
+          `}</style>
+
           <div
+            className="moon-filters-card"
             style={{
               border: "1px solid #292929",
               background: "#0b0b0b",
@@ -14196,6 +14443,7 @@ const filteredConversations = conversations
       )}
 
     </main>
+    </>
   );
 }
 
