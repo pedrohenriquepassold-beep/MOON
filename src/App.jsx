@@ -14084,6 +14084,8 @@ const filteredConversations = conversations
                     .filter(Boolean);
 
                   const visibleInfoItems = isExpanded ? infoItems : infoItems.slice(0, 4);
+                  let discoverySwipeStartX = null;
+                  let discoverySwipeStartY = null;
 
                   return (
                     <React.Fragment key={profile.id}>
@@ -14147,7 +14149,42 @@ const filteredConversations = conversations
                           </div>
                         </div>
 
-                        <div className="moon-discovery-photo-stage">
+                        <div
+                          className="moon-discovery-photo-stage"
+                          onTouchStart={(event) => {
+                            if (photosForPost.length <= 1) return;
+                            const touch = event.touches?.[0];
+                            if (!touch) return;
+                            discoverySwipeStartX = touch.clientX;
+                            discoverySwipeStartY = touch.clientY;
+                          }}
+                          onTouchEnd={(event) => {
+                            if (photosForPost.length <= 1 || discoverySwipeStartX === null) return;
+
+                            const touch = event.changedTouches?.[0];
+                            if (!touch) return;
+
+                            const deltaX = touch.clientX - discoverySwipeStartX;
+                            const deltaY = touch.clientY - discoverySwipeStartY;
+                            const minimumSwipeDistance = 45;
+
+                            discoverySwipeStartX = null;
+                            discoverySwipeStartY = null;
+
+                            if (Math.abs(deltaX) < minimumSwipeDistance || Math.abs(deltaX) <= Math.abs(deltaY)) {
+                              return;
+                            }
+
+                            setDiscoveryPhotoIndexes((current) => ({
+                              ...current,
+                              [profile.id]:
+                                deltaX < 0
+                                  ? (currentPhotoIndex + 1) % photosForPost.length
+                                  : (currentPhotoIndex - 1 + photosForPost.length) % photosForPost.length,
+                            }));
+                          }}
+                          style={{ touchAction: photosForPost.length > 1 ? "pan-y" : "auto" }}
+                        >
                           {photosForPost.length > 0 ? (
                             <>
                               <div
@@ -14182,86 +14219,34 @@ const filteredConversations = conversations
                           )}
 
                           {photosForPost.length > 1 && (
-                            <>
-                              <button
-                                type="button"
-                                aria-label="Foto anterior"
-                                onClick={() =>
-                                  setDiscoveryPhotoIndexes((current) => ({
-                                    ...current,
-                                    [profile.id]:
-                                      (currentPhotoIndex - 1 + photosForPost.length) % photosForPost.length,
-                                  }))
-                                }
-                                style={{
-                                  position: "absolute",
-                                  left: "12px",
-                                  top: "50%",
-                                  transform: "translateY(-50%)",
-                                  width: "36px",
-                                  height: "36px",
-                                  border: "1px solid rgba(244,234,215,0.35)",
-                                  borderRadius: "50%",
-                                  background: "rgba(5,5,5,0.48)",
-                                  color: "#f4ead7",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                ‹
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Próxima foto"
-                                onClick={() =>
-                                  setDiscoveryPhotoIndexes((current) => ({
-                                    ...current,
-                                    [profile.id]: (currentPhotoIndex + 1) % photosForPost.length,
-                                  }))
-                                }
-                                style={{
-                                  position: "absolute",
-                                  right: "12px",
-                                  top: "50%",
-                                  transform: "translateY(-50%)",
-                                  width: "36px",
-                                  height: "36px",
-                                  border: "1px solid rgba(244,234,215,0.35)",
-                                  borderRadius: "50%",
-                                  background: "rgba(5,5,5,0.48)",
-                                  color: "#f4ead7",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                ›
-                              </button>
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "12px",
-                                  left: "50%",
-                                  transform: "translateX(-50%)",
-                                  display: "flex",
-                                  gap: "5px",
-                                  padding: "5px 8px",
-                                  background: "rgba(5,5,5,0.42)",
-                                  borderRadius: "999px",
-                                }}
-                              >
-                                {photosForPost.map((_, index) => (
-                                  <span
-                                    key={index}
-                                    style={{
-                                      width: index === currentPhotoIndex ? "16px" : "5px",
-                                      height: "5px",
-                                      borderRadius: "999px",
-                                      background:
-                                        index === currentPhotoIndex ? "#f4ead7" : "rgba(244,234,215,0.45)",
-                                      transition: "all 0.2s ease",
-                                    }}
-                                  />
-                                ))}
-                              </div>
-                            </>
+                            <div
+                              aria-hidden="true"
+                              style={{
+                                position: "absolute",
+                                top: "14px",
+                                left: "50%",
+                                transform: "translateX(-50%)",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                zIndex: 2,
+                                pointerEvents: "none",
+                              }}
+                            >
+                              {photosForPost.map((_, index) => (
+                                <span
+                                  key={index}
+                                  style={{
+                                    width: index === currentPhotoIndex ? "16px" : "5px",
+                                    height: "5px",
+                                    borderRadius: "50%",
+                                    background:
+                                      index === currentPhotoIndex ? "#f4ead7" : "rgba(244,234,215,0.45)",
+                                    transition: "all 0.2s ease",
+                                  }}
+                                />
+                              ))}
+                            </div>
                           )}
                         </div>
 
