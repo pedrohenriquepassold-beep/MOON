@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Circle, CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -145,6 +145,9 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [showMapFilters, setShowMapFilters] = useState(false);
   const [activeAdvertisements, setActiveAdvertisements] = useState([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryPhotoIndexes, setDiscoveryPhotoIndexes] = useState({});
+  const [expandedDiscoveryProfiles, setExpandedDiscoveryProfiles] = useState([]);
+  const [likedDiscoveryProfileIds, setLikedDiscoveryProfileIds] = useState([]);
   const [showAgeFilter, setShowAgeFilter] = useState(false);
   const [showIdentityFilter, setShowIdentityFilter] = useState(false);
   const [showSexualityFilter, setShowSexualityFilter] = useState(false);
@@ -2383,8 +2386,7 @@ const chatMessagesBottomRef = useRef(null);
                   {
                     ascending: true,
                   }
-                )
-                .limit(1);
+                );
 
               if (
                 photoError ||
@@ -2397,23 +2399,17 @@ const chatMessagesBottomRef = useRef(null);
                 };
               }
 
-              const photo =
-                photoData[0];
-
-              const {
-                data: publicData,
-              } = supabase.storage
-                .from(
-                  "profile-photos"
-                )
-                .getPublicUrl(
-                  photo.storage_path
-                );
+              const photoUrls = (photoData || []).map((photo) => {
+                const { data: publicData } = supabase.storage
+                  .from("profile-photos")
+                  .getPublicUrl(photo.storage_path);
+                return publicData?.publicUrl || null;
+              }).filter(Boolean);
 
               return {
                 ...profile,
-                photoUrl:
-                  publicData.publicUrl,
+                photoUrl: photoUrls[0] || null,
+                photoUrls,
               };
             }
           )
@@ -2913,20 +2909,6 @@ const chatMessagesBottomRef = useRef(null);
     setMessage("");
   }
 
-  function calculateMapDistanceKm(latitude1, longitude1, latitude2, longitude2) {
-    const toRadians = (value) => (value * Math.PI) / 180;
-    const earthRadiusKm = 6371;
-    const deltaLatitude = toRadians(latitude2 - latitude1);
-    const deltaLongitude = toRadians(longitude2 - longitude1);
-    const a =
-      Math.sin(deltaLatitude / 2) ** 2 +
-      Math.cos(toRadians(latitude1)) *
-        Math.cos(toRadians(latitude2)) *
-        Math.sin(deltaLongitude / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return earthRadiusKm * c;
-  }
-
   async function loadMapProfiles(latitude, longitude, radiusKm) {
     if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
       setMapProfiles([]);
@@ -2936,11 +2918,6 @@ const chatMessagesBottomRef = useRef(null);
     setMapProfilesLoading(true);
 
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const blockedIds = await getBlockedUserIds(currentUser?.id);
-      let nearbyData = null;
-      let rpcError = null;
-
       const { data, error } = await supabase.rpc(
         "get_nearby_profiles",
         {
@@ -2950,14 +2927,11 @@ const chatMessagesBottomRef = useRef(null);
         }
       );
 
-      nearbyData = data;
-      rpcError = error;
+      if (error) throw error;
 
-      if (rpcError) {
-        console.error("ERRO NA RPC get_nearby_profiles DO MAPA:", rpcError);
-      }
-
-      let visibleProfiles = (nearbyData || []).filter((profile) =>
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const blockedIds = await getBlockedUserIds(currentUser?.id);
+      const visibleProfiles = (data || []).filter((profile) =>
         profile.id !== currentUser?.id &&
         !blockedIds.has(profile.id) &&
         profile.is_hidden !== true &&
@@ -2966,39 +2940,6 @@ const chatMessagesBottomRef = useRef(null);
         profile.longitude !== null &&
         profile.longitude !== undefined
       );
-
-      // Fallback: se a RPC falhar ou não retornar ninguém, busca os perfis
-      // diretamente e calcula a distância no navegador. Isso evita que uma
-      // falha na função espacial deixe o mapa aparentemente vazio.
-      if (visibleProfiles.length === 0) {
-        const { data: profileRows, error: profilesError } = await supabase
-          .from("profiles")
-          .select("id, name, birth_date, gender, sexuality, position, availability, profession, latitude, longitude, is_hidden, last_active_at")
-          .not("latitude", "is", null)
-          .not("longitude", "is", null);
-
-        if (profilesError) {
-          throw profilesError;
-        }
-
-        visibleProfiles = (profileRows || [])
-          .filter((profile) =>
-            profile.id !== currentUser?.id &&
-            !blockedIds.has(profile.id) &&
-            profile.is_hidden !== true
-          )
-          .map((profile) => ({
-            ...profile,
-            distance_km: calculateMapDistanceKm(
-              latitude,
-              longitude,
-              Number(profile.latitude),
-              Number(profile.longitude)
-            ),
-          }))
-          .filter((profile) => Number.isFinite(profile.distance_km) && profile.distance_km <= radiusKm)
-          .sort((a, b) => a.distance_km - b.distance_km);
-      }
 
       setMapProfiles(visibleProfiles);
     } catch (error) {
@@ -3009,125 +2950,21 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
-  async function ensureMapUserLocation() {
-    if (userLocation.latitude !== null && userLocation.longitude !== null) {
-      return {
-        latitude: Number(userLocation.latitude),
-        longitude: Number(userLocation.longitude),
-      };
-    }
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user?.id) return null;
-
-      const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("latitude, longitude")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      const savedLatitude = profile?.latitude;
-      const savedLongitude = profile?.longitude;
-
-      if (savedLatitude !== null && savedLatitude !== undefined && savedLongitude !== null && savedLongitude !== undefined) {
-        const location = {
-          latitude: Number(savedLatitude),
-          longitude: Number(savedLongitude),
-        };
-
-        if (Number.isFinite(location.latitude) && Number.isFinite(location.longitude)) {
-          setUserLocation(location);
-          setLocationSaved(true);
-          return location;
-        }
-      }
-
-      if (!navigator.geolocation) {
-        setMessage("Seu navegador não oferece localização. Clique em MINHA LOCALIZAÇÃO para continuar.");
-        return null;
-      }
-
-      setLocationLoading(true);
-
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0,
-        });
-      });
-
-      const location = {
-        latitude: Number(position.coords.latitude),
-        longitude: Number(position.coords.longitude),
-      };
-
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({
-          latitude: location.latitude,
-          longitude: location.longitude,
-          last_active_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
-
-      if (updateError) throw updateError;
-
-      setLocationSaved(true);
-      setUserLocation(location);
-      setMapCenterRequest([location.latitude, location.longitude]);
-      setMessage("");
-
-      return location;
-    } catch (error) {
-      console.error("ERRO AO RECUPERAR LOCALIZAÇÃO PARA O MAPA:", error);
-
-      if (error?.code === 1) {
-        setMessage("Permita o acesso à localização do navegador para localizar os perfis próximos.");
-      } else if (error?.code === 2) {
-        setMessage("Não foi possível encontrar sua localização.");
-      } else if (error?.code === 3) {
-        setMessage("A localização demorou muito para responder. Tente novamente.");
-      } else {
-        setMessage(error?.message || "Não foi possível localizar você para carregar o mapa.");
-      }
-
-      return null;
-    } finally {
-      setLocationLoading(false);
-    }
-  }
-
   useEffect(() => {
     if (screen !== "map") return;
 
-    let cancelled = false;
+    const center = selectedMapPoint || (
+      userLocation.latitude !== null && userLocation.longitude !== null
+        ? { latitude: userLocation.latitude, longitude: userLocation.longitude }
+        : null
+    );
 
-    async function refreshMapProfiles() {
-      const savedLocation = await ensureMapUserLocation();
-      if (cancelled) return;
-
-      const center = selectedMapPoint || savedLocation;
-
-      if (!center) {
-        setMapProfiles([]);
-        return;
-      }
-
-      setMapCenterRequest([center.latitude, center.longitude]);
-      await loadMapProfiles(center.latitude, center.longitude, mapRadius);
+    if (!center) {
+      setMapProfiles([]);
+      return;
     }
 
-    refreshMapProfiles();
-
-    return () => {
-      cancelled = true;
-    };
+    loadMapProfiles(center.latitude, center.longitude, mapRadius);
   }, [screen, selectedMapPoint, userLocation.latitude, userLocation.longitude, mapRadius]);
 
   async function handleMapProfileSelect(profile) {
@@ -13863,62 +13700,148 @@ const filteredConversations = conversations
           </div>
 
           <style>{`
-            .moon-discovery-grid {
-              grid-template-columns: repeat(3, minmax(0, 1fr));
-              gap: 8px;
+            .moon-discovery-feed {
+              width: 100%;
+              max-width: 820px;
+              margin: 0 auto;
+              display: flex;
+              flex-direction: column;
+              gap: 26px;
             }
-            .moon-discovery-card-info {
-              padding: 10px;
+            .moon-discovery-post {
+              width: 100%;
+              min-height: auto;
+              scroll-snap-align: start;
+              scroll-snap-stop: always;
+              background: rgba(8,8,8,0.92);
+              border: 1px solid rgba(201,181,138,0.16);
+              overflow: hidden;
+              box-shadow: 0 24px 70px rgba(0,0,0,0.34);
             }
-            .moon-discovery-name {
-              font-size: 13px !important;
-              font-weight: 600 !important;
-              letter-spacing: 0.5px !important;
+            .moon-discovery-photo-stage {
+              width: min(100%, 560px);
+              aspect-ratio: 4 / 5;
+              height: auto;
+              min-height: 0;
+              margin: 0 auto;
+              background: #090909;
+              position: relative;
+              overflow: hidden;
+              display: flex;
+              align-items: center;
+              justify-content: center;
             }
-            .moon-discovery-distance {
-              font-size: 9px !important;
-              font-weight: 500 !important;
+            .moon-discovery-photo-backdrop {
+              position: absolute;
+              inset: -28px;
+              background-position: center;
+              background-repeat: no-repeat;
+              background-size: cover;
+              filter: blur(24px);
+              transform: scale(1.08);
+              opacity: 0.38;
+              pointer-events: none;
             }
-            .moon-discovery-bio {
-              display: none !important;
+            .moon-discovery-photo {
+              position: relative;
+              z-index: 1;
+              width: auto;
+              height: auto;
+              max-width: 100%;
+              max-height: 100%;
+              object-fit: contain;
+              display: block;
             }
-            .moon-discovery-actions {
-              gap: 5px !important;
-              margin-top: 9px !important;
+            .moon-discovery-info {
+              padding: 18px 20px 92px;
             }
-            .moon-discovery-actions button {
-              height: 34px !important;
-              font-size: 14px !important;
-              letter-spacing: 0 !important;
+            .moon-discovery-action-row {
+              display: flex;
+              align-items: center;
+              gap: 18px;
+              padding: 14px 20px 0;
+            }
+            .moon-discovery-action {
+              border: none;
+              background: transparent;
+              color: #f4ead7;
+              font-size: 27px;
+              line-height: 1;
+              padding: 4px 0;
+              cursor: pointer;
+            }
+            .moon-discovery-action-message {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: 32px;
+              height: 32px;
+            }
+            .moon-discovery-details {
+              display: grid;
+              gap: 9px;
+              margin-top: 14px;
+            }
+            .moon-discovery-detail {
+              display: flex;
+              gap: 10px;
+              align-items: flex-start;
+              color: #9a9388;
+              font-size: 11px;
+              line-height: 1.5;
+            }
+            .moon-discovery-detail-label {
+              min-width: 94px;
+              color: #c9b58a;
+              font-size: 8px;
+              letter-spacing: 1.35px;
+              padding-top: 2px;
+            }
+            .moon-discovery-detail-value {
+              color: #d8d0c3;
+              word-break: break-word;
+            }
+            .moon-discovery-more {
+              border: none;
+              background: transparent;
+              color: #c9b58a;
+              padding: 8px 0 0;
+              font-size: 9px;
+              letter-spacing: 1.4px;
+              cursor: pointer;
+            }
+            @media (max-width: 699px) {
+              .moon-discovery-feed {
+                gap: 18px;
+                scroll-snap-type: y proximity;
+              }
+              .moon-discovery-post {
+                min-height: auto;
+              }
+              .moon-discovery-photo-stage {
+                width: 100%;
+                aspect-ratio: 4 / 5;
+                height: auto;
+                min-height: 0;
+              }
+              .moon-discovery-info {
+                padding: 15px 16px 88px;
+              }
+              .moon-discovery-action-row {
+                padding: 12px 16px 0;
+              }
             }
             @media (min-width: 700px) {
-              .moon-discovery-grid {
-                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-                gap: 18px;
+              .moon-discovery-feed {
+                scroll-snap-type: y proximity;
               }
-              .moon-discovery-card-info {
-                padding: 16px;
+              .moon-discovery-info {
+                padding-left: 28px;
+                padding-right: 28px;
               }
-              .moon-discovery-name {
-                font-size: 18px !important;
-                font-weight: 600 !important;
-                letter-spacing: 1px !important;
-              }
-              .moon-discovery-distance {
-                font-size: 11px !important;
-                font-weight: 500 !important;
-              }
-              .moon-discovery-bio {
-                display: -webkit-box !important;
-              }
-              .moon-discovery-actions {
-                gap: 8px !important;
-                margin-top: 14px !important;
-              }
-              .moon-discovery-actions button {
-                height: 42px !important;
-                font-size: 18px !important;
-                letter-spacing: 2px !important;
+              .moon-discovery-action-row {
+                padding-left: 28px;
+                padding-right: 28px;
               }
             }
           `}</style>
@@ -13928,137 +13851,89 @@ const filteredConversations = conversations
           {discoveryLoading ? (
             <div
               style={{
-                textAlign:
-                  "center",
-                padding:
-                  "70px 20px",
-                color:
-                  "#77736b",
-                letterSpacing:
-                  "2px",
-                fontSize:
-                  "11px",
+                textAlign: "center",
+                padding: "70px 20px",
+                color: "#77736b",
+                letterSpacing: "2px",
+                fontSize: "11px",
               }}
             >
               PROCURANDO PESSOAS...
             </div>
-          ) : nearbyProfiles.length ===
-            0 ? (
-
+          ) : nearbyProfiles.length === 0 ? (
             <div
               style={{
-                textAlign:
-                  "center",
-                padding:
-                  "70px 20px",
-                border:
-                  "1px solid #191919",
-                background:
-                  "#0b0b0b",
+                textAlign: "center",
+                padding: "70px 20px",
+                border: "1px solid #191919",
+                background: "#0b0b0b",
               }}
             >
-
               <p
                 style={{
-                  color:
-                    "#f4ead7",
-                  fontSize:
-                    "18px",
-                  letterSpacing:
-                    "3px",
-                  marginBottom:
-                    "15px",
+                  color: "#f4ead7",
+                  fontSize: "18px",
+                  letterSpacing: "3px",
+                  marginBottom: "15px",
                 }}
               >
                 NADA POR AQUI
               </p>
-
               <p
                 style={{
-                  color:
-                    "#77736b",
-                  fontSize:
-                    "12px",
-                  lineHeight:
-                    "1.7",
-                  maxWidth:
-                    "400px",
-                  margin:
-                    "0 auto",
+                  color: "#77736b",
+                  fontSize: "12px",
+                  lineHeight: "1.7",
+                  maxWidth: "400px",
+                  margin: "0 auto",
                 }}
               >
-                Ainda não encontramos
-                pessoas próximas de você.
-                Quando alguém entrar na
-                sua região, ela aparecerá aqui.
+                Ainda não encontramos pessoas próximas de você. Quando alguém entrar na sua região, ela aparecerá aqui.
               </p>
-
             </div>
-
           ) : (
-
             <div
+              className="moon-discovery-feed"
               style={{
-                display:
-                  "grid",
-                gridTemplateColumns:
-                  "repeat(3, minmax(0, 1fr))",
-                gap:
-                  "8px",
+                paddingBottom: "115px",
               }}
             >
-
               {nearbyProfiles
                 .filter((profile) => {
                   const age = calculateAge(profile.birth_date);
                   const matchesAge = age >= minAge && age <= maxAge;
-
                   const matchesIdentity =
-                    identityFilter.length === 0 ||
-                    identityFilter.includes(profile.gender);
-
+                    identityFilter.length === 0 || identityFilter.includes(profile.gender);
                   const matchesSexuality =
-                    sexualityFilter.length === 0 ||
-                    sexualityFilter.includes(profile.sexuality);
-
+                    sexualityFilter.length === 0 || sexualityFilter.includes(profile.sexuality);
                   const matchesPosition =
-                    positionFilter.length === 0 ||
-                    positionFilter.includes(profile.position);
-
+                    positionFilter.length === 0 || positionFilter.includes(profile.position);
                   const matchesAvailability =
-                    availabilityFilter.length === 0 ||
-                    availabilityFilter.includes(profile.availability);
-
+                    availabilityFilter.length === 0 || availabilityFilter.includes(profile.availability);
                   const matchesIntention =
                     filterDraftIntention.length === 0 ||
                     (Array.isArray(profile.intention) &&
                       filterDraftIntention.some((item) => profile.intention.includes(item)));
-
                   const matchesHabits =
                     filterDraftHabits.length === 0 ||
                     (Array.isArray(profile.habits) &&
                       filterDraftHabits.some((item) => profile.habits.includes(item)));
-
                   const matchesHobbies =
                     filterDraftHobbies.length === 0 ||
                     (Array.isArray(profile.hobbies) &&
                       filterDraftHobbies.some((item) => profile.hobbies.includes(item)));
-
                   const matchesPersonality =
                     filterDraftPersonality.length === 0 ||
                     (Array.isArray(profile.personality) &&
                       filterDraftPersonality.some((item) => profile.personality.includes(item)));
-
                   const matchesRelationship =
                     filterDraftRelationship.length === 0 ||
                     (Array.isArray(profile.relationship) &&
                       filterDraftRelationship.some((item) => profile.relationship.includes(item)));
-
                   const matchesInterests =
                     filterDraftInterests.length === 0 ||
                     (Array.isArray(profile.interests) &&
                       filterDraftInterests.some((item) => profile.interests.includes(item)));
-
                   const matchesLanguages =
                     filterDraftLanguages.length === 0 ||
                     (Array.isArray(profile.languages) &&
@@ -14079,213 +13954,125 @@ const filteredConversations = conversations
                     matchesLanguages
                   );
                 })
-                .flatMap((profile, profileIndex) => {
+                .map((profile, profileIndex, filteredProfiles) => {
                   const status = getOnlineStatus(profile.last_active_at);
+                  const photosForPost =
+                    Array.isArray(profile.photoUrls) && profile.photoUrls.length > 0
+                      ? profile.photoUrls
+                      : profile.photoUrl
+                        ? [profile.photoUrl]
+                        : [];
+                  const currentPhotoIndex = Math.min(
+                    discoveryPhotoIndexes[profile.id] || 0,
+                    Math.max(0, photosForPost.length - 1)
+                  );
+                  const isExpanded = expandedDiscoveryProfiles.includes(profile.id);
+                  const isLiked = likedDiscoveryProfileIds.includes(profile.id);
 
-                  const profileCard = (
-                    <article
-                      key={
-                        profile.id
-                      }
-                      onClick={() => openProfileDetails(profile)}
-                      style={{
-                        background:
-                          "#0b0b0b",
-                        border:
-                          "1px solid #202020",
-                        overflow:
-                          "hidden",
-                        cursor:
-                          "pointer",
-                        transition:
-                          "border-color 0.25s ease",
-                      }}
-                    >
+                  const infoItems = [
+                    ["IDENTIDADE", profile.gender],
+                    ["SEXUALIDADE", profile.sexuality],
+                    ["POSIÇÃO", profile.position],
+                    ["DISPONIBILIDADE", profile.availability],
+                    ["PROFISSÃO", profile.profession],
+                    ["ESTUDOS", profile.education],
+                    ["INTENÇÃO", profile.intention],
+                    ["VÍCIOS", profile.habits],
+                    ["HOBBIES", profile.hobbies],
+                    ["PERSONALIDADE", profile.personality],
+                    ["RELACIONAMENTO", profile.relationship],
+                    ["INTERESSES", profile.interests],
+                    ["IDIOMAS", profile.languages],
+                  ]
+                    .map(([label, value]) => {
+                      const normalized = Array.isArray(value)
+                        ? value.filter(Boolean).join(", ")
+                        : String(value || "").trim();
+                      return normalized ? [label, normalized] : null;
+                    })
+                    .filter(Boolean);
 
-                      {/* FOTO */}
+                  const visibleInfoItems = isExpanded ? infoItems : infoItems.slice(0, 4);
 
-                      <div
-                        style={{
-                          width:
-                            "100%",
-                          aspectRatio:
-                            "1 / 1",
-                          background:
-                            "#101010",
-                          position:
-                            "relative",
-                          overflow:
-                            "hidden",
-                        }}
-                      >
-
-                        {profile.photoUrl ? (
-
-                          <img
-                            src={
-                              profile.photoUrl
-                            }
-                            alt={
-                              profile.name ||
-                              "Perfil MOON"
-                            }
-                            style={{
-                              width:
-                                "100%",
-                              height:
-                                "100%",
-                              objectFit:
-                                "cover",
-                              display:
-                                "block",
-                            }}
-                          />
-
-                        ) : (
-
-                          <div
-                            style={{
-                              width:
-                                "100%",
-                              height:
-                                "100%",
-                              display:
-                                "flex",
-                              alignItems:
-                                "center",
-                              justifyContent:
-                                "center",
-                              color:
-                                "#3b3832",
-                              fontSize:
-                                "45px",
-                              letterSpacing:
-                                "5px",
-                            }}
-                          >
-                            MOON
-                          </div>
-
-                        )}
-
-                      </div>
-
-                      {/* INFORMAÇÕES */}
-
-                      <div
-                        style={{
-                          padding:
-                            "10px",
-                        }}
-                      >
-
-                        <h2
-                          className="moon-discovery-name"
+                  return (
+                    <React.Fragment key={profile.id}>
+                      <article className="moon-discovery-post">
+                        <div
                           style={{
-                            margin: "0 0 4px 0",
-                            color: "#f4ead7",
-                            fontSize: "17px",
-                            fontWeight: "400",
-                            letterSpacing: "1px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                            padding: "14px 18px",
+                            borderBottom: "1px solid rgba(201,181,138,0.10)",
                           }}
                         >
-                          {(profile.name || "Sem nome").split(" ")[0]}
-                        </h2>
-
-                        {profile.birth_date && (
-                          <div
-                            style={{
-                              color: "#c9b58a",
-                              fontSize: "11px",
-                              fontWeight: "500",
-                              marginBottom: "5px",
-                            }}
-                          >
-                            {calculateAge(profile.birth_date)} anos
-                          </div>
-                        )}
-
-                        {status && (
                           <div
                             style={{
                               display: "flex",
                               alignItems: "center",
-                              gap: "5px",
-                              color: status === "ATIVO AGORA" ? "#8fbd72" : "#8e877c",
-                              fontSize: "8px",
-                              letterSpacing: "1.5px",
+                              gap: "8px",
+                              minWidth: 0,
                             }}
                           >
                             <span
                               style={{
-                                fontSize: "8px",
-                                lineHeight: "1",
-                              }}
-                            >
-                              ●
-                            </span>
-                            <span>
-                              {status}
-                            </span>
-                          </div>
-                        )}
-
-                      </div>
-
-                    </article>
-                  );
-
-                  const filteredProfileCount = nearbyProfiles.filter((candidate) => {
-                    const age = calculateAge(candidate.birth_date);
-                    const matchesAge = age >= minAge && age <= maxAge;
-                    const matchesIdentity = !identityFilter || candidate.gender === identityFilter;
-                    const matchesSexuality = !sexualityFilter || candidate.sexuality === sexualityFilter;
-                    const matchesPosition = !positionFilter || candidate.position === positionFilter;
-                    const matchesAvailability = !availabilityFilter || candidate.availability === availabilityFilter;
-                    return matchesAge && matchesIdentity && matchesSexuality && matchesPosition && matchesAvailability;
-                  }).length;
-
-                  const isLastProfile = profileIndex === filteredProfileCount - 1;
-
-                  const adsForSlot = activeAdvertisements.filter((advertisement) => {
-                    const frequency = Math.max(1, Number(advertisement.display_frequency) || 8);
-                    const reachedFrequency = (profileIndex + 1) % frequency === 0;
-                    const needsFallback = isLastProfile && filteredProfileCount < frequency;
-                    return reachedFrequency || needsFallback;
-                  });
-
-                  return [
-                    profileCard,
-                    ...adsForSlot.map((advertisement) => (
-                      <article
-                        key={`advertisement-${advertisement.id}-${profileIndex}`}
-                        style={{
-                          background: "#0b0b0b",
-                          border: "1px solid rgba(214, 185, 125, 0.34)",
-                          overflow: "hidden",
-                          position: "relative",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "100%",
-                            aspectRatio: "1 / 1",
-                            background: "#101010",
-                            position: "relative",
-                            overflow: "hidden",
-                          }}
-                        >
-                          {advertisement.image_url ? (
-                            <img
-                              src={advertisement.image_url}
-                              alt={advertisement.company_name || "Publicidade MOON"}
-                              style={{
-                                width: "100%",
-                                height: "100%",
-                                objectFit: "cover",
-                                display: "block",
+                                width: "7px",
+                                height: "7px",
+                                borderRadius: "50%",
+                                background: status === "ATIVO AGORA" ? "#8fbd72" : "#625f59",
+                                boxShadow:
+                                  status === "ATIVO AGORA"
+                                    ? "0 0 10px rgba(143,189,114,0.45)"
+                                    : "none",
+                                flexShrink: 0,
                               }}
                             />
+                            <span
+                              style={{
+                                color: "#f4ead7",
+                                fontSize: "13px",
+                                fontWeight: 600,
+                                letterSpacing: "0.6px",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {(profile.name || "Sem nome").split(" ")[0]}
+                            </span>
+                            <span
+                              style={{
+                                color: "#8e877c",
+                                fontSize: "9px",
+                                letterSpacing: "1px",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {status || ""}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="moon-discovery-photo-stage">
+                          {photosForPost.length > 0 ? (
+                            <>
+                              <div
+                                className="moon-discovery-photo-backdrop"
+                                aria-hidden="true"
+                                style={{
+                                  backgroundImage: `url(${photosForPost[currentPhotoIndex]})`,
+                                }}
+                              />
+                              <img
+                                className="moon-discovery-photo"
+                                src={photosForPost[currentPhotoIndex]}
+                                alt={profile.name || "Perfil MOON"}
+                                {...protectedMediaProps}
+                              />
+                            </>
                           ) : (
                             <div
                               style={{
@@ -14295,112 +14082,292 @@ const filteredConversations = conversations
                                 alignItems: "center",
                                 justifyContent: "center",
                                 color: "#3b3832",
-                                fontSize: "30px",
-                                letterSpacing: "4px",
+                                fontSize: "45px",
+                                letterSpacing: "5px",
                               }}
                             >
                               MOON
                             </div>
                           )}
 
-                          <span
-                            style={{
-                              position: "absolute",
-                              left: "10px",
-                              top: "10px",
-                              background: "#050505",
-                              border: "1px solid #c9b58a",
-                              color: "#c9b58a",
-                              padding: "5px 8px",
-                              fontSize: "8px",
-                              letterSpacing: "1.5px",
-                            }}
-                          >
-                            PUBLICIDADE
-                          </span>
+                          {photosForPost.length > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                aria-label="Foto anterior"
+                                onClick={() =>
+                                  setDiscoveryPhotoIndexes((current) => ({
+                                    ...current,
+                                    [profile.id]:
+                                      (currentPhotoIndex - 1 + photosForPost.length) % photosForPost.length,
+                                  }))
+                                }
+                                style={{
+                                  position: "absolute",
+                                  left: "12px",
+                                  top: "50%",
+                                  transform: "translateY(-50%)",
+                                  width: "36px",
+                                  height: "36px",
+                                  border: "1px solid rgba(244,234,215,0.35)",
+                                  borderRadius: "50%",
+                                  background: "rgba(5,5,5,0.48)",
+                                  color: "#f4ead7",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                ‹
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Próxima foto"
+                                onClick={() =>
+                                  setDiscoveryPhotoIndexes((current) => ({
+                                    ...current,
+                                    [profile.id]: (currentPhotoIndex + 1) % photosForPost.length,
+                                  }))
+                                }
+                                style={{
+                                  position: "absolute",
+                                  right: "12px",
+                                  top: "50%",
+                                  transform: "translateY(-50%)",
+                                  width: "36px",
+                                  height: "36px",
+                                  border: "1px solid rgba(244,234,215,0.35)",
+                                  borderRadius: "50%",
+                                  background: "rgba(5,5,5,0.48)",
+                                  color: "#f4ead7",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                ›
+                              </button>
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "12px",
+                                  left: "50%",
+                                  transform: "translateX(-50%)",
+                                  display: "flex",
+                                  gap: "5px",
+                                  padding: "5px 8px",
+                                  background: "rgba(5,5,5,0.42)",
+                                  borderRadius: "999px",
+                                }}
+                              >
+                                {photosForPost.map((_, index) => (
+                                  <span
+                                    key={index}
+                                    style={{
+                                      width: index === currentPhotoIndex ? "16px" : "5px",
+                                      height: "5px",
+                                      borderRadius: "999px",
+                                      background:
+                                        index === currentPhotoIndex ? "#f4ead7" : "rgba(244,234,215,0.45)",
+                                      transition: "all 0.2s ease",
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            </>
+                          )}
                         </div>
 
-                        <div style={{ padding: "16px" }}>
+                        <div className="moon-discovery-action-row">
+                          <button
+                            type="button"
+                            className="moon-discovery-action"
+                            aria-label="Curtir perfil"
+                            onClick={async () => {
+                              await handleLike(profile.id, profile);
+                              setLikedDiscoveryProfileIds((current) =>
+                                current.includes(profile.id) ? current : [...current, profile.id]
+                              );
+                            }}
+                          >
+                            {isLiked ? "♥" : "♡"}
+                          </button>
+                          <button
+                            type="button"
+                            className="moon-discovery-action moon-discovery-action-message"
+                            aria-label="Enviar mensagem"
+                            title="Enviar mensagem"
+                            onClick={() => handleChat(profile, "inside")}
+                          >
+                            <svg
+                              width="24"
+                              height="24"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                              aria-hidden="true"
+                            >
+                              <path
+                                d="M20 11.5C20 15.64 16.42 19 12 19C10.78 19 9.63 18.75 8.62 18.3L4 20L5.45 16.05C4.54 14.83 4 13.34 4 11.5C4 7.36 7.58 4 12 4C16.42 4 20 7.36 20 11.5Z"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                              <path
+                                d="M8.5 11.5H8.51M12 11.5H12.01M15.5 11.5H15.51"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+
+                        <div className="moon-discovery-info">
                           <div
                             style={{
-                              color: "#c9b58a",
-                              fontSize: "9px",
-                              letterSpacing: "1.5px",
-                              marginBottom: "7px",
+                              display: "flex",
+                              alignItems: "baseline",
+                              gap: "8px",
                             }}
                           >
-                            {advertisement.company_name}
+                            <strong
+                              style={{
+                                color: "#f4ead7",
+                                fontSize: "13px",
+                                letterSpacing: "0.6px",
+                              }}
+                            >
+                              {(profile.name || "Sem nome").split(" ")[0]}
+                            </strong>
+                            {profile.birth_date && (
+                              <span style={{ color: "#8e877c", fontSize: "10px" }}>
+                                {calculateAge(profile.birth_date)} anos
+                              </span>
+                            )}
                           </div>
 
-                          <h2
-                            style={{
-                              margin: 0,
-                              color: "#f4ead7",
-                              fontSize: "17px",
-                              fontWeight: "400",
-                              letterSpacing: "1px",
-                            }}
-                          >
-                            {advertisement.title}
-                          </h2>
+                          <div className="moon-discovery-details">
+                            {visibleInfoItems.map(([label, value]) => (
+                              <div className="moon-discovery-detail" key={label}>
+                                <span className="moon-discovery-detail-label">{label}</span>
+                                <span className="moon-discovery-detail-value">{value}</span>
+                              </div>
+                            ))}
+                          </div>
 
-                          {advertisement.description && (
-                            <p
+                          {infoItems.length > 4 && (
+                            <button
+                              type="button"
+                              className="moon-discovery-more"
+                              onClick={() =>
+                                setExpandedDiscoveryProfiles((current) =>
+                                  current.includes(profile.id)
+                                    ? current.filter((id) => id !== profile.id)
+                                    : [...current, profile.id]
+                                )
+                              }
+                            >
+                              {isExpanded ? "LER MENOS" : "LER MAIS"}
+                            </button>
+                          )}
+                        </div>
+                      </article>
+
+                      {activeAdvertisements.length > 0 &&
+                        activeAdvertisements.filter((advertisement) => {
+                          const frequency = Math.max(1, Number(advertisement.display_frequency) || 8);
+                          return (profileIndex + 1) % frequency === 0 ||
+                            (profileIndex === filteredProfiles.length - 1 && filteredProfiles.length < frequency);
+                        }).map((advertisement) => (
+                          <article
+                            key={`advertisement-${advertisement.id}-${profile.id}`}
+                            className="moon-discovery-post"
+                            style={{ minHeight: "auto" }}
+                          >
+                            <div
                               style={{
-                                margin: "10px 0 0",
-                                color: "#8e877c",
-                                fontSize: "11px",
-                                lineHeight: "1.5",
-                                display: "-webkit-box",
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: "vertical",
+                                width: "100%",
+                                minHeight: "min(55vh, 620px)",
+                                background: "#101010",
+                                position: "relative",
                                 overflow: "hidden",
                               }}
                             >
-                              {advertisement.description}
-                            </p>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (!advertisement.destination_url) return;
-                              try {
-                                const url = new URL(advertisement.destination_url);
-                                if (["http:", "https:"].includes(url.protocol)) {
-                                  window.open(url.href, "_blank", "noopener,noreferrer");
-                                }
-                              } catch {
-                                setMessage("O link desta publicidade é inválido.");
-                              }
-                            }}
-                            disabled={!advertisement.destination_url}
-                            style={{
-                              width: "100%",
-                              marginTop: "14px",
-                              minHeight: "42px",
-                              border: "1px solid rgba(214, 185, 125, 0.30)",
-                              background: "rgba(214, 185, 125, 0.05)",
-                              color: "#d6b97d",
-                              fontSize: "9px",
-                              fontWeight: 600,
-                              letterSpacing: "1.5px",
-                              cursor: advertisement.destination_url ? "pointer" : "default",
-                              opacity: advertisement.destination_url ? 1 : 0.5,
-                            }}
-                          >
-                            {advertisement.cta_text || "SAIBA MAIS"} ↗
-                          </button>
-                        </div>
-                      </article>
-                    )),
-                  ];
-                })
-              }
-
+                              {advertisement.image_url ? (
+                                <img
+                                  src={advertisement.image_url}
+                                  alt={advertisement.company_name || "Publicidade MOON"}
+                                  style={{ width: "100%", height: "100%", minHeight: "min(55vh, 620px)", objectFit: "cover", display: "block" }}
+                                  {...protectedMediaProps}
+                                />
+                              ) : (
+                                <div style={{ width: "100%", minHeight: "min(55vh, 620px)", display: "flex", alignItems: "center", justifyContent: "center", color: "#3b3832", fontSize: "30px", letterSpacing: "4px" }}>
+                                  MOON
+                                </div>
+                              )}
+                              <span
+                                style={{
+                                  position: "absolute",
+                                  left: "14px",
+                                  top: "14px",
+                                  background: "#050505",
+                                  border: "1px solid #c9b58a",
+                                  color: "#c9b58a",
+                                  padding: "6px 9px",
+                                  fontSize: "8px",
+                                  letterSpacing: "1.5px",
+                                }}
+                              >
+                                PUBLICIDADE
+                              </span>
+                            </div>
+                            <div style={{ padding: "18px 20px 26px" }}>
+                              <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "7px" }}>
+                                {advertisement.company_name}
+                              </div>
+                              <h2 style={{ margin: 0, color: "#f4ead7", fontSize: "19px", fontWeight: "400", letterSpacing: "1px" }}>
+                                {advertisement.title}
+                              </h2>
+                              {advertisement.description && (
+                                <p style={{ margin: "10px 0 0", color: "#8e877c", fontSize: "11px", lineHeight: "1.5" }}>
+                                  {advertisement.description}
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!advertisement.destination_url) return;
+                                  try {
+                                    const url = new URL(advertisement.destination_url);
+                                    if (["http:", "https:"].includes(url.protocol)) {
+                                      window.open(url.href, "_blank", "noopener,noreferrer");
+                                    }
+                                  } catch {
+                                    setMessage("O link desta publicidade é inválido.");
+                                  }
+                                }}
+                                disabled={!advertisement.destination_url}
+                                style={{
+                                  width: "100%",
+                                  marginTop: "14px",
+                                  minHeight: "42px",
+                                  border: "1px solid rgba(214,185,125,0.30)",
+                                  background: "rgba(214,185,125,0.05)",
+                                  color: "#d6b97d",
+                                  fontSize: "9px",
+                                  fontWeight: 600,
+                                  letterSpacing: "1.5px",
+                                  cursor: advertisement.destination_url ? "pointer" : "default",
+                                  opacity: advertisement.destination_url ? 1 : 0.5,
+                                }}
+                              >
+                                {advertisement.cta_text || "SAIBA MAIS"} ↗
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                    </React.Fragment>
+                  );
+                })}
             </div>
-
           )}
 
           {message && (
