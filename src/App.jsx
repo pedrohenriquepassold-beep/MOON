@@ -2909,8 +2909,30 @@ const chatMessagesBottomRef = useRef(null);
     setMessage("");
   }
 
+  function calculateMapDistanceKm(latitude1, longitude1, latitude2, longitude2) {
+    const toRadians = (value) => (value * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+    const deltaLatitude = toRadians(latitude2 - latitude1);
+    const deltaLongitude = toRadians(longitude2 - longitude1);
+    const a =
+      Math.sin(deltaLatitude / 2) ** 2 +
+      Math.cos(toRadians(latitude1)) *
+        Math.cos(toRadians(latitude2)) *
+        Math.sin(deltaLongitude / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
   async function loadMapProfiles(latitude, longitude, radiusKm) {
-    if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
+    const centerLatitude = Number(latitude);
+    const centerLongitude = Number(longitude);
+    const searchRadiusKm = Number(radiusKm);
+
+    if (
+      !Number.isFinite(centerLatitude) ||
+      !Number.isFinite(centerLongitude) ||
+      !Number.isFinite(searchRadiusKm)
+    ) {
       setMapProfiles([]);
       return;
     }
@@ -2918,29 +2940,92 @@ const chatMessagesBottomRef = useRef(null);
     setMapProfilesLoading(true);
 
     try {
-      const { data, error } = await supabase.rpc(
-        "get_nearby_profiles",
-        {
-          user_lat: latitude,
-          user_lng: longitude,
-          max_distance_km: radiusKm,
-        }
-      );
-
-      if (error) throw error;
-
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const blockedIds = await getBlockedUserIds(currentUser?.id);
-      const visibleProfiles = (data || []).filter((profile) =>
-        profile.id !== currentUser?.id &&
-        !blockedIds.has(profile.id) &&
-        profile.is_hidden !== true &&
-        profile.latitude !== null &&
-        profile.latitude !== undefined &&
-        profile.longitude !== null &&
-        profile.longitude !== undefined
-      );
 
+      let rpcProfiles = [];
+      let rpcError = null;
+
+      try {
+        const rpcResult = await supabase.rpc(
+          "get_nearby_profiles",
+          {
+            user_lat: centerLatitude,
+            user_lng: centerLongitude,
+            max_distance_km: searchRadiusKm,
+          }
+        );
+        rpcProfiles = rpcResult.data || [];
+        rpcError = rpcResult.error || null;
+      } catch (error) {
+        rpcError = error;
+      }
+
+      if (rpcError) {
+        console.warn("RPC DO MAPA NÃO RETORNOU PERFIS. USANDO BUSCA DIRETA:", rpcError);
+      }
+
+      const normalizeProfile = (profile) => {
+        const profileLatitude = Number(profile?.latitude);
+        const profileLongitude = Number(profile?.longitude);
+
+        if (
+          !profile?.id ||
+          !Number.isFinite(profileLatitude) ||
+          !Number.isFinite(profileLongitude)
+        ) {
+          return null;
+        }
+
+        if (profile.id === currentUser?.id || blockedIds.has(profile.id) || profile.is_hidden === true) {
+          return null;
+        }
+
+        const distanceKm = Number.isFinite(Number(profile.distance_km))
+          ? Number(profile.distance_km)
+          : calculateMapDistanceKm(
+              centerLatitude,
+              centerLongitude,
+              profileLatitude,
+              profileLongitude
+            );
+
+        if (!Number.isFinite(distanceKm) || distanceKm > searchRadiusKm) {
+          return null;
+        }
+
+        return {
+          ...profile,
+          latitude: profileLatitude,
+          longitude: profileLongitude,
+          distance_km: distanceKm,
+        };
+      };
+
+      let visibleProfiles = rpcProfiles
+        .map(normalizeProfile)
+        .filter(Boolean);
+
+      // Se a RPC não trouxer ninguém, fazemos uma leitura direta dos perfis
+      // com coordenadas. Isso evita que uma falha/versão antiga da RPC deixe
+      // o mapa vazio mesmo existindo usuários localizados no banco.
+      if (visibleProfiles.length === 0) {
+        const { data: directProfiles, error: directProfilesError } = await supabase
+          .from("profiles")
+          .select("id, name, birth_date, gender, sexuality, position, availability, profession, education, intention, habits, hobbies, personality, relationship, interests, languages, latitude, longitude, is_hidden, last_active_at")
+          .not("latitude", "is", null)
+          .not("longitude", "is", null);
+
+        if (directProfilesError) {
+          throw directProfilesError;
+        }
+
+        visibleProfiles = (directProfiles || [])
+          .map(normalizeProfile)
+          .filter(Boolean);
+      }
+
+      visibleProfiles.sort((a, b) => a.distance_km - b.distance_km);
       setMapProfiles(visibleProfiles);
     } catch (error) {
       console.error("ERRO AO CARREGAR PERFIS DO MAPA:", error);
@@ -6438,11 +6523,17 @@ const chatMessagesBottomRef = useRef(null);
 
   const filteredMapProfiles = mapProfiles.filter((profile) => {
     const age = calculateAge(profile.birth_date);
-    const matchesAge = age >= minAge && age <= maxAge;
-    const matchesIdentity = !identityFilter || profile.gender === identityFilter;
-    const matchesSexuality = !sexualityFilter || profile.sexuality === sexualityFilter;
-    const matchesPosition = !positionFilter || profile.position === positionFilter;
-    const matchesAvailability = !availabilityFilter || profile.availability === availabilityFilter;
+    const matchesAge =
+      !profile.birth_date ||
+      (Number.isFinite(age) && age >= minAge && age <= maxAge);
+    const matchesIdentity =
+      identityFilter.length === 0 || profile.gender === identityFilter[0];
+    const matchesSexuality =
+      sexualityFilter.length === 0 || profile.sexuality === sexualityFilter[0];
+    const matchesPosition =
+      positionFilter.length === 0 || profile.position === positionFilter[0];
+    const matchesAvailability =
+      availabilityFilter.length === 0 || profile.availability === availabilityFilter[0];
     return matchesAge && matchesIdentity && matchesSexuality && matchesPosition && matchesAvailability;
   });
 
@@ -10343,16 +10434,16 @@ const filteredConversations = conversations
                       <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>IDADE<select value={`${minAge}-${maxAge}`} onChange={(event) => { const [min, max] = event.target.value.split("-").map(Number); setMinAge(min); setMaxAge(max); }} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
                         <option value="18-65">18 - 65+</option><option value="18-25">18 - 25</option><option value="26-35">26 - 35</option><option value="36-45">36 - 45</option><option value="46-55">46 - 55</option><option value="56-65">56 - 65+</option>
                       </select></label>
-                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>IDENTIDADE<select value={identityFilter} onChange={(event) => setIdentityFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>IDENTIDADE<select value={identityFilter[0] || ""} onChange={(event) => setIdentityFilter(event.target.value ? [event.target.value] : [])} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
                         <option value="">Todas</option><option value="Homem cis">Homem cis</option><option value="Homem trans">Homem trans</option><option value="Não binário">Não binário</option>
                       </select></label>
-                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>SEXUALIDADE<select value={sexualityFilter} onChange={(event) => setSexualityFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>SEXUALIDADE<select value={sexualityFilter[0] || ""} onChange={(event) => setSexualityFilter(event.target.value ? [event.target.value] : [])} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
                         <option value="">Todas</option><option value="Gay">Gay</option><option value="Bissexual">Bissexual</option><option value="Pansexual">Pansexual</option><option value="Outra">Outra</option>
                       </select></label>
-                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>POSIÇÃO<select value={positionFilter} onChange={(event) => setPositionFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px" }}>POSIÇÃO<select value={positionFilter[0] || ""} onChange={(event) => setPositionFilter(event.target.value ? [event.target.value] : [])} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
                         <option value="">Todas</option><option value="Ativo">Ativo</option><option value="Passivo">Passivo</option><option value="Versátil">Versátil</option>
                       </select></label>
-                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px", gridColumn: "1 / -1" }}>DISPONIBILIDADE<select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
+                      <label style={{ color: "#77736b", fontSize: "8px", letterSpacing: "1.2px", gridColumn: "1 / -1" }}>DISPONIBILIDADE<select value={availabilityFilter[0] || ""} onChange={(event) => setAvailabilityFilter(event.target.value ? [event.target.value] : [])} style={{ width: "100%", marginTop: "6px", background: "#101010", color: "#e9dfcd", border: "1px solid #292929", padding: "10px", outline: "none" }}>
                         <option value="">Todas</option><option value="Agora">Agora</option><option value="Mais tarde">Mais tarde</option><option value="Outro dia">Outro dia</option><option value="Conversar">Conversar</option>
                       </select></label>
                     </div>
