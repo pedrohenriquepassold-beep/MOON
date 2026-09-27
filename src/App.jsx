@@ -286,6 +286,8 @@ const chatMessagesBottomRef = useRef(null);
   const [legalPage, setLegalPage] = useState(null);
   const [reportReason, setReportReason] = useState("");
   const [reportDescription, setReportDescription] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [contextualReportMessageId, setContextualReportMessageId] = useState(null);
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true);
   const [isProfileHidden, setIsProfileHidden] = useState(false);
   const [blockedUsers, setBlockedUsers] = useState([]);
@@ -1570,6 +1572,8 @@ const chatMessagesBottomRef = useRef(null);
 
     setSupportSubmitting(true);
     setMessage("");
+    if (reportSubmitting) return;
+    setReportSubmitting(true);
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -2909,6 +2913,20 @@ const chatMessagesBottomRef = useRef(null);
     setMessage("");
   }
 
+  function calculateMapDistanceKm(latitude1, longitude1, latitude2, longitude2) {
+    const toRadians = (value) => (value * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+    const deltaLatitude = toRadians(latitude2 - latitude1);
+    const deltaLongitude = toRadians(longitude2 - longitude1);
+    const a =
+      Math.sin(deltaLatitude / 2) ** 2 +
+      Math.cos(toRadians(latitude1)) *
+        Math.cos(toRadians(latitude2)) *
+        Math.sin(deltaLongitude / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
   async function loadMapProfiles(latitude, longitude, radiusKm) {
     if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
       setMapProfiles([]);
@@ -2918,6 +2936,11 @@ const chatMessagesBottomRef = useRef(null);
     setMapProfilesLoading(true);
 
     try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const blockedIds = await getBlockedUserIds(currentUser?.id);
+      let nearbyData = null;
+      let rpcError = null;
+
       const { data, error } = await supabase.rpc(
         "get_nearby_profiles",
         {
@@ -2927,11 +2950,14 @@ const chatMessagesBottomRef = useRef(null);
         }
       );
 
-      if (error) throw error;
+      nearbyData = data;
+      rpcError = error;
 
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const blockedIds = await getBlockedUserIds(currentUser?.id);
-      const visibleProfiles = (data || []).filter((profile) =>
+      if (rpcError) {
+        console.error("ERRO NA RPC get_nearby_profiles DO MAPA:", rpcError);
+      }
+
+      let visibleProfiles = (nearbyData || []).filter((profile) =>
         profile.id !== currentUser?.id &&
         !blockedIds.has(profile.id) &&
         profile.is_hidden !== true &&
@@ -2940,6 +2966,39 @@ const chatMessagesBottomRef = useRef(null);
         profile.longitude !== null &&
         profile.longitude !== undefined
       );
+
+      // Fallback: se a RPC falhar ou não retornar ninguém, busca os perfis
+      // diretamente e calcula a distância no navegador. Isso evita que uma
+      // falha na função espacial deixe o mapa aparentemente vazio.
+      if (visibleProfiles.length === 0) {
+        const { data: profileRows, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, name, birth_date, gender, sexuality, position, availability, profession, latitude, longitude, is_hidden, last_active_at")
+          .not("latitude", "is", null)
+          .not("longitude", "is", null);
+
+        if (profilesError) {
+          throw profilesError;
+        }
+
+        visibleProfiles = (profileRows || [])
+          .filter((profile) =>
+            profile.id !== currentUser?.id &&
+            !blockedIds.has(profile.id) &&
+            profile.is_hidden !== true
+          )
+          .map((profile) => ({
+            ...profile,
+            distance_km: calculateMapDistanceKm(
+              latitude,
+              longitude,
+              Number(profile.latitude),
+              Number(profile.longitude)
+            ),
+          }))
+          .filter((profile) => Number.isFinite(profile.distance_km) && profile.distance_km <= radiusKm)
+          .sort((a, b) => a.distance_km - b.distance_km);
+      }
 
       setMapProfiles(visibleProfiles);
     } catch (error) {
@@ -2950,21 +3009,125 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
+  async function ensureMapUserLocation() {
+    if (userLocation.latitude !== null && userLocation.longitude !== null) {
+      return {
+        latitude: Number(userLocation.latitude),
+        longitude: Number(userLocation.longitude),
+      };
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user?.id) return null;
+
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("latitude, longitude")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const savedLatitude = profile?.latitude;
+      const savedLongitude = profile?.longitude;
+
+      if (savedLatitude !== null && savedLatitude !== undefined && savedLongitude !== null && savedLongitude !== undefined) {
+        const location = {
+          latitude: Number(savedLatitude),
+          longitude: Number(savedLongitude),
+        };
+
+        if (Number.isFinite(location.latitude) && Number.isFinite(location.longitude)) {
+          setUserLocation(location);
+          setLocationSaved(true);
+          return location;
+        }
+      }
+
+      if (!navigator.geolocation) {
+        setMessage("Seu navegador não oferece localização. Clique em MINHA LOCALIZAÇÃO para continuar.");
+        return null;
+      }
+
+      setLocationLoading(true);
+
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        });
+      });
+
+      const location = {
+        latitude: Number(position.coords.latitude),
+        longitude: Number(position.coords.longitude),
+      };
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          latitude: location.latitude,
+          longitude: location.longitude,
+          last_active_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (updateError) throw updateError;
+
+      setLocationSaved(true);
+      setUserLocation(location);
+      setMapCenterRequest([location.latitude, location.longitude]);
+      setMessage("");
+
+      return location;
+    } catch (error) {
+      console.error("ERRO AO RECUPERAR LOCALIZAÇÃO PARA O MAPA:", error);
+
+      if (error?.code === 1) {
+        setMessage("Permita o acesso à localização do navegador para localizar os perfis próximos.");
+      } else if (error?.code === 2) {
+        setMessage("Não foi possível encontrar sua localização.");
+      } else if (error?.code === 3) {
+        setMessage("A localização demorou muito para responder. Tente novamente.");
+      } else {
+        setMessage(error?.message || "Não foi possível localizar você para carregar o mapa.");
+      }
+
+      return null;
+    } finally {
+      setLocationLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (screen !== "map") return;
 
-    const center = selectedMapPoint || (
-      userLocation.latitude !== null && userLocation.longitude !== null
-        ? { latitude: userLocation.latitude, longitude: userLocation.longitude }
-        : null
-    );
+    let cancelled = false;
 
-    if (!center) {
-      setMapProfiles([]);
-      return;
+    async function refreshMapProfiles() {
+      const savedLocation = await ensureMapUserLocation();
+      if (cancelled) return;
+
+      const center = selectedMapPoint || savedLocation;
+
+      if (!center) {
+        setMapProfiles([]);
+        return;
+      }
+
+      setMapCenterRequest([center.latitude, center.longitude]);
+      await loadMapProfiles(center.latitude, center.longitude, mapRadius);
     }
 
-    loadMapProfiles(center.latitude, center.longitude, mapRadius);
+    refreshMapProfiles();
+
+    return () => {
+      cancelled = true;
+    };
   }, [screen, selectedMapPoint, userLocation.latitude, userLocation.longitude, mapRadius]);
 
   async function handleMapProfileSelect(profile) {
@@ -3938,6 +4101,11 @@ const chatMessagesBottomRef = useRef(null);
         throw new Error("Usuário não encontrado.");
       }
 
+      if (profile.id === user.id) {
+        setMessage("Você não pode denunciar seu próprio perfil.");
+        return;
+      }
+
       const description = reportDescription.trim() || null;
 
       const { error } = await supabase
@@ -3949,7 +4117,24 @@ const chatMessagesBottomRef = useRef(null);
           description,
         });
 
-      if (error) throw error;
+      if (error) {
+        if (
+          error.code === "23505" &&
+          error.message?.includes("reports_unique_reporter_reported")
+        ) {
+          setReportTarget(null);
+          setReportReason("");
+          setReportDescription("");
+          setContextualReportMessageId(null);
+          showToast({
+            title: "DENÚNCIA JÁ REGISTRADA",
+            body: "Você já denunciou este perfil. Nossa equipe já recebeu essa ocorrência.",
+          });
+          return;
+        }
+
+        throw error;
+      }
 
       if (reportReason === "Insistência após recusa") {
         const messageIdMatch = description?.match(/mensagem\s+([0-9a-f-]{36})/i);
@@ -3991,13 +4176,35 @@ const chatMessagesBottomRef = useRef(null);
         }
       }
 
+      const submittedContextualMessageId = contextualReportMessageId;
+
       setReportTarget(null);
       setReportReason("");
       setReportDescription("");
-      showToast({ title: "Denúncia enviada", body: "Obrigado por ajudar a manter a MOON segura." });
+      setContextualReportMessageId(null);
+
+      if (submittedContextualMessageId) {
+        setDismissedOffensiveMessageIds((current) =>
+          current.includes(submittedContextualMessageId)
+            ? current
+            : [...current, submittedContextualMessageId]
+        );
+        setDismissedThreatMessageIds((current) =>
+          current.includes(submittedContextualMessageId)
+            ? current
+            : [...current, submittedContextualMessageId]
+        );
+      }
+
+      showToast({
+        title: "DENÚNCIA ENVIADA",
+        body: "Obrigado por ajudar a manter a MOON segura.",
+      });
     } catch (error) {
       console.error("ERRO AO DENUNCIAR PERFIL:", error);
       setMessage(error.message || "Não foi possível enviar a denúncia.");
+    } finally {
+      setReportSubmitting(false);
     }
   }
 
@@ -5330,14 +5537,21 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
-  function openContextualOffensiveReport(messageId) {
-    setReportTarget(chatTarget || null);
-    setReportReason("");
+  function openContextualOffensiveReport(messageId, reason = "") {
+    if (!chatTarget?.id) {
+      setMessage("Não foi possível identificar a pessoa desta conversa.");
+      return;
+    }
+
+    setReportTarget(chatTarget);
+    setReportReason(reason);
     setReportDescription(
       messageId
         ? `Denúncia contextual relacionada à mensagem ${messageId}.`
         : "Denúncia contextual relacionada a uma mensagem recebida."
     );
+    setContextualReportMessageId(messageId || null);
+    setMessage("");
   }
 
   function openChatMediaPicker(mode) {
@@ -12177,10 +12391,7 @@ const filteredConversations = conversations
                       </div>
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                         <button type="button" onClick={() => {
-                          setReportTarget(chatTarget || null);
-                          setReportReason("Me senti ameaçado");
-                          setReportDescription(`Denúncia de segurança relacionada à mensagem ${chatMessage.id}.`);
-                          dismissThreatMessageWarning(chatMessage.id);
+                          openContextualOffensiveReport(chatMessage.id, "Me senti ameaçado");
                         }} style={{ minHeight: "32px", border: "1px solid rgba(211,107,95,0.45)", background: "transparent", color: "#d36b5f", padding: "0 10px", fontSize: "8px", letterSpacing: "0.8px", cursor: "pointer" }}>
                           DENUNCIAR
                         </button>
@@ -12237,10 +12448,7 @@ const filteredConversations = conversations
                             key={`${chatMessage.id}-${reason}`}
                             type="button"
                             onClick={() => {
-                              setReportTarget(chatTarget || null);
-                              setReportReason(reason);
-                              setReportDescription(`Denúncia contextual relacionada à mensagem ${chatMessage.id}.`);
-                              dismissOffensiveMessageWarning(chatMessage.id);
+                              openContextualOffensiveReport(chatMessage.id, reason);
                             }}
                             style={{
                               minHeight: "30px",
@@ -14217,7 +14425,7 @@ const filteredConversations = conversations
               style={{
                 position: "fixed",
                 inset: 0,
-                zIndex: 1000,
+                zIndex: 5000,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -14324,6 +14532,8 @@ const filteredConversations = conversations
                       setReportTarget(null);
                       setReportReason("");
                       setReportDescription("");
+                      setContextualReportMessageId(null);
+                      setReportSubmitting(false);
                     }}
                     style={{
                       flex: 1,
@@ -14342,7 +14552,7 @@ const filteredConversations = conversations
                   <button
                     type="button"
                     onClick={() => handleReport(reportTarget)}
-                    disabled={!reportReason}
+                    disabled={!reportReason || reportSubmitting}
                     style={{
                       flex: 1,
                       height: "42px",
@@ -14351,11 +14561,11 @@ const filteredConversations = conversations
                       color: reportReason ? "#050505" : "#555149",
                       fontSize: "9px",
                       letterSpacing: "1.5px",
-                      cursor: reportReason ? "pointer" : "not-allowed",
-                      opacity: reportReason ? 1 : 0.65,
+                      cursor: reportReason && !reportSubmitting ? "pointer" : "not-allowed",
+                      opacity: reportReason && !reportSubmitting ? 1 : 0.65,
                     }}
                   >
-                    ENVIAR DENÚNCIA
+                    {reportSubmitting ? "ENVIANDO..." : "ENVIAR DENÚNCIA"}
                   </button>
                 </div>
               </div>
