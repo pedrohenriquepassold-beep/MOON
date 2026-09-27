@@ -279,7 +279,17 @@ const chatMessagesBottomRef = useRef(null);
   const [likedProfiles, setLikedProfiles] = useState([]);
   const [likesLoading, setLikesLoading] = useState(false);
   const [likesTab, setLikesTab] = useState("interesses");
+  const [matchedProfiles, setMatchedProfiles] = useState([]);
   const [viewedProfiles, setViewedProfiles] = useState([]);
+  const [profileViewAccess, setProfileViewAccess] = useState(null);
+  const [profileViewAccessLoading, setProfileViewAccessLoading] = useState(false);
+  const [adminViewAccessProfiles, setAdminViewAccessProfiles] = useState([]);
+  const [adminViewAccessSearch, setAdminViewAccessSearch] = useState("");
+  const [adminViewAccessSelectedProfile, setAdminViewAccessSelectedProfile] = useState(null);
+  const [adminViewAccessDuration, setAdminViewAccessDuration] = useState("30");
+  const [adminViewAccessLoading, setAdminViewAccessLoading] = useState(false);
+  const [adminViewAccessSaving, setAdminViewAccessSaving] = useState(false);
+  const [adminViewAccessRecords, setAdminViewAccessRecords] = useState([]);
   const [connectionsLoading, setConnectionsLoading] = useState(false);
   const [chatOrigin, setChatOrigin] = useState("inside");
   const [reportTarget, setReportTarget] = useState(null);
@@ -861,6 +871,84 @@ const chatMessagesBottomRef = useRef(null);
       setIsAdmin(admin);
       return admin;
     } catch (error) { console.error("ERRO AO VERIFICAR ADMIN:", error); setIsAdmin(false); return false; }
+  }
+
+  async function searchAdminViewAccessProfiles(value) {
+    setAdminViewAccessSearch(value);
+    setAdminViewAccessSelectedProfile(null);
+    const searchValue = value.trim();
+    if (!searchValue) { setAdminViewAccessProfiles([]); return; }
+    try {
+      const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(searchValue);
+      const query = supabase.from("profiles").select("id, name");
+      const { data, error } = isUuid
+        ? await query.eq("id", searchValue).limit(1)
+        : await query.ilike("name", `%${searchValue}%`).limit(12);
+      if (error) throw error;
+      setAdminViewAccessProfiles(data || []);
+    } catch (error) {
+      console.error("ERRO AO BUSCAR PERFIS PARA QUEM VIU VOCÊ:", error);
+      setAdminViewAccessProfiles([]);
+      setMessage(error.message || "Não foi possível buscar o usuário.");
+    }
+  }
+
+  async function loadAdminViewAccess() {
+    const admin = await checkAdminStatus();
+    if (!admin) { setMessage("Acesso restrito."); return; }
+    setAdminViewAccessLoading(true);
+    try {
+      const { data, error } = await supabase.rpc("admin_list_profile_view_access");
+      if (error) throw error;
+      setAdminViewAccessRecords(data || []);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR ACESSOS A QUEM VIU VOCÊ:", error);
+      setMessage(error.message || "Não foi possível carregar os acessos.");
+    } finally { setAdminViewAccessLoading(false); }
+  }
+
+  async function grantAdminViewAccess() {
+    const admin = await checkAdminStatus();
+    if (!admin) { setMessage("Acesso restrito."); return; }
+    if (!adminViewAccessSelectedProfile?.id) { setMessage("Selecione um usuário para conceder o acesso."); return; }
+    setAdminViewAccessSaving(true);
+    setMessage("");
+    try {
+      const durationDays = adminViewAccessDuration === "permanent" ? null : Number(adminViewAccessDuration);
+      if (durationDays !== null && durationDays !== 30) throw new Error("Selecione uma duração válida.");
+      const { error } = await supabase.rpc("admin_grant_profile_view_access", { p_target_user_id: adminViewAccessSelectedProfile.id, p_duration_days: durationDays });
+      if (error) throw error;
+      setMessage(durationDays === null ? "Acesso permanente concedido." : "Acesso concedido por 30 dias.");
+      setAdminViewAccessSelectedProfile(null);
+      setAdminViewAccessSearch("");
+      setAdminViewAccessProfiles([]);
+      setAdminViewAccessDuration("30");
+      await loadAdminViewAccess();
+    } catch (error) {
+      console.error("ERRO AO CONCEDER ACESSO A QUEM VIU VOCÊ:", error);
+      setMessage(error.message || "Não foi possível conceder o acesso.");
+    } finally { setAdminViewAccessSaving(false); }
+  }
+
+  async function revokeAdminViewAccess(userId) {
+    const admin = await checkAdminStatus();
+    if (!admin || !userId) { if (!admin) setMessage("Acesso restrito."); return; }
+    try {
+      const { error } = await supabase.rpc("admin_revoke_profile_view_access", { p_target_user_id: userId });
+      if (error) throw error;
+      setMessage("Acesso revogado.");
+      await loadAdminViewAccess();
+    } catch (error) {
+      console.error("ERRO AO REVOGAR ACESSO A QUEM VIU VOCÊ:", error);
+      setMessage(error.message || "Não foi possível revogar o acesso.");
+    }
+  }
+
+  async function openAdminViewAccess() {
+    const admin = await checkAdminStatus();
+    if (!admin) { setMessage("Acesso restrito."); return; }
+    setScreen("adminViewAccess");
+    await loadAdminViewAccess();
   }
 
   async function loadAdminBoosts() {
@@ -1931,10 +2019,13 @@ const chatMessagesBottomRef = useRef(null);
       const { data: { user: viewer } } = await supabase.auth.getUser();
 
       if (viewer?.id && viewer.id !== profile.id) {
-        await supabase.from("profile_views").insert({
-          viewer_id: viewer.id,
-          profile_id: profile.id,
+        const { error: viewError } = await supabase.rpc("register_profile_view", {
+          p_profile_id: profile.id,
         });
+
+        if (viewError) {
+          console.error("ERRO AO REGISTRAR VISUALIZAÇÃO DO PERFIL:", viewError);
+        }
       }
     } catch (error) {
       console.error("ERRO AO ABRIR PERFIL DO CHAT:", error);
@@ -2206,14 +2297,17 @@ const chatMessagesBottomRef = useRef(null);
     setSelectedProfilePhotos([]);
     setSelectedProfileLoading(false);
 
-    const { data: { user: viewer } } = await supabase.auth.getUser();
+      const { data: { user: viewer } } = await supabase.auth.getUser();
 
-    if (viewer?.id && viewer.id !== profile.id) {
-      await supabase.from("profile_views").insert({
-        viewer_id: viewer.id,
-        profile_id: profile.id,
-      });
-    }
+      if (viewer?.id && viewer.id !== profile.id) {
+        const { error: viewError } = await supabase.rpc("register_profile_view", {
+          p_profile_id: profile.id,
+        });
+
+        if (viewError) {
+          console.error("ERRO AO REGISTRAR VISUALIZAÇÃO DO PERFIL:", viewError);
+        }
+      }
 
     try {
       // Carrega os dados completos do usuário separadamente, sem bloquear a abertura do modal.
@@ -2670,7 +2764,7 @@ const chatMessagesBottomRef = useRef(null);
           new Set([
             ...nearbyProfiles,
             ...likedProfiles,
-            ...viewedProfiles,
+            ...matchedProfiles,
             ...conversations.map((conversation) => conversation.profile).filter(Boolean),
             selectedProfile,
           ].map((profile) => profile?.id).filter(Boolean))
@@ -2704,7 +2798,7 @@ const chatMessagesBottomRef = useRef(null);
 
         setNearbyProfiles((current) => current.map(mergeStatus));
         setLikedProfiles((current) => current.map(mergeStatus));
-        setViewedProfiles((current) => current.map(mergeStatus));
+        setMatchedProfiles((current) => current.map(mergeStatus));
         setConversations((current) =>
           current.map((conversation) =>
             conversation.profile
@@ -2729,7 +2823,7 @@ const chatMessagesBottomRef = useRef(null);
       cancelled = true;
       window.clearInterval(statusRefreshInterval);
     };
-  }, [currentUserId, screen, nearbyProfiles.length, likedProfiles.length, viewedProfiles.length, conversations.length, selectedProfile?.id]);
+  }, [currentUserId, screen, nearbyProfiles.length, likedProfiles.length, matchedProfiles.length, conversations.length, selectedProfile?.id]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -2771,6 +2865,14 @@ const chatMessagesBottomRef = useRef(null);
           );
 
           setLikedProfiles((current) =>
+            current.map((profile) =>
+              profile.id === updatedProfile.id
+                ? { ...profile, ...updatedProfile }
+                : profile
+            )
+          );
+
+          setMatchedProfiles((current) =>
             current.map((profile) =>
               profile.id === updatedProfile.id
                 ? { ...profile, ...updatedProfile }
@@ -3521,6 +3623,9 @@ const chatMessagesBottomRef = useRef(null);
       setLikedProfiles((current) =>
         current.filter((profile) => !blockedIds.includes(profile.id))
       );
+      setMatchedProfiles((current) =>
+        current.filter((profile) => !blockedIds.includes(profile.id))
+      );
       setViewedProfiles((current) =>
         current.filter((profile) => !blockedIds.includes(profile.id))
       );
@@ -3573,6 +3678,9 @@ const chatMessagesBottomRef = useRef(null);
         current.filter((item) => item.id !== otherUserId)
       );
       setLikedProfiles((current) =>
+        current.filter((item) => item.id !== otherUserId)
+      );
+      setMatchedProfiles((current) =>
         current.filter((item) => item.id !== otherUserId)
       );
       setViewedProfiles((current) =>
@@ -3939,6 +4047,7 @@ const chatMessagesBottomRef = useRef(null);
       setNearbyProfiles((current) => current.filter((item) => item.id !== profile.id));
       setMapProfiles((current) => current.filter((item) => item.id !== profile.id));
       setLikedProfiles((current) => current.filter((item) => item.id !== profile.id));
+      setMatchedProfiles((current) => current.filter((item) => item.id !== profile.id));
       setViewedProfiles((current) => current.filter((item) => item.id !== profile.id));
 
       setConversations((current) =>
@@ -4231,7 +4340,7 @@ const chatMessagesBottomRef = useRef(null);
             profile ||
             nearbyProfiles.find((item) => item.id === profileId) ||
             likedProfiles.find((item) => item.id === profileId) ||
-            viewedProfiles.find((item) => item.id === profileId) ||
+            matchedProfiles.find((item) => item.id === profileId) ||
             selectedProfile;
 
           const targetPhoto =
@@ -4750,6 +4859,83 @@ const chatMessagesBottomRef = useRef(null);
       setLikesLoading(false);
     }
   }
+  function formatProfileViewTime(value) {
+    if (!value) return "VIU VOCÊ AGORA";
+
+    const timestamp = new Date(value).getTime();
+    if (!Number.isFinite(timestamp)) return "VIU VOCÊ AGORA";
+
+    const diffSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    if (diffSeconds < 60) return "VIU VOCÊ AGORA";
+    const minutes = Math.floor(diffSeconds / 60);
+    if (minutes < 60) return `VIU VOCÊ HÁ ${minutes}MIN`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `VIU VOCÊ HÁ ${hours}H`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return "VIU VOCÊ ONTEM";
+    if (days < 30) return `VIU VOCÊ HÁ ${days}D`;
+    return `VIU VOCÊ EM ${new Date(value).toLocaleDateString("pt-BR")}`;
+  }
+
+  async function loadProfileViewAccess() {
+    if (!currentUserId) {
+      setProfileViewAccess(null);
+      return null;
+    }
+
+    setProfileViewAccessLoading(true);
+    try {
+      const { data, error } = await supabase.rpc("get_profile_view_access");
+      if (error) throw error;
+      setProfileViewAccess(data || null);
+      return data || null;
+    } catch (error) {
+      console.error("ERRO AO VERIFICAR ACESSO A QUEM VIU VOCÊ:", error);
+      setProfileViewAccess(null);
+      return null;
+    } finally {
+      setProfileViewAccessLoading(false);
+    }
+  }
+
+  async function loadViewedProfiles() {
+    if (!currentUserId) {
+      setViewedProfiles([]);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc("get_profile_viewers");
+      if (error) throw error;
+
+      const blockedIds = await getBlockedUserIds(currentUserId);
+      const profiles = (data || [])
+        .filter((profile) => profile?.id && profile.id !== currentUserId && !blockedIds.has(profile.id))
+        .map((profile) => ({
+          ...profile,
+          photoUrl: profile.photo_storage_path
+            ? supabase.storage.from("profile-photos").getPublicUrl(profile.photo_storage_path).data.publicUrl
+            : null,
+        }));
+
+      setViewedProfiles(profiles);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR QUEM VIU VOCÊ:", error);
+      setViewedProfiles([]);
+    }
+  }
+
+  async function openProfileViewers() {
+    setLikesTab("quemviu");
+    setMessage("");
+    const access = await loadProfileViewAccess();
+    if (access?.has_access) {
+      await loadViewedProfiles();
+    } else {
+      setViewedProfiles([]);
+    }
+  }
+
   async function loadMatchedProfiles() {
     setConnectionsLoading(true);
 
@@ -4815,7 +5001,7 @@ const chatMessagesBottomRef = useRef(null);
         })
       );
 
-      setViewedProfiles(profiles.filter(Boolean));
+      setMatchedProfiles(profiles.filter(Boolean));
     } catch (error) {
       console.error("ERRO AO CARREGAR MATCHES:", error);
       setMessage(error.message || "Não foi possível carregar suas conexões.");
@@ -4855,11 +5041,66 @@ const chatMessagesBottomRef = useRef(null);
     }));
   }
 
+  useEffect(() => {
+    if (screen !== "likes" || likesTab !== "quemviu" || viewedProfiles.length === 0) return;
+    const interval = window.setInterval(() => setStatusClock(Date.now()), 30000);
+    return () => window.clearInterval(interval);
+  }, [screen, likesTab, viewedProfiles.length]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setViewedProfiles([]);
+      setProfileViewAccess(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshProfileViews = async () => {
+      const access = await loadProfileViewAccess();
+      if (cancelled) return;
+      if (access?.has_access) {
+        await loadViewedProfiles();
+      }
+    };
+
+    refreshProfileViews();
+
+    const channel = supabase
+      .channel(`moon-profile-views-${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "profile_views",
+          filter: `profile_id=eq.${currentUserId}`,
+        },
+        async () => {
+          const access = await loadProfileViewAccess();
+          if (access?.has_access) {
+            await loadViewedProfiles();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId]);
+
   async function handleOpenLikes() {
     setMessage("");
     setScreen("likes");
     await markNotificationsAsRead("like");
-    await Promise.all([loadLikedProfiles(), loadMatchedProfiles()]);
+    const access = await loadProfileViewAccess();
+    await Promise.all([
+      loadLikedProfiles(),
+      loadMatchedProfiles(),
+      access?.has_access ? loadViewedProfiles() : Promise.resolve(),
+    ]);
   }
 
   async function handleOpenConversations() {
@@ -8438,6 +8679,17 @@ const filteredConversations = conversations
                   </div>
                 </div>
 
+                <div style={{ marginTop: "18px", padding: "20px", borderRadius: "16px", border: "1px solid rgba(214,185,125,.18)", background: "rgba(214,185,125,.035)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                    <div>
+                      <div className="moon-eyebrow">ADMINISTRAÇÃO</div>
+                      <h2 style={{ margin: "6px 0 4px" }}>👁 Quem viu você</h2>
+                      <p style={{ margin: 0 }}>Conceda acesso temporário ou permanente ao recurso de visitantes do perfil.</p>
+                    </div>
+                    <button type="button" onClick={openAdminViewAccess} style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.32)", background: "rgba(214,185,125,.07)", color: "#d6b97d", fontSize: "9px", fontWeight: 700, letterSpacing: ".13em", cursor: "pointer" }}>GERENCIAR ACESSOS →</button>
+                  </div>
+                </div>
+
                 <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
                   <button
                     type="button"
@@ -8459,6 +8711,52 @@ const filteredConversations = conversations
                 </div>
               </>
             ) : <p>Nenhum dado disponível.</p>}
+          </section>
+        </main>
+      )}
+
+      {screen === "adminViewAccess" && isAdmin && (
+        <main className="moon-page">
+          <section className="moon-panel" style={{ maxWidth: "1100px", margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
+              <div><div className="moon-eyebrow">MOON</div><h1>Quem viu você</h1><p>Conceda o acesso ao recurso por 30 dias ou permanentemente.</p></div>
+              <button type="button" onClick={() => setScreen("admin")} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.28)", background: "transparent", color: "#d6b97d", fontSize: "10px", fontWeight: 600, letterSpacing: ".16em", cursor: "pointer" }}>← VOLTAR</button>
+            </div>
+            <div style={{ padding: "18px", border: "1px solid rgba(255,255,255,.10)", borderRadius: "14px", background: "rgba(255,255,255,.025)" }}>
+              <div style={{ color: "#d6b97d", fontSize: "9px", letterSpacing: ".14em", marginBottom: "10px" }}>CONCEDER ACESSO</div>
+              <input value={adminViewAccessSearch} onChange={(event) => searchAdminViewAccessProfiles(event.target.value)} placeholder="Buscar por nome ou ID..." style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.12)", background: "#0b0b0b", color: "#eee", outline: "none" }} />
+              {adminViewAccessProfiles.length > 0 && (
+                <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                  {adminViewAccessProfiles.map((profile) => (
+                    <button key={profile.id} type="button" onClick={() => { setAdminViewAccessSelectedProfile(profile); setAdminViewAccessProfiles([]); setAdminViewAccessSearch(profile.name || ""); }} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.08)", background: "#0d0d0d", color: "#eee", cursor: "pointer", textAlign: "left" }}>
+                      <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: "#1b1b1b", display: "flex", alignItems: "center", justifyContent: "center", color: "#d6b97d", fontSize: "12px" }}>{profile.name?.charAt(0)?.toUpperCase() || "P"}</div>
+                      <span style={{ display: "flex", flexDirection: "column", gap: "3px" }}><strong>{profile.name || "Perfil"}</strong><small style={{ color: "#888", fontSize: "9px" }}>{profile.id}</small></span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {adminViewAccessSelectedProfile && <div style={{ marginTop: "10px", color: "#d6b97d", fontSize: "10px" }}>Selecionado: <strong>{adminViewAccessSelectedProfile.name || "Perfil"}</strong>{` · ${adminViewAccessSelectedProfile.id}`}</div>}
+              <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginTop: "14px" }}>
+                <select value={adminViewAccessDuration} onChange={(event) => setAdminViewAccessDuration(event.target.value)} style={{ padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.12)", background: "#0b0b0b", color: "#eee" }}><option value="30">30 dias</option><option value="permanent">Permanente</option></select>
+                <button type="button" onClick={grantAdminViewAccess} disabled={!adminViewAccessSelectedProfile || adminViewAccessSaving} style={{ padding: "12px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.35)", background: "rgba(214,185,125,.09)", color: "#d6b97d", fontSize: "9px", fontWeight: 700, letterSpacing: ".13em", cursor: adminViewAccessSaving ? "default" : "pointer", opacity: !adminViewAccessSelectedProfile || adminViewAccessSaving ? .5 : 1 }}>{adminViewAccessSaving ? "CONCEDENDO..." : "CONCEDER ACESSO"}</button>
+              </div>
+            </div>
+            <div style={{ marginTop: "24px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}><h2 style={{ margin: 0 }}>Acessos concedidos</h2><button type="button" onClick={loadAdminViewAccess} style={{ background: "transparent", border: 0, color: "#d6b97d", cursor: "pointer", fontSize: "10px" }}>↻ ATUALIZAR</button></div>
+              {adminViewAccessLoading ? <p>Carregando acessos...</p> : adminViewAccessRecords.length === 0 ? <p>Nenhum acesso registrado.</p> : (
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {adminViewAccessRecords.map((access) => {
+                    const active = access.access_type === "permanent" || (access.expires_at && new Date(access.expires_at).getTime() > Date.now());
+                    return <article key={access.id} style={{ padding: "14px", borderRadius: "12px", border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.02)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                        <div><strong>{access.user_name || access.user_id}</strong><div style={{ color: "#777", fontSize: "9px", marginTop: "5px" }}>{access.access_type === "permanent" ? "Permanente" : access.expires_at ? `Até ${new Date(access.expires_at).toLocaleString("pt-BR")}` : "30 dias"}</div></div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ color: active ? "#d6b97d" : "#777", fontSize: "9px", letterSpacing: ".1em" }}>{active ? "ATIVO" : "EXPIRADO"}</span>{active && <button type="button" onClick={() => revokeAdminViewAccess(access.user_id)} style={{ padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.12)", background: "transparent", color: "#aaa", fontSize: "8px", cursor: "pointer" }}>REVOGAR</button>}</div>
+                      </div>
+                    </article>;
+                  })}
+                </div>
+              )}
+            </div>
           </section>
         </main>
       )}
@@ -11072,10 +11370,11 @@ const filteredConversations = conversations
             </p>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "24px", borderRadius: "10px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "8px", marginBottom: "24px", borderRadius: "10px" }}>
             {[
               ["conexoes", "CONEXÕES"],
               ["interesses", "INTERESSES"],
+              ["quemviu", "QUEM VIU VOCÊ"],
             ].map(([tab, label]) => (
               <button
                 key={tab}
@@ -11084,6 +11383,8 @@ const filteredConversations = conversations
                   setLikesTab(tab);
                   if (tab === "conexoes") {
                     markNotificationsAsRead("match");
+                  } else if (tab === "quemviu") {
+                    openProfileViewers();
                   }
                 }}
                 style={{
@@ -11128,7 +11429,7 @@ const filteredConversations = conversations
           {likesTab === "conexoes" ? (
             connectionsLoading ? (
               <MoonSkeleton rows={3} />
-            ) : viewedProfiles.length === 0 ? (
+            ) : matchedProfiles.length === 0 ? (
               <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b" }}>
                 <p style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px", marginBottom: "15px" }}>
                   NENHUMA CONEXÃO
@@ -11139,7 +11440,7 @@ const filteredConversations = conversations
               </div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "8px" }}>
-                {viewedProfiles.map((profile) => (
+                {matchedProfiles.map((profile) => (
                   <button
                     key={profile.id}
                     type="button"
@@ -11172,6 +11473,41 @@ const filteredConversations = conversations
                 ))}
               </div>
             )
+          ) : likesTab === "quemviu" ? (
+            <React.Fragment key={statusClock}>
+            {profileViewAccessLoading ? (
+              <MoonSkeleton rows={3} />
+            ) : !profileViewAccess?.has_access ? (
+              <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b", borderRadius: "10px" }}>
+                <div style={{ color: "#c9b58a", fontSize: "22px", marginBottom: "16px" }}>◉</div>
+                <p style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px", marginBottom: "15px" }}>ACESSO PRIVADO</p>
+                <p style={{ color: "#77736b", fontSize: "12px", lineHeight: "1.7", maxWidth: "400px", margin: "0 auto" }}>O recurso QUEM VIU VOCÊ ainda não está disponível para esta conta.</p>
+              </div>
+            ) : viewedProfiles.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b", borderRadius: "10px" }}>
+                <p style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px", marginBottom: "15px" }}>NINGUÉM VIU VOCÊ AINDA</p>
+                <p style={{ color: "#77736b", fontSize: "12px", lineHeight: "1.7", maxWidth: "400px", margin: "0 auto" }}>Quando alguém abrir seu perfil, essa pessoa aparecerá aqui.</p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "8px" }}>
+                {viewedProfiles.map((profile) => (
+                  <button key={profile.id} type="button" onClick={() => handleChat(profile, "likes")} style={{ width: "100%", padding: 0, border: "1px solid #202020", borderRadius: "10px", background: "#0b0b0b", cursor: "pointer", overflow: "hidden", textAlign: "left" }}>
+                    <div style={{ aspectRatio: "1 / 1", background: "#111", overflow: "hidden" }}>
+                      {profile.photoUrl ? (
+                        <img src={captureShieldActive ? undefined : profile.photoUrl} alt={profile.name || "Perfil"} {...protectedMediaProps} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#77736b", fontSize: "10px", letterSpacing: "1px" }}>SEM FOTO</div>
+                      )}
+                    </div>
+                    <div style={{ padding: "10px" }}>
+                      <div style={{ color: "#f4ead7", fontSize: "13px", fontWeight: "600", letterSpacing: "0.5px" }}>{profile.name || "Usuário"}</div>
+                      <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "0.7px", marginTop: "5px" }}>{formatProfileViewTime(profile.viewed_at)}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            </React.Fragment>
           ) : likesLoading ? (
             <MoonSkeleton rows={3} />
           ) : likedProfiles.length === 0 ? (
