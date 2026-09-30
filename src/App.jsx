@@ -105,6 +105,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [profileNameChangedAt, setProfileNameChangedAt] = useState(null);
   const [profileOriginalName, setProfileOriginalName] = useState("");
   const [profileEditMode, setProfileEditMode] = useState(false);
+  const [profileOnboarding, setProfileOnboarding] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
     city: "",
@@ -852,6 +853,12 @@ const chatMessagesBottomRef = useRef(null);
               title: "Você ganhou um Boost 🚀",
               body: "Um Boost foi concedido ao seu perfil. Ative quando quiser.",
             });
+          } else if (notification.type === "profile_view_access") {
+            playNotificationSound();
+            showToast({
+              title: "👁 VIU VOCÊ LIBERADO",
+              body: "O recurso Viu Você foi liberado para sua conta.",
+            });
           }
         }
       )
@@ -887,7 +894,7 @@ const chatMessagesBottomRef = useRef(null);
       if (error) throw error;
       setAdminViewAccessProfiles(data || []);
     } catch (error) {
-      console.error("ERRO AO BUSCAR PERFIS PARA QUEM VIU VOCÊ:", error);
+      console.error("ERRO AO BUSCAR PERFIS PARA VIU VOCÊ:", error);
       setAdminViewAccessProfiles([]);
       setMessage(error.message || "Não foi possível buscar o usuário.");
     }
@@ -902,7 +909,7 @@ const chatMessagesBottomRef = useRef(null);
       if (error) throw error;
       setAdminViewAccessRecords(data || []);
     } catch (error) {
-      console.error("ERRO AO CARREGAR ACESSOS A QUEM VIU VOCÊ:", error);
+      console.error("ERRO AO CARREGAR ACESSOS A VIU VOCÊ:", error);
       setMessage(error.message || "Não foi possível carregar os acessos.");
     } finally { setAdminViewAccessLoading(false); }
   }
@@ -925,7 +932,7 @@ const chatMessagesBottomRef = useRef(null);
       setAdminViewAccessDuration("30");
       await loadAdminViewAccess();
     } catch (error) {
-      console.error("ERRO AO CONCEDER ACESSO A QUEM VIU VOCÊ:", error);
+      console.error("ERRO AO CONCEDER ACESSO A VIU VOCÊ:", error);
       setMessage(error.message || "Não foi possível conceder o acesso.");
     } finally { setAdminViewAccessSaving(false); }
   }
@@ -939,7 +946,7 @@ const chatMessagesBottomRef = useRef(null);
       setMessage("Acesso revogado.");
       await loadAdminViewAccess();
     } catch (error) {
-      console.error("ERRO AO REVOGAR ACESSO A QUEM VIU VOCÊ:", error);
+      console.error("ERRO AO REVOGAR ACESSO A VIU VOCÊ:", error);
       setMessage(error.message || "Não foi possível revogar o acesso.");
     }
   }
@@ -1898,15 +1905,21 @@ const chatMessagesBottomRef = useRef(null);
       longitude: data.longitude || null,
     });
 
-    await loadPhotos(userId);
-
-    if (
+    const loadedPhotos = await loadPhotos(userId);
+    const hasPhoto = Array.isArray(loadedPhotos) && loadedPhotos.length > 0;
+    const hasMainProfileData = Boolean(
+      data.name &&
       data.gender &&
       data.sexuality &&
       data.position &&
       data.availability &&
-      hasLocation
-    ) {
+      data.education &&
+      Array.isArray(data.intention) &&
+      data.intention.length > 0
+    );
+
+    if (hasMainProfileData && hasPhoto && hasLocation) {
+      setProfileOnboarding(false);
       setProfileEditMode(false);
       setScreen("profile");
 
@@ -1915,6 +1928,7 @@ const chatMessagesBottomRef = useRef(null);
         data.longitude
       );
     } else {
+      setProfileOnboarding(true);
       setProfileEditMode(true);
       setScreen("profile");
     }
@@ -1958,6 +1972,7 @@ const chatMessagesBottomRef = useRef(null);
       });
 
     setPhotos(photosWithUrl);
+    return photosWithUrl;
   }
 
   async function openChatProfile(profile) {
@@ -4890,7 +4905,7 @@ const chatMessagesBottomRef = useRef(null);
       setProfileViewAccess(data || null);
       return data || null;
     } catch (error) {
-      console.error("ERRO AO VERIFICAR ACESSO A QUEM VIU VOCÊ:", error);
+      console.error("ERRO AO VERIFICAR ACESSO A VIU VOCÊ:", error);
       setProfileViewAccess(null);
       return null;
     } finally {
@@ -4920,7 +4935,7 @@ const chatMessagesBottomRef = useRef(null);
 
       setViewedProfiles(profiles);
     } catch (error) {
-      console.error("ERRO AO CARREGAR QUEM VIU VOCÊ:", error);
+      console.error("ERRO AO CARREGAR VIU VOCÊ:", error);
       setViewedProfiles([]);
     }
   }
@@ -6516,8 +6531,23 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
+    if (profileOnboarding && photos.length === 0) {
+      setMessage("Adicione pelo menos uma foto para continuar.");
+      return;
+    }
+
     if (!profileForm.gender || !profileForm.sexuality || !profileForm.position || !profileForm.availability) {
       setMessage("Selecione identidade, sexualidade, posição e disponibilidade.");
+      return;
+    }
+
+    if (profileOnboarding && !profileForm.education.trim()) {
+      setMessage("Informe sua educação ou estudos.");
+      return;
+    }
+
+    if (profileOnboarding && profileForm.intention.length === 0) {
+      setMessage("Selecione pelo menos uma intenção.");
       return;
     }
 
@@ -6528,7 +6558,7 @@ const chatMessagesBottomRef = useRef(null);
       return;
     }
 
-    if (normalizedName.length > 6) {
+    if (normalizedName.length > 8) {
       setMessage("O nome pode ter no máximo 8 caracteres.");
       return;
     }
@@ -6606,7 +6636,9 @@ const chatMessagesBottomRef = useRef(null);
         setProfileNameChangedAt(changedAt);
       }
 
-      setScreen("inside");
+      setProfileOnboarding(false);
+      setProfileEditMode(false);
+      setScreen("profile");
 
       await loadNearbyProfiles(
         userLocation.latitude,
@@ -8683,7 +8715,7 @@ const filteredConversations = conversations
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                     <div>
                       <div className="moon-eyebrow">ADMINISTRAÇÃO</div>
-                      <h2 style={{ margin: "6px 0 4px" }}>👁 Quem viu você</h2>
+                      <h2 style={{ margin: "6px 0 4px" }}>👁 Viu Você</h2>
                       <p style={{ margin: 0 }}>Conceda acesso temporário ou permanente ao recurso de visitantes do perfil.</p>
                     </div>
                     <button type="button" onClick={openAdminViewAccess} style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.32)", background: "rgba(214,185,125,.07)", color: "#d6b97d", fontSize: "9px", fontWeight: 700, letterSpacing: ".13em", cursor: "pointer" }}>GERENCIAR ACESSOS →</button>
@@ -8719,7 +8751,7 @@ const filteredConversations = conversations
         <main className="moon-page">
           <section className="moon-panel" style={{ maxWidth: "1100px", margin: "0 auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
-              <div><div className="moon-eyebrow">MOON</div><h1>Quem viu você</h1><p>Conceda o acesso ao recurso por 30 dias ou permanentemente.</p></div>
+              <div><div className="moon-eyebrow">MOON</div><h1>Viu Você</h1><p>Conceda o acesso ao recurso por 30 dias ou permanentemente.</p></div>
               <button type="button" onClick={() => setScreen("admin")} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.28)", background: "transparent", color: "#d6b97d", fontSize: "10px", fontWeight: 600, letterSpacing: ".16em", cursor: "pointer" }}>← VOLTAR</button>
             </div>
             <div style={{ padding: "18px", border: "1px solid rgba(255,255,255,.10)", borderRadius: "14px", background: "rgba(255,255,255,.025)" }}>
@@ -10960,20 +10992,39 @@ const filteredConversations = conversations
 
                       <button
                         type="button"
-                        onClick={() => setProfileEditMode(true)}
+                        onClick={() => { setScreen("inside"); setMessage(""); }}
                         style={{
                           marginTop: "22px",
                           width: "100%",
                           height: "48px",
+                          background: "#15130f",
+                          border: "1px solid #c9b58a",
+                          borderRadius: "10px",
+                          color: "#f4ead7",
+                          fontSize: "10px",
+                          letterSpacing: "2px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                        }}
+                      >
+                        IR PARA DISCOVERY
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setProfileOnboarding(false); setProfileEditMode(true); setMessage(""); }}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          height: "48px",
                           background: "rgba(201, 181, 138, 0.04)",
                           border: "1px solid #c9b58a",
-                          borderRadius: "2px",
+                          borderRadius: "10px",
                           color: "#c9b58a",
                           fontSize: "10px",
                           letterSpacing: "2px",
                           fontWeight: "500",
                           cursor: "pointer",
-                          boxShadow: "none"
                         }}
                       >
                         EDITAR PERFIL
@@ -10986,9 +11037,9 @@ const filteredConversations = conversations
                           marginTop: "10px",
                           width: "100%",
                           height: "48px",
-                          background: "rgba(214, 185, 125, 0.04)",
-                          border: "1px solid #c9b58a",
-                          borderRadius: "2px",
+                          background: "rgba(201, 181, 138, 0.02)",
+                          border: "1px solid #292929",
+                          borderRadius: "10px",
                           color: "#c9b58a",
                           fontSize: "10px",
                           letterSpacing: "2px",
@@ -10996,7 +11047,7 @@ const filteredConversations = conversations
                           cursor: "pointer",
                         }}
                       >
-                        🚀 MEUS BOOSTS
+                        MEUS BOOSTS
                       </button>
 
                       <button
@@ -11007,8 +11058,8 @@ const filteredConversations = conversations
                           width: "100%",
                           height: "48px",
                           background: "transparent",
-                          border: "1px solid #c9b58a",
-                          borderRadius: "2px",
+                          border: "1px solid #292929",
+                          borderRadius: "10px",
                           color: "#c9b58a",
                           fontSize: "10px",
                           letterSpacing: "2px",
@@ -11018,6 +11069,7 @@ const filteredConversations = conversations
                       >
                         CONFIGURAÇÕES
                       </button>
+
                     </div>
                   </div>
                 );
@@ -11070,8 +11122,8 @@ const filteredConversations = conversations
           ) : (
             <section className="form-screen" style={{ minHeight: "auto", padding: "0" }}>
               <div className="moon-logo">MOON</div>
-              <h1>Editar perfil</h1>
-              <p className="form-subtitle">Atualize suas informações.</p>
+              <h1>{profileOnboarding ? "Complete seu perfil" : "Editar perfil"}</h1>
+              <p className="form-subtitle">{profileOnboarding ? "Adicione suas informações para começar a usar a MOON." : "Atualize suas informações."}</p>
 
               {/* FOTOS */}
               <div className="photo-section">
@@ -11315,12 +11367,14 @@ const filteredConversations = conversations
                     boxShadow: "none"
                   }}
                 />
-                <button type="submit" disabled={loading || !profileDisplayName.trim() || !profileForm.gender || !profileForm.sexuality || !profileForm.position || !profileForm.availability}>{loading ? "SALVANDO..." : "SALVAR ALTERAÇÕES"}</button>
+                <button type="submit" disabled={loading || !profileDisplayName.trim() || !profileForm.gender || !profileForm.sexuality || !profileForm.position || !profileForm.availability || (profileOnboarding && photos.length === 0)}>{loading ? "SALVANDO..." : profileOnboarding ? "CONCLUIR PERFIL" : "SALVAR ALTERAÇÕES"}</button>
               </form>
 
               {message && <p className="form-subtitle">{message}</p>}
 
-              <button className="back-button" onClick={() => setProfileEditMode(false)}>CANCELAR</button>
+              {!profileOnboarding && (
+                <button className="back-button" onClick={() => setProfileEditMode(false)}>CANCELAR</button>
+              )}
             </section>
           )}
         </section>
@@ -11374,7 +11428,7 @@ const filteredConversations = conversations
             {[
               ["conexoes", "CONEXÕES"],
               ["interesses", "INTERESSES"],
-              ["quemviu", "QUEM VIU VOCÊ"],
+              ["quemviu", "VIU VOCÊ"],
             ].map(([tab, label]) => (
               <button
                 key={tab}
@@ -11481,7 +11535,7 @@ const filteredConversations = conversations
               <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b", borderRadius: "10px" }}>
                 <div style={{ color: "#c9b58a", fontSize: "22px", marginBottom: "16px" }}>◉</div>
                 <p style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px", marginBottom: "15px" }}>ACESSO PRIVADO</p>
-                <p style={{ color: "#77736b", fontSize: "12px", lineHeight: "1.7", maxWidth: "400px", margin: "0 auto" }}>O recurso QUEM VIU VOCÊ ainda não está disponível para esta conta.</p>
+                <p style={{ color: "#77736b", fontSize: "12px", lineHeight: "1.7", maxWidth: "400px", margin: "0 auto" }}>O recurso VIU VOCÊ ainda não está disponível para esta conta.</p>
               </div>
             ) : viewedProfiles.length === 0 ? (
               <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b", borderRadius: "10px" }}>
@@ -12452,19 +12506,39 @@ const filteredConversations = conversations
                       Mensagem excluída.
                     </div>
                   ) : chatMessage.message_type === "location" ? (
-                    <div>
+                    <div style={{ width: "min(300px, 70vw)" }}>
                       <div style={{ fontSize: "10px", letterSpacing: "1px", marginBottom: "8px" }}>
                         LOCALIZAÇÃO COMPARTILHADA
                       </div>
                       {chatMessage.latitude !== null && chatMessage.latitude !== undefined && chatMessage.longitude !== null && chatMessage.longitude !== undefined ? (
-                        <a
-                          href={`https://www.google.com/maps?q=${chatMessage.latitude},${chatMessage.longitude}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: "inherit", textDecoration: "underline", fontSize: "11px" }}
-                        >
-                          ABRIR NO MAPA
-                        </a>
+                        <>
+                          <div
+                            style={{
+                              width: "100%",
+                              height: "150px",
+                              overflow: "hidden",
+                              border: "1px solid rgba(201,181,138,0.22)",
+                              background: "#101010",
+                              marginBottom: "9px",
+                            }}
+                          >
+                            <iframe
+                              title="Prévia da localização compartilhada"
+                              src={`https://www.google.com/maps?q=${chatMessage.latitude},${chatMessage.longitude}&output=embed`}
+                              loading="lazy"
+                              referrerPolicy="no-referrer-when-downgrade"
+                              style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+                            />
+                          </div>
+                          <a
+                            href={`https://www.google.com/maps?q=${chatMessage.latitude},${chatMessage.longitude}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: "#c9b58a", textDecoration: "none", fontSize: "9px", letterSpacing: "1.4px" }}
+                          >
+                            ABRIR NO MAPA ↗
+                          </a>
+                        </>
                       ) : (
                         <div style={{ fontSize: "10px", opacity: 0.7 }}>Localização indisponível.</div>
                       )}
@@ -13411,10 +13485,7 @@ const filteredConversations = conversations
                       );
                     })()}
 
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button type="button" onClick={() => { handleLike(selectedProfile.id, selectedProfile); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>CURTIR</button>
-                      <button type="button" onClick={() => { setSelectedProfile(null); handleChat(selectedProfile, "inside"); }} style={{ flex: 1, height: "44px", border: "1px solid #c9b58a", background: "transparent", color: "#f4ead7", cursor: "pointer", fontSize: "11px", letterSpacing: "1.8px", fontWeight: "500" }}>MENSAGEM</button>
-                    </div>
+
                   </>
                 )}
               </div>
