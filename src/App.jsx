@@ -11310,6 +11310,28 @@ const filteredConversations = conversations
             </div>
           )}
 
+          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "18px" }}>
+            <button
+              type="button"
+              onClick={() => {
+                setEventsIntroActive(false);
+                setScreen("inside");
+                setMessage("");
+              }}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#c9b58a",
+                fontSize: "9px",
+                letterSpacing: "1.5px",
+                cursor: "pointer",
+                padding: "4px 0",
+              }}
+            >
+              ← VOLTAR
+            </button>
+          </div>
+
           <div style={{ textAlign: "center", marginBottom: "30px" }}>
             <div className="moon-logo">MOON</div>
             <p className="moon-tagline">FIND YOUR NIGHT.</p>
@@ -15523,7 +15545,7 @@ const filteredConversations = conversations
                           <div
                             style={{
                               display: "grid",
-                              gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                              gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
                               gap: "3px",
                             }}
                           >
@@ -15574,7 +15596,7 @@ const filteredConversations = conversations
                                     position: "relative",
                                     width: "100%",
                                     minWidth: 0,
-                                    height: "48px",
+                                    height: "42px",
                                     border: active
                                       ? "1px solid rgba(201,181,138,0.5)"
                                       : "1px solid transparent",
@@ -15583,9 +15605,9 @@ const filteredConversations = conversations
                                       ? "rgba(201,181,138,0.12)"
                                       : "transparent",
                                     color: active ? "#f4ead7" : "#8f897f",
-                                    fontSize: "8px",
+                                    fontSize: "7px",
                                     fontWeight: active ? 700 : 600,
-                                    letterSpacing: "1.35px",
+                                    letterSpacing: "0.75px",
                                     cursor: "pointer",
                                     transition: "all 0.28s ease",
                                     boxShadow: active
