@@ -81,6 +81,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     birthDate: "",
     email: "",
     password: "",
+    instagram_username: "",
     terms: false,
   });
 
@@ -123,6 +124,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     relationship: [],
     interests: [],
     languages: [],
+    instagram_username: "",
   });
 
   const [photos, setPhotos] = useState([]);
@@ -237,6 +239,19 @@ const chatMessagesBottomRef = useRef(null);
   const [adminSupportSelected, setAdminSupportSelected] = useState(null);
   const [adminSupportResponse, setAdminSupportResponse] = useState("");
   const [adminSupportActionLoading, setAdminSupportActionLoading] = useState(false);
+  const [adminEvents, setAdminEvents] = useState([]);
+  const [eventsIntroActive, setEventsIntroActive] = useState(false);
+  const [adminEventsLoading, setAdminEventsLoading] = useState(false);
+  const [adminEventSaving, setAdminEventSaving] = useState(false);
+  const [adminEventForm, setAdminEventForm] = useState({
+    title: "",
+    description: "",
+    location: "",
+    starts_at: "",
+    ends_at: "",
+    destination_url: "",
+    is_active: true,
+  });
   const [userSupportTickets, setUserSupportTickets] = useState([]);
   const [userSupportLoading, setUserSupportLoading] = useState(false);
   const [adminActionReportId, setAdminActionReportId] = useState(null);
@@ -750,6 +765,38 @@ const chatMessagesBottomRef = useRef(null);
       window.removeEventListener("keydown", unlockAudio);
     };
   }, []);
+
+  useEffect(() => {
+    if (!eventsIntroActive) return;
+
+    const timeout = window.setTimeout(() => {
+      setEventsIntroActive(false);
+    }, 1100);
+
+    return () => window.clearTimeout(timeout);
+  }, [eventsIntroActive]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    loadPublicEvents();
+
+    const channel = supabase
+      .channel(`moon-events-${currentUserId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "events" },
+        () => {
+          if (screen === "events") loadPublicEvents();
+          if (screen === "adminEvents" && isAdmin) loadAdminEvents();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, screen, isAdmin]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -1355,6 +1402,164 @@ const chatMessagesBottomRef = useRef(null);
     }
   }
 
+  function resetAdminEventForm() {
+    setAdminEventForm({
+      title: "",
+      description: "",
+      location: "",
+      starts_at: "",
+      ends_at: "",
+      destination_url: "",
+      is_active: true,
+    });
+  }
+
+  async function loadAdminEvents() {
+    const admin = await checkAdminStatus();
+    if (!admin) {
+      setMessage("Acesso restrito.");
+      return;
+    }
+
+    setAdminEventsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .order("starts_at", { ascending: true });
+
+      if (error) throw error;
+      setAdminEvents(data || []);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR EVENTOS:", error);
+      setMessage(error.message || "Não foi possível carregar os eventos.");
+    } finally {
+      setAdminEventsLoading(false);
+    }
+  }
+
+  async function loadPublicEvents() {
+    try {
+      const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .eq("is_active", true)
+        .order("starts_at", { ascending: true });
+
+      if (error) throw error;
+      setAdminEvents(data || []);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR EVENTOS:", error);
+      setAdminEvents([]);
+    }
+  }
+
+  async function saveAdminEvent(event) {
+    event?.preventDefault();
+    const admin = await checkAdminStatus();
+    if (!admin) {
+      setMessage("Acesso restrito.");
+      return;
+    }
+
+    if (!adminEventForm.title.trim()) {
+      setMessage("Informe o nome do evento.");
+      return;
+    }
+
+    if (!adminEventForm.starts_at) {
+      setMessage("Informe a data e hora do evento.");
+      return;
+    }
+
+    if (adminEventForm.ends_at && new Date(adminEventForm.ends_at).getTime() < new Date(adminEventForm.starts_at).getTime()) {
+      setMessage("O término não pode ser antes do início.");
+      return;
+    }
+
+    if (adminEventForm.destination_url.trim()) {
+      try {
+        const url = new URL(adminEventForm.destination_url.trim());
+        if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+      } catch {
+        setMessage("Informe um link válido começando com https:// ou http://.");
+        return;
+      }
+    }
+
+    setAdminEventSaving(true);
+    setMessage("");
+
+    try {
+      const { error } = await supabase.rpc("admin_create_event", {
+        p_title: adminEventForm.title.trim(),
+        p_description: adminEventForm.description.trim() || null,
+        p_location: adminEventForm.location.trim() || null,
+        p_starts_at: new Date(adminEventForm.starts_at).toISOString(),
+        p_ends_at: adminEventForm.ends_at ? new Date(adminEventForm.ends_at).toISOString() : null,
+        p_destination_url: adminEventForm.destination_url.trim() || null,
+        p_is_active: Boolean(adminEventForm.is_active),
+      });
+
+      if (error) throw error;
+
+      setMessage("Evento publicado com sucesso.");
+      resetAdminEventForm();
+      await loadAdminEvents();
+    } catch (error) {
+      console.error("ERRO AO CRIAR EVENTO:", error);
+      setMessage(error.message || "Não foi possível criar o evento.");
+    } finally {
+      setAdminEventSaving(false);
+    }
+  }
+
+  async function toggleAdminEvent(event) {
+    const admin = await checkAdminStatus();
+    if (!admin || !event?.id) {
+      if (!admin) setMessage("Acesso restrito.");
+      return;
+    }
+
+    try {
+      const { error } = await supabase.rpc("admin_update_event", {
+        p_event_id: event.id,
+        p_title: event.title,
+        p_description: event.description || null,
+        p_location: event.location || null,
+        p_starts_at: event.starts_at,
+        p_ends_at: event.ends_at || null,
+        p_destination_url: event.destination_url || null,
+        p_is_active: !event.is_active,
+      });
+      if (error) throw error;
+      await loadAdminEvents();
+    } catch (error) {
+      console.error("ERRO AO ATUALIZAR EVENTO:", error);
+      setMessage(error.message || "Não foi possível atualizar o evento.");
+    }
+  }
+
+  async function deleteAdminEvent(event) {
+    const admin = await checkAdminStatus();
+    if (!admin || !event?.id) {
+      if (!admin) setMessage("Acesso restrito.");
+      return;
+    }
+
+    if (!window.confirm(`Excluir o evento "${event.title}"?`)) return;
+
+    try {
+      const { error } = await supabase.rpc("admin_delete_event", { p_event_id: event.id });
+      if (error) throw error;
+      await loadAdminEvents();
+      setMessage("Evento excluído.");
+    } catch (error) {
+      console.error("ERRO AO EXCLUIR EVENTO:", error);
+      setMessage(error.message || "Não foi possível excluir o evento.");
+    }
+  }
+
   async function loadAdvertisements() {
     if (!isAdmin) return;
 
@@ -1890,6 +2095,7 @@ const chatMessagesBottomRef = useRef(null);
       relationship: Array.isArray(data.relationship) ? data.relationship : [],
       interests: Array.isArray(data.interests) ? data.interests : [],
       languages: Array.isArray(data.languages) ? data.languages : [],
+      instagram_username: data.instagram_username || "",
     });
 
     const hasLocation =
@@ -6356,6 +6562,7 @@ const chatMessagesBottomRef = useRef(null);
             name: form.name.trim(),
             birth_date:
               form.birthDate,
+            instagram_username: (form.instagram_username || "").trim().replace(/^@+/, ""),
           });
 
       if (profileError) {
@@ -6370,6 +6577,7 @@ const chatMessagesBottomRef = useRef(null);
         birthDate: "",
         email: "",
         password: "",
+        instagram_username: "",
         terms: false,
       });
 
@@ -6616,6 +6824,8 @@ const chatMessagesBottomRef = useRef(null);
               profileForm.interests,
             languages:
               profileForm.languages,
+            instagram_username:
+              (profileForm.instagram_username || "").trim().replace(/^@+/, ""),
             last_active_at:
               new Date().toISOString(),
             updated_at:
@@ -7738,6 +7948,18 @@ const filteredConversations = conversations
               required
             />
 
+            <input
+              type="text"
+              name="instagram_username"
+              placeholder="@instagram (opcional)"
+              value={form.instagram_username}
+              onChange={handleChange}
+              maxLength={40}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+
             <label className="terms">
 
               <input
@@ -8722,6 +8944,17 @@ const filteredConversations = conversations
                   </div>
                 </div>
 
+                <div style={{ marginTop: "18px", padding: "20px", borderRadius: "16px", border: "1px solid rgba(214,185,125,.18)", background: "rgba(214,185,125,.035)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                    <div>
+                      <div className="moon-eyebrow">ADMINISTRAÇÃO</div>
+                      <h2 style={{ margin: "6px 0 4px" }}>📅 Eventos</h2>
+                      <p style={{ margin: 0 }}>Publique e atualize os eventos exibidos na MOON em tempo real.</p>
+                    </div>
+                    <button type="button" onClick={async () => { setScreen("adminEvents"); await loadAdminEvents(); }} style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.32)", background: "rgba(214,185,125,.07)", color: "#d6b97d", fontSize: "9px", fontWeight: 700, letterSpacing: ".13em", cursor: "pointer" }}>GERENCIAR EVENTOS →</button>
+                  </div>
+                </div>
+
                 <div style={{ display: "flex", justifyContent: "center", marginTop: "28px" }}>
                   <button
                     type="button"
@@ -8853,6 +9086,79 @@ const filteredConversations = conversations
                 </div>
               )}
             </div>
+          </section>
+        </main>
+      )}
+
+      {screen === "adminEvents" && isAdmin && (
+        <main className="moon-page">
+          <section className="moon-panel" style={{ maxWidth: "1100px", margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
+              <div>
+                <div className="moon-eyebrow">MOON</div>
+                <h1>Eventos</h1>
+                <p>Cadastre os eventos que aparecerão na aba EVENTOS da MOON.</p>
+              </div>
+              <button type="button" onClick={() => setScreen("admin")} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.28)", background: "transparent", color: "#d6b97d", fontSize: "10px", fontWeight: 600, letterSpacing: ".16em", cursor: "pointer" }}>← VOLTAR</button>
+            </div>
+
+            <form onSubmit={saveAdminEvent} style={{ padding: "20px", borderRadius: "14px", border: "1px solid rgba(214,185,125,.18)", background: "rgba(214,185,125,.035)", marginBottom: "20px" }}>
+              <div className="moon-eyebrow" style={{ marginBottom: "14px" }}>NOVO EVENTO</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+                {[
+                  ["title", "NOME DO EVENTO", "Ex.: MOON Sunset"],
+                  ["location", "LOCAL", "Ex.: Centro, Florianópolis"],
+                  ["starts_at", "INÍCIO", ""],
+                  ["ends_at", "TÉRMINO", ""],
+                  ["destination_url", "LINK", "https://..."],
+                ].map(([field, label, placeholder]) => (
+                  <label key={field} style={{ display: "block" }}>
+                    <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>{label}</div>
+                    <input
+                      type={field === "starts_at" || field === "ends_at" ? "datetime-local" : "text"}
+                      value={adminEventForm[field]}
+                      onChange={(event) => setAdminEventForm((current) => ({ ...current, [field]: event.target.value }))}
+                      placeholder={placeholder}
+                      style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }}
+                    />
+                  </label>
+                ))}
+              </div>
+              <label style={{ display: "block", marginTop: "12px" }}>
+                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>DESCRIÇÃO</div>
+                <textarea value={adminEventForm.description} onChange={(event) => setAdminEventForm((current) => ({ ...current, description: event.target.value }))} rows={4} maxLength={500} placeholder="Descreva o evento..." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "11px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px", lineHeight: "1.6" }} />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "13px", color: "#aaa39a", fontSize: "10px", cursor: "pointer" }}>
+                <input type="checkbox" checked={adminEventForm.is_active} onChange={(event) => setAdminEventForm((current) => ({ ...current, is_active: event.target.checked }))} />
+                PUBLICAR EVENTO
+              </label>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
+                <button type="button" onClick={resetAdminEventForm} disabled={adminEventSaving} style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.10)", background: "transparent", color: "#8a857c", fontSize: "8px", letterSpacing: ".12em", cursor: "pointer" }}>LIMPAR</button>
+                <button type="submit" disabled={adminEventSaving} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.35)", background: "rgba(214,185,125,.07)", color: "#d6b97d", fontSize: "8px", fontWeight: 600, letterSpacing: ".12em", cursor: "pointer", opacity: adminEventSaving ? .55 : 1 }}>{adminEventSaving ? "PUBLICANDO..." : "PUBLICAR EVENTO"}</button>
+              </div>
+            </form>
+
+            {adminEventsLoading ? <MoonSkeleton rows={4} /> : adminEvents.length === 0 ? (
+              <div style={{ padding: "30px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b", color: "#77736b", fontSize: "10px", letterSpacing: ".12em" }}>NENHUM EVENTO CADASTRADO.</div>
+            ) : (
+              <div style={{ display: "grid", gap: "10px" }}>
+                {adminEvents.map((event) => (
+                  <article key={event.id} style={{ padding: "15px", borderRadius: "12px", border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.02)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ color: "#f4ead7", fontSize: "14px" }}>{event.title}</div>
+                        <div style={{ color: "#c9b58a", fontSize: "9px", marginTop: "5px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}{event.location ? ` · ${event.location}` : ""}</div>
+                        {event.description && <div style={{ color: "#8a857c", fontSize: "10px", lineHeight: "1.5", marginTop: "7px" }}>{event.description}</div>}
+                      </div>
+                      <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => toggleAdminEvent(event)} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.22)", background: "transparent", color: "#d6b97d", fontSize: "8px", cursor: "pointer" }}>{event.is_active ? "DESATIVAR" : "ATIVAR"}</button>
+                        <button type="button" onClick={() => deleteAdminEvent(event)} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(211,107,95,.18)", background: "transparent", color: "#d36b5f", fontSize: "8px", cursor: "pointer" }}>EXCLUIR</button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
         </main>
       )}
@@ -9732,7 +10038,7 @@ const filteredConversations = conversations
 
                         <div style={{
                           display: "grid",
-                          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
                           gap: "8px",
                         }}>
                           {[
@@ -10917,6 +11223,122 @@ const filteredConversations = conversations
         </section>
       )}
 
+      <style>{`
+        @keyframes moonEventsFlash {
+          0% { opacity: 0; }
+          18% { opacity: 1; }
+          62% { opacity: 0.88; }
+          100% { opacity: 0; }
+        }
+
+        @keyframes moonEventLight {
+          0% { opacity: 0; transform: scale(0.2) translateY(8px); }
+          28% { opacity: 1; transform: scale(1.25) translateY(0); }
+          100% { opacity: 0; transform: scale(0.45) translateY(-18px); }
+        }
+
+        @keyframes moonEventsTitle {
+          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.82); filter: blur(5px); }
+          45% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); filter: blur(0); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(1.08); filter: blur(0); }
+        }
+      `}</style>
+
+      {/* EVENTOS */}
+
+      {screen === "events" && (
+        <section style={{ width: "100%", maxWidth: "700px", minHeight: "100vh", padding: "30px 20px 110px", position: "relative" }}>
+          {eventsIntroActive && (
+            <div
+              aria-hidden="true"
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 1990,
+                pointerEvents: "none",
+                overflow: "hidden",
+                background: "radial-gradient(circle at 50% 48%, rgba(201,181,138,0.10) 0%, rgba(5,5,5,0.72) 32%, rgba(5,5,5,0.96) 78%)",
+                animation: "moonEventsFlash 1.1s ease-out forwards",
+              }}
+            >
+              {[
+                ["9%", "22%", "0.0s", "18px"],
+                ["18%", "64%", "0.12s", "10px"],
+                ["31%", "34%", "0.22s", "14px"],
+                ["47%", "18%", "0.08s", "8px"],
+                ["58%", "76%", "0.18s", "16px"],
+                ["72%", "30%", "0.28s", "11px"],
+                ["84%", "62%", "0.10s", "15px"],
+                ["93%", "18%", "0.24s", "9px"],
+                ["76%", "86%", "0.34s", "7px"],
+                ["24%", "88%", "0.30s", "12px"],
+              ].map(([left, top, delay, size], index) => (
+                <span
+                  key={index}
+                  style={{
+                    position: "absolute",
+                    left,
+                    top,
+                    width: size,
+                    height: size,
+                    borderRadius: "50%",
+                    background: "rgba(244,234,215,0.92)",
+                    boxShadow: "0 0 18px rgba(201,181,138,0.65), 0 0 38px rgba(201,181,138,0.22)",
+                    animation: `moonEventLight 0.82s ${delay} ease-out forwards`,
+                    opacity: 0,
+                  }}
+                />
+              ))}
+
+              <div
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  top: "50%",
+                  transform: "translate(-50%, -50%)",
+                  color: "#f4ead7",
+                  fontSize: "clamp(22px, 6vw, 34px)",
+                  fontWeight: 500,
+                  letterSpacing: "0.28em",
+                  paddingLeft: "0.28em",
+                  textShadow: "0 0 26px rgba(201,181,138,0.38)",
+                  animation: "moonEventsTitle 0.85s ease-out forwards",
+                }}
+              >
+                EVENTOS
+              </div>
+            </div>
+          )}
+
+          <div style={{ textAlign: "center", marginBottom: "30px" }}>
+            <div className="moon-logo">MOON</div>
+            <p className="moon-tagline">FIND YOUR NIGHT.</p>
+            <p style={{ color: "#77736b", fontSize: "11px", letterSpacing: "2px", marginTop: "20px" }}>EVENTOS</p>
+          </div>
+
+          {adminEvents.filter((event) => event.is_active && new Date(event.starts_at).getTime() >= Date.now() - 86400000).length === 0 ? (
+            <div style={{ padding: "50px 20px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b" }}>
+              <div style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px" }}>NENHUM EVENTO</div>
+              <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: "12px auto 0", maxWidth: "400px" }}>Quando um novo evento for publicado, ele aparecerá aqui automaticamente.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: "12px" }}>
+              {adminEvents.filter((event) => event.is_active && new Date(event.starts_at).getTime() >= Date.now() - 86400000).map((event) => (
+                <article key={event.id} style={{ border: "1px solid #242424", borderRadius: "12px", background: "rgba(11,11,11,.92)", padding: "18px" }}>
+                  <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "7px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}</div>
+                  <h2 style={{ margin: 0, color: "#f4ead7", fontSize: "20px", fontWeight: 500 }}>{event.title}</h2>
+                  {event.location && <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: ".8px", marginTop: "8px" }}>📍 {event.location}</div>}
+                  {event.description && <p style={{ color: "#aaa39a", fontSize: "11px", lineHeight: "1.7", margin: "13px 0 0" }}>{event.description}</p>}
+                  {event.destination_url && (
+                    <a href={event.destination_url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "44px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", color: "#f4ead7", textDecoration: "none", fontSize: "9px", letterSpacing: "1.5px" }}>VER EVENTO</a>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* PERFIL */}
 
       {screen === "profile" && (
@@ -11297,6 +11719,35 @@ const filteredConversations = conversations
                       fontSize: "13px",
                     }}
                   />
+                </div>
+
+                <div style={{ marginBottom: "22px" }}>
+                  <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>INSTAGRAM</p>
+                  <input
+                    type="text"
+                    name="instagram_username"
+                    value={profileForm.instagram_username}
+                    onChange={handleProfileChange}
+                    placeholder="@seuusuario"
+                    maxLength={40}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    style={{
+                      width: "100%",
+                      height: "48px",
+                      boxSizing: "border-box",
+                      background: "rgba(201, 181, 138, 0.035)",
+                      border: "1px solid #292929",
+                      borderRadius: "10px",
+                      color: "#f4ead7",
+                      padding: "0 14px",
+                      outline: "none",
+                      fontFamily: "inherit",
+                      fontSize: "13px",
+                    }}
+                  />
+                  <p style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.6", margin: "7px 0 0" }}>Seu Instagram ficará visível no perfil para quem você decidir conhecer.</p>
                 </div>
 
                 {[
@@ -13461,6 +13912,34 @@ const filteredConversations = conversations
                       );
                     })}
 
+                    {selectedProfile.instagram_username && (
+                      <a
+                        href={`https://www.instagram.com/${String(selectedProfile.instagram_username).replace(/^@+/, "")}/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: "100%",
+                          minHeight: "48px",
+                          marginBottom: "18px",
+                          boxSizing: "border-box",
+                          border: "1px solid #c9b58a",
+                          borderRadius: "10px",
+                          background: "rgba(201,181,138,0.05)",
+                          color: "#f4ead7",
+                          textDecoration: "none",
+                          fontSize: "10px",
+                          letterSpacing: "2px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        INSTAGRAM · @{String(selectedProfile.instagram_username).replace(/^@+/, "")}
+                      </a>
+                    )}
+
                     {(() => {
                       const commonConnections = getCommonConnections(selectedProfile);
 
@@ -15054,13 +15533,15 @@ const filteredConversations = conversations
                               ["MAPA", "map"],
                               ["CURTIDAS", "likes"],
                               ["CONVERSAS", "conversations"],
+                              ["EVENTOS", "events"],
                             ].map(([label, target]) => {
                               const active =
                                 (target === "inside" && screen === "inside" && !selectedProfile) ||
                                 (target === "profile" && screen === "profile") ||
                                 (target === "map" && screen === "map") ||
                                 (target === "likes" && screen === "likes") ||
-                                (target === "conversations" && screen === "conversations");
+                                (target === "conversations" && screen === "conversations") ||
+                                (target === "events" && screen === "events");
 
                               return (
                                 <button
@@ -15080,6 +15561,11 @@ const filteredConversations = conversations
                                       setScreen("map");
                                     } else if (target === "likes") {
                                       handleOpenLikes();
+                                    } else if (target === "events") {
+                                      setSelectedProfile(null);
+                                      setEventsIntroActive(true);
+                                      setScreen("events");
+                                      loadPublicEvents();
                                     } else {
                                       handleOpenConversations();
                                     }
