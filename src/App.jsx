@@ -243,6 +243,8 @@ const chatMessagesBottomRef = useRef(null);
   const [eventsIntroActive, setEventsIntroActive] = useState(false);
   const [adminEventsLoading, setAdminEventsLoading] = useState(false);
   const [adminEventSaving, setAdminEventSaving] = useState(false);
+  const [adminEventImageFile, setAdminEventImageFile] = useState(null);
+  const [expandedEventDescriptions, setExpandedEventDescriptions] = useState([]);
   const [adminEventForm, setAdminEventForm] = useState({
     title: "",
     description: "",
@@ -270,6 +272,7 @@ const chatMessagesBottomRef = useRef(null);
   const [boostActivatingId, setBoostActivatingId] = useState(null);
   const [userActiveBoost, setUserActiveBoost] = useState(null);
   const [boostSecondsLeft, setBoostSecondsLeft] = useState(0);
+  const [premiumLoading, setPremiumLoading] = useState(false);
 
   const [advertisements, setAdvertisements] = useState([]);
   const [advertisementsLoading, setAdvertisementsLoading] = useState(false);
@@ -917,6 +920,40 @@ const chatMessagesBottomRef = useRef(null);
     };
   }, [currentUserId, notificationSoundEnabled]);
 
+  async function handlePremiumSubscribe() {
+    if (!currentUserId) {
+      setMessage("Faça login para assinar o MOON PREMIUM.");
+      setScreen("login");
+      return;
+    }
+
+    setPremiumLoading(true);
+    setMessage("");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("create-mp-premium", {
+        body: {},
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const checkoutUrl = data?.init_point || data?.checkout_url || data?.url;
+
+      if (!checkoutUrl) {
+        throw new Error("Não foi possível gerar o checkout do MOON PREMIUM.");
+      }
+
+      window.location.href = checkoutUrl;
+    } catch (error) {
+      console.error("ERRO AO ABRIR MOON PREMIUM:", error);
+      setMessage(error?.message || "Não foi possível iniciar a assinatura agora.");
+    } finally {
+      setPremiumLoading(false);
+    }
+  }
+
   async function checkAdminStatus() {
     try {
       const { data, error } = await supabase.rpc("is_admin");
@@ -1491,7 +1528,7 @@ const chatMessagesBottomRef = useRef(null);
     setMessage("");
 
     try {
-      const { error } = await supabase.rpc("admin_create_event", {
+      const { data: createdEvent, error } = await supabase.rpc("admin_create_event", {
         p_title: adminEventForm.title.trim(),
         p_description: adminEventForm.description.trim() || null,
         p_location: adminEventForm.location.trim() || null,
@@ -1502,6 +1539,37 @@ const chatMessagesBottomRef = useRef(null);
       });
 
       if (error) throw error;
+
+      const createdRow = Array.isArray(createdEvent) ? createdEvent[0] : createdEvent;
+
+      if (adminEventImageFile && createdRow?.id) {
+        const fileExtension =
+          adminEventImageFile.name.split(".").pop()?.toLowerCase() || "jpg";
+        const filePath = `admin/${createdRow.id}-${crypto.randomUUID()}.${fileExtension}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("event-images")
+          .upload(filePath, adminEventImageFile, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicData } = supabase.storage
+          .from("event-images")
+          .getPublicUrl(filePath);
+
+        const { error: imageRpcError } = await supabase.rpc(
+          "admin_set_event_image",
+          {
+            p_event_id: createdRow.id,
+            p_image_url: publicData.publicUrl,
+          }
+        );
+
+        if (imageRpcError) throw imageRpcError;
+      }
 
       setMessage("Evento publicado com sucesso.");
       resetAdminEventForm();
@@ -1558,6 +1626,19 @@ const chatMessagesBottomRef = useRef(null);
       console.error("ERRO AO EXCLUIR EVENTO:", error);
       setMessage(error.message || "Não foi possível excluir o evento.");
     }
+  }
+
+  function resetAdminEventForm() {
+    setAdminEventForm({
+      title: "",
+      description: "",
+      location: "",
+      starts_at: "",
+      ends_at: "",
+      destination_url: "",
+      is_active: true,
+    });
+    setAdminEventImageFile(null);
   }
 
   async function loadAdvertisements() {
@@ -9126,7 +9207,19 @@ const filteredConversations = conversations
               </div>
               <label style={{ display: "block", marginTop: "12px" }}>
                 <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>DESCRIÇÃO</div>
-                <textarea value={adminEventForm.description} onChange={(event) => setAdminEventForm((current) => ({ ...current, description: event.target.value }))} rows={4} maxLength={500} placeholder="Descreva o evento..." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "11px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px", lineHeight: "1.6" }} />
+                <textarea value={adminEventForm.description} onChange={(event) => setAdminEventForm((current) => ({ ...current, description: event.target.value }))} rows={7} maxLength={5000} placeholder="Descreva o evento..." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "11px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px", lineHeight: "1.6" }} />
+              </label>
+              <label style={{ display: "block", marginTop: "12px" }}>
+                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>FOTO DO EVENTO</div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setAdminEventImageFile(event.target.files?.[0] || null)}
+                  style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#aaa39a", fontSize: "10px" }}
+                />
+                {adminEventImageFile && (
+                  <div style={{ color: "#77736b", fontSize: "9px", marginTop: "6px" }}>Selecionada: {adminEventImageFile.name}</div>
+                )}
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "13px", color: "#aaa39a", fontSize: "10px", cursor: "pointer" }}>
                 <input type="checkbox" checked={adminEventForm.is_active} onChange={(event) => setAdminEventForm((current) => ({ ...current, is_active: event.target.checked }))} />
@@ -9146,9 +9239,16 @@ const filteredConversations = conversations
                   <article key={event.id} style={{ padding: "15px", borderRadius: "12px", border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.02)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
                       <div style={{ minWidth: 0 }}>
+                        {event.image_url && (
+                          <img
+                            src={event.image_url}
+                            alt=""
+                            style={{ width: "150px", height: "90px", objectFit: "cover", display: "block", marginBottom: "10px", borderRadius: "8px", border: "1px solid rgba(255,255,255,.08)" }}
+                          />
+                        )}
                         <div style={{ color: "#f4ead7", fontSize: "14px" }}>{event.title}</div>
                         <div style={{ color: "#c9b58a", fontSize: "9px", marginTop: "5px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}{event.location ? ` · ${event.location}` : ""}</div>
-                        {event.description && <div style={{ color: "#8a857c", fontSize: "10px", lineHeight: "1.5", marginTop: "7px" }}>{event.description}</div>}
+                        {event.description && <div style={{ color: "#8a857c", fontSize: "10px", lineHeight: "1.5", marginTop: "7px", whiteSpace: "pre-line" }}>{event.description}</div>}
                       </div>
                       <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
                         <button type="button" onClick={() => toggleAdminEvent(event)} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.22)", background: "transparent", color: "#d6b97d", fontSize: "8px", cursor: "pointer" }}>{event.is_active ? "DESATIVAR" : "ATIVAR"}</button>
@@ -11350,7 +11450,45 @@ const filteredConversations = conversations
                   <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "7px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}</div>
                   <h2 style={{ margin: 0, color: "#f4ead7", fontSize: "20px", fontWeight: 500 }}>{event.title}</h2>
                   {event.location && <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: ".8px", marginTop: "8px" }}>📍 {event.location}</div>}
-                  {event.description && <p style={{ color: "#aaa39a", fontSize: "11px", lineHeight: "1.7", margin: "13px 0 0" }}>{event.description}</p>}
+                  {event.image_url && (
+                    <img
+                      src={event.image_url}
+                      alt={`Imagem do evento ${event.title}`}
+                      style={{ width: "100%", maxHeight: "360px", objectFit: "cover", display: "block", marginTop: "14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.08)" }}
+                    />
+                  )}
+                  {event.description && (() => {
+                    const description = String(event.description);
+                    const isExpanded = expandedEventDescriptions.includes(event.id);
+                    const previewLimit = 260;
+                    const isLong = description.length > previewLimit;
+                    const visibleDescription = isExpanded || !isLong
+                      ? description
+                      : `${description.slice(0, previewLimit).trimEnd()}…`;
+
+                    return (
+                      <div style={{ marginTop: "13px" }}>
+                        <p style={{ color: "#aaa39a", fontSize: "11px", lineHeight: "1.7", margin: 0, whiteSpace: "pre-line" }}>
+                          {visibleDescription}
+                        </p>
+                        {isLong && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedEventDescriptions((current) =>
+                                current.includes(event.id)
+                                  ? current.filter((id) => id !== event.id)
+                                  : [...current, event.id]
+                              )
+                            }
+                            style={{ marginTop: "9px", padding: 0, border: "none", background: "transparent", color: "#c9b58a", fontSize: "9px", fontWeight: 700, letterSpacing: "1.4px", cursor: "pointer" }}
+                          >
+                            {isExpanded ? "LER MENOS" : "LER MAIS"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {event.destination_url && (
                     <a href={event.destination_url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "44px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", color: "#f4ead7", textDecoration: "none", fontSize: "9px", letterSpacing: "1.5px" }}>VER EVENTO</a>
                   )}
@@ -11493,6 +11631,42 @@ const filteredConversations = conversations
                       >
                         MEUS BOOSTS
                       </button>
+
+                      <div
+                        style={{
+                          marginTop: "10px",
+                          padding: "18px",
+                          border: "1px solid rgba(201,181,138,.42)",
+                          borderRadius: "10px",
+                          background: "linear-gradient(145deg, rgba(201,181,138,.075), rgba(11,11,11,.92))",
+                        }}
+                      >
+                        <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "2px", fontWeight: "600" }}>MOON PREMIUM</div>
+                        <div style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "1px", marginTop: "8px" }}>Mais recursos. Mais possibilidades.</div>
+                        <div style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", marginTop: "8px" }}>4 Boosts por mês + Quem viu você por 30 dias, com renovação mensal.</div>
+                        <div style={{ color: "#f4ead7", fontSize: "15px", marginTop: "13px" }}>R$ 19,90 <span style={{ color: "#77736b", fontSize: "10px" }}>/ mês</span></div>
+                        <button
+                          type="button"
+                          onClick={handlePremiumSubscribe}
+                          disabled={premiumLoading}
+                          style={{
+                            marginTop: "14px",
+                            width: "100%",
+                            height: "46px",
+                            background: "#c9b58a",
+                            border: "1px solid #c9b58a",
+                            borderRadius: "10px",
+                            color: "#080706",
+                            fontSize: "10px",
+                            letterSpacing: "2px",
+                            fontWeight: "700",
+                            cursor: premiumLoading ? "default" : "pointer",
+                            opacity: premiumLoading ? .65 : 1,
+                          }}
+                        >
+                          {premiumLoading ? "ABRINDO CHECKOUT..." : "ASSINAR PREMIUM"}
+                        </button>
+                      </div>
 
                       <button
                         type="button"
@@ -15525,6 +15699,37 @@ const filteredConversations = conversations
 
           {!selectedProfile && (
             <>
+                        {/* MOON PREMIUM FIXO */}
+                        <button
+                          type="button"
+                          onClick={handlePremiumSubscribe}
+                          disabled={premiumLoading}
+                          aria-label="Assinar MOON Premium"
+                          style={{
+                            position: "fixed",
+                            left: "50%",
+                            bottom: "76px",
+                            transform: "translateX(-50%)",
+                            zIndex: 2001,
+                            width: "min(210px, calc(100vw - 44px))",
+                            height: "34px",
+                            padding: "0 16px",
+                            border: "1px solid rgba(201,181,138,0.58)",
+                            borderRadius: "10px",
+                            background: "linear-gradient(180deg, rgba(201,181,138,0.16), rgba(12,12,12,0.96))",
+                            color: "#e8d7b5",
+                            fontSize: "9px",
+                            fontWeight: 700,
+                            letterSpacing: "2px",
+                            cursor: premiumLoading ? "default" : "pointer",
+                            opacity: premiumLoading ? 0.65 : 1,
+                            backdropFilter: "blur(14px)",
+                            boxShadow: "0 10px 30px rgba(0,0,0,0.48), 0 0 24px rgba(201,181,138,0.06)",
+                          }}
+                        >
+                          {premiumLoading ? "ABRINDO..." : "✦ MOON PREMIUM"}
+                        </button>
+
                         {/* NAVEGAÇÃO INFERIOR */}
                         <div
                           style={{
