@@ -244,7 +244,28 @@ const chatMessagesBottomRef = useRef(null);
   const [adminEventsLoading, setAdminEventsLoading] = useState(false);
   const [adminEventSaving, setAdminEventSaving] = useState(false);
   const [adminEventImageFile, setAdminEventImageFile] = useState(null);
+  const [adminEventOrders, setAdminEventOrders] = useState([]);
+  const [adminEventActionLoading, setAdminEventActionLoading] = useState(false);
+  const [adminEventRejectReason, setAdminEventRejectReason] = useState("");
   const [expandedEventDescriptions, setExpandedEventDescriptions] = useState([]);
+
+  // MOON EVENTOS - publicação comercial
+  const [eventPlans, setEventPlans] = useState([]);
+  const [eventPublishOpen, setEventPublishOpen] = useState(false);
+  const [eventPublishPlan, setEventPublishPlan] = useState(null);
+  const [eventPublishLoading, setEventPublishLoading] = useState(false);
+  const [eventPublishImageFile, setEventPublishImageFile] = useState(null);
+  const [eventPublishForm, setEventPublishForm] = useState({
+    title: "",
+    description: "",
+    location: "",
+    starts_at: "",
+    ends_at: "",
+    destination_url: "",
+  });
+  const [eventPublishStatus, setEventPublishStatus] = useState("");
+  const [eventProLoading, setEventProLoading] = useState(false);
+
   const [adminEventForm, setAdminEventForm] = useState({
     title: "",
     description: "",
@@ -254,6 +275,30 @@ const chatMessagesBottomRef = useRef(null);
     destination_url: "",
     is_active: true,
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const eventPayment = params.get("event_payment");
+    const eventProPayment = params.get("event_pro_payment");
+
+    if (eventPayment || eventProPayment) {
+      setScreen("eventPublish");
+      setEventPublishOpen(true);
+      setEventPublishPlan(null);
+      setEventPublishStatus(
+        eventPayment === "success"
+          ? "Pagamento recebido. Seu evento ficará aguardando aprovação da equipe MOON."
+          : eventPayment === "pending"
+            ? "Pagamento pendente. Assim que o Mercado Pago confirmar, o evento seguirá para aprovação."
+            : eventPayment === "failure"
+              ? "O pagamento não foi concluído. Você pode tentar novamente."
+              : "Retorno do pagamento recebido. Aguarde a confirmação do Mercado Pago."
+      );
+
+      window.history.replaceState({}, document.title, window.location.pathname);
+      loadEventPlans();
+    }
+  }, []);
   const [userSupportTickets, setUserSupportTickets] = useState([]);
   const [userSupportLoading, setUserSupportLoading] = useState(false);
   const [adminActionReportId, setAdminActionReportId] = useState(null);
@@ -1466,12 +1511,91 @@ const chatMessagesBottomRef = useRef(null);
         .order("starts_at", { ascending: true });
 
       if (error) throw error;
-      setAdminEvents(data || []);
+      const events = data || [];
+      setAdminEvents(events);
+
+      const eventIds = events.map((item) => item.id).filter(Boolean);
+      if (eventIds.length) {
+        const { data: orders, error: ordersError } = await supabase
+          .from("event_orders")
+          .select("*")
+          .in("event_id", eventIds)
+          .order("created_at", { ascending: false });
+        if (ordersError) throw ordersError;
+        setAdminEventOrders(orders || []);
+      } else {
+        setAdminEventOrders([]);
+      }
     } catch (error) {
       console.error("ERRO AO CARREGAR EVENTOS:", error);
       setMessage(error.message || "Não foi possível carregar os eventos.");
     } finally {
       setAdminEventsLoading(false);
+    }
+  }
+
+  async function approveAdminEvent(eventId) {
+    if (!eventId) return;
+    const confirmed = window.confirm("Aprovar este evento e deixá-lo visível na MOON?");
+    if (!confirmed) return;
+
+    setAdminEventActionLoading(true);
+    setMessage("");
+    try {
+      const { error } = await supabase.rpc("admin_approve_event", { p_event_id: eventId });
+      if (error) throw error;
+      setMessage("Evento aprovado e publicado.");
+      await loadAdminEvents();
+      await loadPublicEvents();
+    } catch (error) {
+      console.error("ERRO AO APROVAR EVENTO:", error);
+      setMessage(error?.message || "Não foi possível aprovar o evento.");
+    } finally {
+      setAdminEventActionLoading(false);
+    }
+  }
+
+  async function rejectAdminEvent(eventId) {
+    if (!eventId) return;
+    const reason = window.prompt("Informe o motivo da rejeição:", adminEventRejectReason || "");
+    if (reason === null) return;
+
+    setAdminEventActionLoading(true);
+    setMessage("");
+    try {
+      const { error } = await supabase.rpc("admin_reject_event", {
+        p_event_id: eventId,
+        p_reason: reason.trim() || null,
+      });
+      if (error) throw error;
+      setAdminEventRejectReason("");
+      setMessage("Evento rejeitado.");
+      await loadAdminEvents();
+    } catch (error) {
+      console.error("ERRO AO REJEITAR EVENTO:", error);
+      setMessage(error?.message || "Não foi possível rejeitar o evento.");
+    } finally {
+      setAdminEventActionLoading(false);
+    }
+  }
+
+  async function reopenAdminEvent(eventId) {
+    if (!eventId) return;
+    const confirmed = window.confirm("Reabrir este evento para análise?");
+    if (!confirmed) return;
+
+    setAdminEventActionLoading(true);
+    setMessage("");
+    try {
+      const { error } = await supabase.rpc("admin_reopen_event", { p_event_id: eventId });
+      if (error) throw error;
+      setMessage("Evento reaberto para aprovação.");
+      await loadAdminEvents();
+    } catch (error) {
+      console.error("ERRO AO REABRIR EVENTO:", error);
+      setMessage(error?.message || "Não foi possível reabrir o evento.");
+    } finally {
+      setAdminEventActionLoading(false);
     }
   }
 
@@ -1481,6 +1605,7 @@ const chatMessagesBottomRef = useRef(null);
         .from("events")
         .select("*")
         .eq("is_active", true)
+        .eq("approval_status", "approved")
         .order("starts_at", { ascending: true });
 
       if (error) throw error;
@@ -1488,6 +1613,212 @@ const chatMessagesBottomRef = useRef(null);
     } catch (error) {
       console.error("ERRO AO CARREGAR EVENTOS:", error);
       setAdminEvents([]);
+    }
+  }
+
+  async function loadEventPlans() {
+    try {
+      const { data, error } = await supabase
+        .from("event_plans")
+        .select("*")
+        .eq("is_active", true)
+        .order("price", { ascending: true });
+
+      if (error) throw error;
+      setEventPlans(data || []);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR PLANOS DE EVENTOS:", error);
+      setEventPlans([]);
+    }
+  }
+
+  function resetUserEventForm() {
+    setEventPublishForm({
+      title: "",
+      description: "",
+      location: "",
+      starts_at: "",
+      ends_at: "",
+      destination_url: "",
+    });
+    setEventPublishImageFile(null);
+    setEventPublishStatus("");
+  }
+
+  async function openEventPublisher() {
+    setMessage("");
+    setEventPublishStatus("");
+    await loadEventPlans();
+    setEventPublishOpen(true);
+    setEventPublishPlan(null);
+    setScreen("eventPublish");
+  }
+
+  function closeEventPublisher() {
+    setEventPublishOpen(false);
+    setEventPublishPlan(null);
+    resetUserEventForm();
+    setScreen("events");
+  }
+
+  async function startEventProCheckout() {
+    const plan = eventPlans.find((item) => item.slug === "moon-eventos-pro");
+    if (!plan) {
+      setEventPublishStatus("Plano MOON EVENTOS PRO não encontrado.");
+      return;
+    }
+
+    setEventProLoading(true);
+    setEventPublishStatus("");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("create-mp-event-pro", {
+        body: {},
+      });
+
+      if (error) throw error;
+
+      if (data?.status === "active") {
+        setEventPublishStatus("Seu MOON EVENTOS PRO já está ativo.");
+        setEventPublishPlan(plan);
+        return;
+      }
+
+      const checkoutUrl = data?.checkout_url || data?.init_point;
+      if (!checkoutUrl) throw new Error("O Mercado Pago não retornou o checkout.");
+
+      window.location.href = checkoutUrl;
+    } catch (error) {
+      console.error("ERRO AO ABRIR MOON EVENTOS PRO:", error);
+      setEventPublishStatus(error?.message || "Não foi possível abrir o checkout do MOON EVENTOS PRO.");
+    } finally {
+      setEventProLoading(false);
+    }
+  }
+
+  async function submitUserEvent() {
+    if (!eventPublishPlan) {
+      setEventPublishStatus("Escolha um plano para continuar.");
+      return;
+    }
+
+    if (eventPublishPlan.slug === "moon-eventos-pro") {
+      await startEventProCheckout();
+      return;
+    }
+
+    const title = eventPublishForm.title.trim();
+    const description = eventPublishForm.description.trim();
+    const location = eventPublishForm.location.trim();
+    const destinationUrl = eventPublishForm.destination_url.trim();
+
+    if (!title) {
+      setEventPublishStatus("Informe o nome do evento.");
+      return;
+    }
+    if (!eventPublishForm.starts_at) {
+      setEventPublishStatus("Informe a data e hora do evento.");
+      return;
+    }
+    if (eventPublishForm.ends_at && new Date(eventPublishForm.ends_at).getTime() < new Date(eventPublishForm.starts_at).getTime()) {
+      setEventPublishStatus("O término não pode ser antes do início.");
+      return;
+    }
+    if (destinationUrl) {
+      try {
+        const url = new URL(destinationUrl);
+        if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+      } catch {
+        setEventPublishStatus("Informe um link válido começando com https:// ou http://.");
+        return;
+      }
+    }
+    if (eventPublishImageFile && !eventPublishImageFile.type.startsWith("image/")) {
+      setEventPublishStatus("Selecione uma imagem válida.");
+      return;
+    }
+    if (eventPublishImageFile && eventPublishImageFile.size > 8 * 1024 * 1024) {
+      setEventPublishStatus("A imagem deve ter no máximo 8 MB.");
+      return;
+    }
+
+    setEventPublishLoading(true);
+    setEventPublishStatus("Criando seu evento...");
+
+    try {
+      const { data: eventId, error: createError } = await supabase.rpc("create_user_event", {
+        p_plan_id: eventPublishPlan.id,
+        p_title: title,
+        p_description: description || null,
+        p_location: location || null,
+        p_starts_at: new Date(eventPublishForm.starts_at).toISOString(),
+        p_ends_at: eventPublishForm.ends_at ? new Date(eventPublishForm.ends_at).toISOString() : null,
+        p_destination_url: destinationUrl || null,
+      });
+
+      if (createError) throw createError;
+
+      const eventIdValue = Array.isArray(eventId) ? eventId[0] : eventId;
+      if (!eventIdValue) throw new Error("Não foi possível identificar o evento criado.");
+
+      if (eventPublishImageFile) {
+        const extension = eventPublishImageFile.name.split(".").pop()?.toLowerCase() || "jpg";
+        const filePath = `user/${eventIdValue}/${crypto.randomUUID()}.${extension}`;
+
+        setEventPublishStatus("Enviando a foto do evento...");
+
+        const { error: uploadError } = await supabase.storage
+          .from("event-images")
+          .upload(filePath, eventPublishImageFile, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicData } = supabase.storage
+          .from("event-images")
+          .getPublicUrl(filePath);
+
+        const { error: imageError } = await supabase.rpc("user_set_event_image", {
+          p_event_id: eventIdValue,
+          p_image_url: publicData.publicUrl,
+        });
+
+        if (imageError) throw imageError;
+      }
+
+      const { data: orderRow, error: orderError } = await supabase
+        .from("event_orders")
+        .select("id")
+        .eq("event_id", eventIdValue)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (orderError) throw orderError;
+      if (!orderRow?.id) throw new Error("Não foi possível localizar a cobrança do evento.");
+
+      setEventPublishStatus("Abrindo pagamento...");
+
+      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke("create-mp-event", {
+        body: { event_order_id: orderRow.id },
+      });
+
+      if (checkoutError) {
+        throw checkoutError;
+      }
+
+      const checkoutUrl = checkoutData?.checkout_url || checkoutData?.init_point;
+      if (!checkoutUrl) throw new Error("O Mercado Pago não retornou o checkout.");
+
+      window.location.href = checkoutUrl;
+    } catch (error) {
+      console.error("ERRO AO PUBLICAR EVENTO:", error);
+      setEventPublishStatus(error?.message || "Não foi possível iniciar a publicação do evento.");
+    } finally {
+      setEventPublishLoading(false);
     }
   }
 
@@ -9174,91 +9505,150 @@ const filteredConversations = conversations
       {screen === "adminEvents" && isAdmin && (
         <main className="moon-page">
           <section className="moon-panel" style={{ maxWidth: "1100px", margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
               <div>
-                <div className="moon-eyebrow">MOON</div>
-                <h1>Eventos</h1>
-                <p>Cadastre os eventos que aparecerão na aba EVENTOS da MOON.</p>
+                <div className="moon-eyebrow">MOON EVENTOS</div>
+                <h1>Gestão de eventos</h1>
+                <p>Eventos pagos por usuários ficam aguardando aprovação antes de aparecerem publicamente.</p>
               </div>
-              <button type="button" onClick={() => setScreen("admin")} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.28)", background: "transparent", color: "#d6b97d", fontSize: "10px", fontWeight: 600, letterSpacing: ".16em", cursor: "pointer" }}>← VOLTAR</button>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button type="button" onClick={loadAdminEvents} disabled={adminEventsLoading || adminEventActionLoading} style={{ padding: "10px 14px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.28)", background: "transparent", color: "#d6b97d", fontSize: "9px", fontWeight: 600, letterSpacing: ".12em", cursor: "pointer" }}>↻ ATUALIZAR</button>
+                <button type="button" onClick={() => setScreen("admin")} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.28)", background: "transparent", color: "#d6b97d", fontSize: "10px", fontWeight: 600, letterSpacing: ".16em", cursor: "pointer" }}>← VOLTAR</button>
+              </div>
             </div>
 
-            <form onSubmit={saveAdminEvent} style={{ padding: "20px", borderRadius: "14px", border: "1px solid rgba(214,185,125,.18)", background: "rgba(214,185,125,.035)", marginBottom: "20px" }}>
-              <div className="moon-eyebrow" style={{ marginBottom: "14px" }}>NOVO EVENTO</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
-                {[
-                  ["title", "NOME DO EVENTO", "Ex.: MOON Sunset"],
-                  ["location", "LOCAL", "Ex.: Centro, Florianópolis"],
-                  ["starts_at", "INÍCIO", ""],
-                  ["ends_at", "TÉRMINO", ""],
-                  ["destination_url", "LINK", "https://..."],
-                ].map(([field, label, placeholder]) => (
-                  <label key={field} style={{ display: "block" }}>
-                    <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>{label}</div>
-                    <input
-                      type={field === "starts_at" || field === "ends_at" ? "datetime-local" : "text"}
-                      value={adminEventForm[field]}
-                      onChange={(event) => setAdminEventForm((current) => ({ ...current, [field]: event.target.value }))}
-                      placeholder={placeholder}
-                      style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }}
-                    />
-                  </label>
-                ))}
-              </div>
-              <label style={{ display: "block", marginTop: "12px" }}>
-                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>DESCRIÇÃO</div>
-                <textarea value={adminEventForm.description} onChange={(event) => setAdminEventForm((current) => ({ ...current, description: event.target.value }))} rows={7} maxLength={5000} placeholder="Descreva o evento..." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "11px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px", lineHeight: "1.6" }} />
-              </label>
-              <label style={{ display: "block", marginTop: "12px" }}>
-                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>FOTO DO EVENTO</div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => setAdminEventImageFile(event.target.files?.[0] || null)}
-                  style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#aaa39a", fontSize: "10px" }}
-                />
-                {adminEventImageFile && (
-                  <div style={{ color: "#77736b", fontSize: "9px", marginTop: "6px" }}>Selecionada: {adminEventImageFile.name}</div>
-                )}
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "13px", color: "#aaa39a", fontSize: "10px", cursor: "pointer" }}>
-                <input type="checkbox" checked={adminEventForm.is_active} onChange={(event) => setAdminEventForm((current) => ({ ...current, is_active: event.target.checked }))} />
-                PUBLICAR EVENTO
-              </label>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
-                <button type="button" onClick={resetAdminEventForm} disabled={adminEventSaving} style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.10)", background: "transparent", color: "#8a857c", fontSize: "8px", letterSpacing: ".12em", cursor: "pointer" }}>LIMPAR</button>
-                <button type="submit" disabled={adminEventSaving} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.35)", background: "rgba(214,185,125,.07)", color: "#d6b97d", fontSize: "8px", fontWeight: 600, letterSpacing: ".12em", cursor: "pointer", opacity: adminEventSaving ? .55 : 1 }}>{adminEventSaving ? "PUBLICANDO..." : "PUBLICAR EVENTO"}</button>
-              </div>
-            </form>
-
-            {adminEventsLoading ? <MoonSkeleton rows={4} /> : adminEvents.length === 0 ? (
-              <div style={{ padding: "30px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b", color: "#77736b", fontSize: "10px", letterSpacing: ".12em" }}>NENHUM EVENTO CADASTRADO.</div>
-            ) : (
-              <div style={{ display: "grid", gap: "10px" }}>
-                {adminEvents.map((event) => (
-                  <article key={event.id} style={{ padding: "15px", borderRadius: "12px", border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.02)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-                      <div style={{ minWidth: 0 }}>
-                        {event.image_url && (
-                          <img
-                            src={event.image_url}
-                            alt=""
-                            style={{ width: "150px", height: "90px", objectFit: "cover", display: "block", marginBottom: "10px", borderRadius: "8px", border: "1px solid rgba(255,255,255,.08)" }}
-                          />
-                        )}
-                        <div style={{ color: "#f4ead7", fontSize: "14px" }}>{event.title}</div>
-                        <div style={{ color: "#c9b58a", fontSize: "9px", marginTop: "5px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}{event.location ? ` · ${event.location}` : ""}</div>
-                        {event.description && <div style={{ color: "#8a857c", fontSize: "10px", lineHeight: "1.5", marginTop: "7px", whiteSpace: "pre-line" }}>{event.description}</div>}
-                      </div>
-                      <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
-                        <button type="button" onClick={() => toggleAdminEvent(event)} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.22)", background: "transparent", color: "#d6b97d", fontSize: "8px", cursor: "pointer" }}>{event.is_active ? "DESATIVAR" : "ATIVAR"}</button>
-                        <button type="button" onClick={() => deleteAdminEvent(event)} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(211,107,95,.18)", background: "transparent", color: "#d36b5f", fontSize: "8px", cursor: "pointer" }}>EXCLUIR</button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
+            {message && (
+              <div style={{ marginBottom: "16px", padding: "12px 14px", borderRadius: "10px", border: "1px solid rgba(201,181,138,.22)", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{message}</div>
             )}
+
+            {(() => {
+              const pendingEvents = adminEvents.filter((event) => event.submission_type === "user" && event.approval_status === "pending");
+              const approvedEvents = adminEvents.filter((event) => event.approval_status === "approved");
+              const rejectedEvents = adminEvents.filter((event) => event.approval_status === "rejected");
+
+              return (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "10px", marginBottom: "22px" }}>
+                    {[
+                      ["PENDENTES", pendingEvents.length, "#d6b97d"],
+                      ["PUBLICADOS", approvedEvents.length, "#9bc7a5"],
+                      ["REJEITADOS", rejectedEvents.length, "#d36b5f"],
+                    ].map(([label, value, color]) => (
+                      <div key={label} style={{ padding: "16px", borderRadius: "12px", border: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.02)" }}>
+                        <div style={{ color: "#77736b", fontSize: "8px", letterSpacing: ".14em" }}>{label}</div>
+                        <div style={{ color, fontSize: "24px", fontWeight: 500, marginTop: "7px" }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <form onSubmit={saveAdminEvent} style={{ padding: "20px", borderRadius: "14px", border: "1px solid rgba(214,185,125,.18)", background: "rgba(214,185,125,.035)", marginBottom: "24px" }}>
+                    <div className="moon-eyebrow" style={{ marginBottom: "14px" }}>NOVO EVENTO ADMIN</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+                      {[
+                        ["title", "NOME DO EVENTO", "Ex.: MOON Sunset"],
+                        ["location", "LOCAL", "Ex.: Centro, Florianópolis"],
+                        ["starts_at", "INÍCIO", ""],
+                        ["ends_at", "TÉRMINO", ""],
+                        ["destination_url", "LINK", "https://..."],
+                      ].map(([field, label, placeholder]) => (
+                        <label key={field} style={{ display: "block" }}>
+                          <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>{label}</div>
+                          <input type={field === "starts_at" || field === "ends_at" ? "datetime-local" : "text"} value={adminEventForm[field]} onChange={(event) => setAdminEventForm((current) => ({ ...current, [field]: event.target.value }))} placeholder={placeholder} style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }} />
+                        </label>
+                      ))}
+                    </div>
+                    <label style={{ display: "block", marginTop: "12px" }}>
+                      <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>DESCRIÇÃO</div>
+                      <textarea value={adminEventForm.description} onChange={(event) => setAdminEventForm((current) => ({ ...current, description: event.target.value }))} rows={5} maxLength={5000} placeholder="Descreva o evento..." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "11px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px", lineHeight: "1.6" }} />
+                    </label>
+                    <label style={{ display: "block", marginTop: "12px" }}>
+                      <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>FOTO DO EVENTO</div>
+                      <input type="file" accept="image/*" onChange={(event) => setAdminEventImageFile(event.target.files?.[0] || null)} style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#aaa39a", fontSize: "10px" }} />
+                      {adminEventImageFile && <div style={{ color: "#77736b", fontSize: "9px", marginTop: "6px" }}>Selecionada: {adminEventImageFile.name}</div>}
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "13px", color: "#aaa39a", fontSize: "10px", cursor: "pointer" }}><input type="checkbox" checked={adminEventForm.is_active} onChange={(event) => setAdminEventForm((current) => ({ ...current, is_active: event.target.checked }))} /> PUBLICAR EVENTO</label>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
+                      <button type="button" onClick={resetAdminEventForm} disabled={adminEventSaving} style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.10)", background: "transparent", color: "#8a857c", fontSize: "8px", letterSpacing: ".12em", cursor: "pointer" }}>LIMPAR</button>
+                      <button type="submit" disabled={adminEventSaving} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.35)", background: "rgba(214,185,125,.07)", color: "#d6b97d", fontSize: "8px", fontWeight: 600, letterSpacing: ".12em", cursor: "pointer", opacity: adminEventSaving ? .55 : 1 }}>{adminEventSaving ? "PUBLICANDO..." : "PUBLICAR EVENTO"}</button>
+                    </div>
+                  </form>
+
+                  <div style={{ marginBottom: "22px" }}>
+                    <div className="moon-eyebrow" style={{ marginBottom: "12px" }}>AGUARDANDO APROVAÇÃO</div>
+                    {adminEventsLoading ? <MoonSkeleton rows={3} /> : pendingEvents.length === 0 ? (
+                      <div style={{ padding: "22px", borderRadius: "12px", border: "1px solid rgba(255,255,255,.07)", background: "rgba(255,255,255,.015)", color: "#77736b", fontSize: "10px" }}>Nenhum evento aguardando aprovação.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: "12px" }}>
+                        {pendingEvents.map((event) => {
+                          const order = adminEventOrders.find((item) => item.id === event.payment_order_id || item.event_id === event.id);
+                          const paid = order?.status === "approved";
+                          return (
+                            <article key={event.id} style={{ padding: "18px", borderRadius: "14px", border: "1px solid rgba(214,185,125,.22)", background: "linear-gradient(145deg, rgba(214,185,125,.055), rgba(10,10,10,.96))" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "18px", alignItems: "start" }}>
+                                <div>
+                                  {event.image_url && <img src={event.image_url} alt="" style={{ width: "180px", height: "105px", objectFit: "cover", borderRadius: "9px", display: "block", marginBottom: "12px", border: "1px solid rgba(255,255,255,.08)" }} />}
+                                  <div style={{ color: "#f4ead7", fontSize: "17px" }}>{event.title}</div>
+                                  <div style={{ color: "#c9b58a", fontSize: "9px", marginTop: "6px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}{event.location ? ` · ${event.location}` : ""}</div>
+                                  {event.description && <div style={{ color: "#aaa39a", fontSize: "10px", lineHeight: "1.65", marginTop: "9px", whiteSpace: "pre-line" }}>{event.description}</div>}
+                                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+                                    <span style={{ padding: "6px 8px", borderRadius: "999px", border: "1px solid rgba(214,185,125,.22)", color: "#d6b97d", fontSize: "8px" }}>APROVAÇÃO: PENDENTE</span>
+                                    <span style={{ padding: "6px 8px", borderRadius: "999px", border: `1px solid ${paid ? "rgba(155,199,165,.25)" : "rgba(211,107,95,.2)"}`, color: paid ? "#9bc7a5" : "#d36b5f", fontSize: "8px" }}>PAGAMENTO: {paid ? "APROVADO" : (order?.status || "PENDENTE").toUpperCase()}</span>
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: "135px" }}>
+                                  <button type="button" onClick={() => approveAdminEvent(event.id)} disabled={adminEventActionLoading || !paid} title={!paid ? "Aguarde o pagamento ser aprovado." : "Aprovar evento"} style={{ minHeight: "40px", borderRadius: "9px", border: "1px solid rgba(155,199,165,.35)", background: "rgba(155,199,165,.08)", color: "#9bc7a5", fontSize: "8px", fontWeight: 700, letterSpacing: ".1em", cursor: adminEventActionLoading || !paid ? "default" : "pointer", opacity: adminEventActionLoading || !paid ? .45 : 1 }}>✓ APROVAR</button>
+                                  <button type="button" onClick={() => rejectAdminEvent(event.id)} disabled={adminEventActionLoading} style={{ minHeight: "40px", borderRadius: "9px", border: "1px solid rgba(211,107,95,.25)", background: "transparent", color: "#d36b5f", fontSize: "8px", fontWeight: 700, letterSpacing: ".1em", cursor: adminEventActionLoading ? "default" : "pointer", opacity: adminEventActionLoading ? .5 : 1 }}>REJEITAR</button>
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="moon-eyebrow" style={{ marginBottom: "12px" }}>TODOS OS EVENTOS</div>
+                    {adminEventsLoading ? <MoonSkeleton rows={4} /> : adminEvents.length === 0 ? (
+                      <div style={{ padding: "30px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b", color: "#77736b", fontSize: "10px" }}>NENHUM EVENTO CADASTRADO.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: "10px" }}>
+                        {adminEvents.map((event) => {
+                          const statusLabel = event.approval_status === "approved" ? "PUBLICADO" : event.approval_status === "rejected" ? "REJEITADO" : "AGUARDANDO APROVAÇÃO";
+                          const statusColor = event.approval_status === "approved" ? "#9bc7a5" : event.approval_status === "rejected" ? "#d36b5f" : "#d6b97d";
+                          return (
+                            <article key={event.id} style={{ padding: "15px", borderRadius: "12px", border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.02)" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  {event.image_url && <img src={event.image_url} alt="" style={{ width: "150px", height: "90px", objectFit: "cover", display: "block", marginBottom: "10px", borderRadius: "8px", border: "1px solid rgba(255,255,255,.08)" }} />}
+                                  <div style={{ color: "#f4ead7", fontSize: "14px" }}>{event.title}</div>
+                                  <div style={{ color: "#c9b58a", fontSize: "9px", marginTop: "5px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}{event.location ? ` · ${event.location}` : ""}</div>
+                                  {event.description && <div style={{ color: "#8a857c", fontSize: "10px", lineHeight: "1.5", marginTop: "7px", whiteSpace: "pre-line" }}>{event.description}</div>}
+                                  <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginTop: "9px" }}>
+                                    <span style={{ color: statusColor, fontSize: "8px", letterSpacing: ".1em" }}>{statusLabel}</span>
+                                    {event.submission_type === "user" && <span style={{ color: "#77736b", fontSize: "8px", letterSpacing: ".1em" }}>CRIADO POR USUÁRIO</span>}
+                                    {event.rejection_reason && <span style={{ color: "#8a857c", fontSize: "8px" }}>Motivo: {event.rejection_reason}</span>}
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
+                                  {event.approval_status === "pending" && <>
+                                    <button type="button" onClick={() => approveAdminEvent(event.id)} disabled={adminEventActionLoading} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(155,199,165,.25)", background: "transparent", color: "#9bc7a5", fontSize: "8px", cursor: "pointer", opacity: adminEventActionLoading ? .5 : 1 }}>APROVAR</button>
+                                    <button type="button" onClick={() => rejectAdminEvent(event.id)} disabled={adminEventActionLoading} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(211,107,95,.18)", background: "transparent", color: "#d36b5f", fontSize: "8px", cursor: "pointer", opacity: adminEventActionLoading ? .5 : 1 }}>REJEITAR</button>
+                                  </>}
+                                  {event.approval_status === "rejected" && <button type="button" onClick={() => reopenAdminEvent(event.id)} disabled={adminEventActionLoading} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.22)", background: "transparent", color: "#d6b97d", fontSize: "8px", cursor: "pointer", opacity: adminEventActionLoading ? .5 : 1 }}>REABRIR</button>}
+                                  {event.approval_status === "approved" && <button type="button" onClick={() => toggleAdminEvent(event)} disabled={adminEventActionLoading} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(214,185,125,.22)", background: "transparent", color: "#d6b97d", fontSize: "8px", cursor: "pointer", opacity: adminEventActionLoading ? .5 : 1 }}>{event.is_active ? "DESATIVAR" : "ATIVAR"}</button>}
+                                  <button type="button" onClick={() => deleteAdminEvent(event)} disabled={adminEventActionLoading} style={{ padding: "8px 11px", borderRadius: "10px", border: "1px solid rgba(211,107,95,.18)", background: "transparent", color: "#d36b5f", fontSize: "8px", cursor: "pointer", opacity: adminEventActionLoading ? .5 : 1 }}>EXCLUIR</button>
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </section>
         </main>
       )}
@@ -11349,153 +11739,133 @@ const filteredConversations = conversations
       {screen === "events" && (
         <section style={{ width: "100%", maxWidth: "700px", minHeight: "100vh", padding: "30px 20px 110px", position: "relative" }}>
           {eventsIntroActive && (
-            <div
-              aria-hidden="true"
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 1990,
-                pointerEvents: "none",
-                overflow: "hidden",
-                background: "radial-gradient(circle at 50% 48%, rgba(201,181,138,0.10) 0%, rgba(5,5,5,0.72) 32%, rgba(5,5,5,0.96) 78%)",
-                animation: "moonEventsFlash 1.1s ease-out forwards",
-              }}
-            >
+            <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 1990, pointerEvents: "none", overflow: "hidden", background: "radial-gradient(circle at 50% 48%, rgba(201,181,138,0.10) 0%, rgba(5,5,5,0.72) 32%, rgba(5,5,5,0.96) 78%)", animation: "moonEventsFlash 1.1s ease-out forwards" }}>
               {[
-                ["9%", "22%", "0.0s", "18px"],
-                ["18%", "64%", "0.12s", "10px"],
-                ["31%", "34%", "0.22s", "14px"],
-                ["47%", "18%", "0.08s", "8px"],
-                ["58%", "76%", "0.18s", "16px"],
-                ["72%", "30%", "0.28s", "11px"],
-                ["84%", "62%", "0.10s", "15px"],
-                ["93%", "18%", "0.24s", "9px"],
-                ["76%", "86%", "0.34s", "7px"],
-                ["24%", "88%", "0.30s", "12px"],
+                ["9%", "22%", "0.0s", "18px"], ["18%", "64%", "0.12s", "10px"], ["31%", "34%", "0.22s", "14px"], ["47%", "18%", "0.08s", "8px"], ["58%", "76%", "0.18s", "16px"], ["72%", "30%", "0.28s", "11px"], ["84%", "62%", "0.10s", "15px"], ["93%", "18%", "0.24s", "9px"]
               ].map(([left, top, delay, size], index) => (
-                <span
-                  key={index}
-                  style={{
-                    position: "absolute",
-                    left,
-                    top,
-                    width: size,
-                    height: size,
-                    borderRadius: "50%",
-                    background: "rgba(244,234,215,0.92)",
-                    boxShadow: "0 0 18px rgba(201,181,138,0.65), 0 0 38px rgba(201,181,138,0.22)",
-                    animation: `moonEventLight 0.82s ${delay} ease-out forwards`,
-                    opacity: 0,
-                  }}
-                />
+                <span key={index} style={{ position: "absolute", left, top, width: size, height: size, borderRadius: "50%", background: "rgba(244,234,215,0.92)", boxShadow: "0 0 18px rgba(201,181,138,0.65)", animation: `moonEventLight 0.82s ${delay} ease-out forwards`, opacity: 0 }} />
               ))}
-
-              <div
-                style={{
-                  position: "absolute",
-                  left: "50%",
-                  top: "50%",
-                  transform: "translate(-50%, -50%)",
-                  color: "#f4ead7",
-                  fontSize: "clamp(22px, 6vw, 34px)",
-                  fontWeight: 500,
-                  letterSpacing: "0.28em",
-                  paddingLeft: "0.28em",
-                  textShadow: "0 0 26px rgba(201,181,138,0.38)",
-                  animation: "moonEventsTitle 0.85s ease-out forwards",
-                }}
-              >
-                EVENTOS
-              </div>
+              <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", color: "#f4ead7", fontSize: "clamp(22px, 6vw, 34px)", fontWeight: 500, letterSpacing: "0.28em", paddingLeft: "0.28em", textShadow: "0 0 26px rgba(201,181,138,0.38)", animation: "moonEventsTitle 0.85s ease-out forwards" }}>EVENTOS</div>
             </div>
           )}
 
           <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "18px" }}>
-            <button
-              type="button"
-              onClick={() => {
-                setEventsIntroActive(false);
-                setScreen("inside");
-                setMessage("");
-              }}
-              style={{
-                border: "none",
-                background: "transparent",
-                color: "#c9b58a",
-                fontSize: "9px",
-                letterSpacing: "1.5px",
-                cursor: "pointer",
-                padding: "4px 0",
-              }}
-            >
-              ← VOLTAR
-            </button>
+            <button type="button" onClick={() => { setEventsIntroActive(false); setScreen("inside"); setMessage(""); }} style={{ border: "none", background: "transparent", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer", padding: "4px 0" }}>← VOLTAR</button>
           </div>
 
-          <div style={{ textAlign: "center", marginBottom: "30px" }}>
+          <div style={{ textAlign: "center", marginBottom: "22px" }}>
             <div className="moon-logo">MOON</div>
             <p className="moon-tagline">FIND YOUR NIGHT.</p>
             <p style={{ color: "#77736b", fontSize: "11px", letterSpacing: "2px", marginTop: "20px" }}>EVENTOS</p>
           </div>
 
-          {adminEvents.filter((event) => event.is_active && new Date(event.starts_at).getTime() >= Date.now() - 86400000).length === 0 ? (
+          <button type="button" onClick={openEventPublisher} style={{ width: "100%", minHeight: "52px", marginBottom: "18px", border: "1px solid #c9b58a", borderRadius: "12px", background: "linear-gradient(135deg, rgba(201,181,138,.16), rgba(201,181,138,.04))", color: "#f4ead7", fontSize: "10px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer", boxShadow: "0 12px 30px rgba(0,0,0,.24)" }}>＋ PUBLICAR EVENTO</button>
+
+          {adminEvents.filter((event) => event.is_active && event.approval_status === "approved" && new Date(event.starts_at).getTime() >= Date.now() - 86400000).length === 0 ? (
             <div style={{ padding: "50px 20px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b" }}>
               <div style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px" }}>NENHUM EVENTO</div>
-              <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: "12px auto 0", maxWidth: "400px" }}>Quando um novo evento for publicado, ele aparecerá aqui automaticamente.</p>
+              <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: "12px auto 0", maxWidth: "400px" }}>Quando um novo evento for aprovado, ele aparecerá aqui automaticamente.</p>
             </div>
           ) : (
             <div style={{ display: "grid", gap: "12px" }}>
-              {adminEvents.filter((event) => event.is_active && new Date(event.starts_at).getTime() >= Date.now() - 86400000).map((event) => (
+              {adminEvents.filter((event) => event.is_active && event.approval_status === "approved" && new Date(event.starts_at).getTime() >= Date.now() - 86400000).map((event) => (
                 <article key={event.id} style={{ border: "1px solid #242424", borderRadius: "12px", background: "rgba(11,11,11,.92)", padding: "18px" }}>
                   <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "7px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}</div>
                   <h2 style={{ margin: 0, color: "#f4ead7", fontSize: "20px", fontWeight: 500 }}>{event.title}</h2>
                   {event.location && <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: ".8px", marginTop: "8px" }}>📍 {event.location}</div>}
-                  {event.image_url && (
-                    <img
-                      src={event.image_url}
-                      alt={`Imagem do evento ${event.title}`}
-                      style={{ width: "100%", maxHeight: "360px", objectFit: "cover", display: "block", marginTop: "14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.08)" }}
-                    />
-                  )}
+                  {event.image_url && <img src={event.image_url} alt={`Imagem do evento ${event.title}`} style={{ width: "100%", maxHeight: "360px", objectFit: "cover", display: "block", marginTop: "14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,.08)" }} />}
                   {event.description && (() => {
                     const description = String(event.description);
                     const isExpanded = expandedEventDescriptions.includes(event.id);
                     const previewLimit = 260;
                     const isLong = description.length > previewLimit;
-                    const visibleDescription = isExpanded || !isLong
-                      ? description
-                      : `${description.slice(0, previewLimit).trimEnd()}…`;
-
+                    const visibleDescription = isExpanded || !isLong ? description : `${description.slice(0, previewLimit).trimEnd()}…`;
                     return (
                       <div style={{ marginTop: "13px" }}>
-                        <p style={{ color: "#aaa39a", fontSize: "11px", lineHeight: "1.7", margin: 0, whiteSpace: "pre-line" }}>
-                          {visibleDescription}
-                        </p>
-                        {isLong && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedEventDescriptions((current) =>
-                                current.includes(event.id)
-                                  ? current.filter((id) => id !== event.id)
-                                  : [...current, event.id]
-                              )
-                            }
-                            style={{ marginTop: "9px", padding: 0, border: "none", background: "transparent", color: "#c9b58a", fontSize: "9px", fontWeight: 700, letterSpacing: "1.4px", cursor: "pointer" }}
-                          >
-                            {isExpanded ? "LER MENOS" : "LER MAIS"}
-                          </button>
-                        )}
+                        <p style={{ color: "#aaa39a", fontSize: "11px", lineHeight: "1.7", margin: 0, whiteSpace: "pre-line" }}>{visibleDescription}</p>
+                        {isLong && <button type="button" onClick={() => setExpandedEventDescriptions((current) => current.includes(event.id) ? current.filter((id) => id !== event.id) : [...current, event.id])} style={{ marginTop: "9px", padding: 0, border: "none", background: "transparent", color: "#c9b58a", fontSize: "9px", fontWeight: 700, letterSpacing: "1.4px", cursor: "pointer" }}>{isExpanded ? "LER MENOS" : "LER MAIS"}</button>}
                       </div>
                     );
                   })()}
-                  {event.destination_url && (
-                    <a href={event.destination_url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "44px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", color: "#f4ead7", textDecoration: "none", fontSize: "9px", letterSpacing: "1.5px" }}>VER EVENTO</a>
-                  )}
+                  {event.destination_url && <a href={event.destination_url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "44px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", color: "#f4ead7", textDecoration: "none", fontSize: "9px", letterSpacing: "1.5px" }}>VER EVENTO</a>}
                 </article>
               ))}
             </div>
           )}
+        </section>
+      )}
+
+      {screen === "eventPublish" && (
+        <section style={{ width: "100%", maxWidth: "700px", minHeight: "100vh", padding: "30px 20px 120px" }}>
+          <button type="button" onClick={closeEventPublisher} style={{ border: "none", background: "transparent", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer", padding: "4px 0", marginBottom: "22px" }}>← VOLTAR PARA EVENTOS</button>
+
+          <div style={{ marginBottom: "25px" }}>
+            <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "2px" }}>MOON EVENTOS</div>
+            <h1 style={{ color: "#f4ead7", fontSize: "28px", fontWeight: 500, margin: "8px 0 6px" }}>Publique seu evento.</h1>
+            <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: 0 }}>Escolha como você quer divulgar. Todo evento pago passa por aprovação antes de ficar público.</p>
+          </div>
+
+          <div style={{ display: "grid", gap: "10px", marginBottom: "24px" }}>
+            {eventPlans.map((plan) => {
+              const selected = eventPublishPlan?.id === plan.id;
+              const isPro = plan.slug === "moon-eventos-pro";
+              return (
+                <button key={plan.id} type="button" onClick={() => { setEventPublishPlan(plan); setEventPublishStatus(""); }} style={{ textAlign: "left", padding: "18px", borderRadius: "14px", border: selected ? "1px solid #c9b58a" : "1px solid #292929", background: selected ? "linear-gradient(145deg, rgba(201,181,138,.12), rgba(11,11,11,.96))" : "#0b0b0b", color: "#f4ead7", cursor: "pointer" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.6px", fontWeight: 700 }}>{isPro ? "ASSINATURA" : "AVULSO"}</div>
+                      <div style={{ fontSize: "17px", marginTop: "7px" }}>{plan.name}</div>
+                      <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6", marginTop: "7px" }}>{isPro ? "Até 8 eventos por mês, com assinatura mensal." : "1 evento, pagamento único."}</div>
+                    </div>
+                    <div style={{ color: "#f4ead7", fontSize: "17px", whiteSpace: "nowrap" }}>R$ {Number(plan.price).toFixed(2).replace(".", ",")}<span style={{ color: "#77736b", fontSize: "9px" }}>{isPro ? " / mês" : ""}</span></div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {eventPublishPlan?.slug === "moon-eventos-pro" ? (
+            <div style={{ border: "1px solid #292929", borderRadius: "14px", padding: "20px", background: "#0b0b0b" }}>
+              <div style={{ color: "#f4ead7", fontSize: "16px" }}>MOON EVENTOS PRO</div>
+              <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7" }}>Assine por R$ 199,90/mês. Depois que o pagamento for confirmado, você poderá criar até 8 eventos dentro de cada período da assinatura.</p>
+              <button type="button" onClick={startEventProCheckout} disabled={eventProLoading} style={{ width: "100%", height: "48px", marginTop: "8px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventProLoading ? "default" : "pointer", opacity: eventProLoading ? .6 : 1 }}>{eventProLoading ? "ABRINDO CHECKOUT..." : "ASSINAR MOON EVENTOS PRO"}</button>
+            </div>
+          ) : eventPublishPlan ? (
+            <form onSubmit={(event) => { event.preventDefault(); submitUserEvent(); }} style={{ border: "1px solid #292929", borderRadius: "14px", padding: "20px", background: "#0b0b0b" }}>
+              {[
+                ["title", "NOME DO EVENTO", "Ex.: Sunset MOON", "text"],
+                ["location", "LOCAL", "Ex.: Centro, Florianópolis", "text"],
+                ["starts_at", "INÍCIO", "", "datetime-local"],
+                ["ends_at", "TÉRMINO", "", "datetime-local"],
+                ["destination_url", "LINK DO EVENTO (OPCIONAL)", "https://...", "url"],
+              ].map(([field, label, placeholder, type]) => (
+                <label key={field} style={{ display: "block", marginTop: field === "title" ? 0 : "13px" }}>
+                  <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>{label}</div>
+                  <input type={type} value={eventPublishForm[field]} placeholder={placeholder} onChange={(event) => setEventPublishForm((current) => ({ ...current, [field]: event.target.value }))} style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }} />
+                </label>
+              ))}
+
+              <label style={{ display: "block", marginTop: "13px" }}>
+                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>DESCRIÇÃO</div>
+                <textarea value={eventPublishForm.description} onChange={(event) => setEventPublishForm((current) => ({ ...current, description: event.target.value }))} rows={7} maxLength={5000} placeholder="Descreva o evento..." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "11px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px", lineHeight: "1.6" }} />
+              </label>
+
+              <label style={{ display: "block", marginTop: "13px" }}>
+                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>FOTO DO EVENTO</div>
+                <input type="file" accept="image/*" onChange={(event) => setEventPublishImageFile(event.target.files?.[0] || null)} style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#aaa39a", fontSize: "10px" }} />
+                {eventPublishImageFile && <div style={{ color: "#77736b", fontSize: "9px", marginTop: "6px" }}>Selecionada: {eventPublishImageFile.name}</div>}
+              </label>
+
+              {eventPublishStatus && <div style={{ marginTop: "15px", padding: "12px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{eventPublishStatus}</div>}
+
+              <button type="submit" disabled={eventPublishLoading} style={{ width: "100%", height: "50px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventPublishLoading ? "default" : "pointer", opacity: eventPublishLoading ? .6 : 1 }}>{eventPublishLoading ? "PROCESSANDO..." : "CONTINUAR PARA PAGAMENTO · R$ 29,90"}</button>
+              <div style={{ color: "#55514a", fontSize: "9px", lineHeight: "1.6", marginTop: "10px", textAlign: "center" }}>Pagamento aprovado não publica o evento automaticamente. Ele seguirá para análise da equipe MOON.</div>
+            </form>
+          ) : (
+            <div style={{ padding: "28px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b", color: "#77736b", fontSize: "10px" }}>CARREGANDO PLANOS...</div>
+          )}
+
+          {eventPublishStatus && eventPublishPlan?.slug === "moon-eventos-pro" && <div style={{ marginTop: "14px", padding: "12px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{eventPublishStatus}</div>}
         </section>
       )}
 
