@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOON | Find Your Night</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #050505;
+            color: #f4ead7;
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            padding: 30px;
+        }
+
+        .logo {
+            font-size: 72px;
+            letter-spacing: 12px;
+            font-weight: 300;
+            margin-bottom: 18px;
+        }
+
+        .tagline {
+            font-size: 14px;
+            letter-spacing: 6px;
+            color: #c9b58a;
+            margin-bottom: 55px;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            min-width: 150px;
+            padding: 15px 28px;
+            border-radius: 3px;
+            border: 1px solid #c9b58a;
+            background: transparent;
+            color: #f4ead7;
+            font-size: 13px;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background: #c9b58a;
+            color: #050505;
+        }
+
+        .glow {
+            position: fixed;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            background: #c9b58a;
+            opacity: 0.035;
+            filter: blur(120px);
+            pointer-events: none;
+        }
+
+        @media (max-width: 600px) {
+            .logo {
+                font-size: 48px;
+                letter-spacing: 8px;
+            }
+
+            .tagline {
+                font-size: 11px;
+                letter-spacing: 4px;
+            }
+
+            .buttons {
+                flex-direction: column;
+            }
+
+            button {
+                width: 220px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="glow"></div>
+
+    <main class="container">
+        <div class="logo">MOON</div>
+
+        <div class="tagline">
+            FIND YOUR NIGHT.
+        </div>
+
+        <div class="buttons">
+            <button>ENTRAR</button>
+            <button>CRIAR CONTA</button>
+        </div>
+    </main>
+
+</body>
+</html>
