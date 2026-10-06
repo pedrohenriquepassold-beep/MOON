@@ -180,6 +180,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [chatTarget, setChatTarget] = useState(null);
   const [chatConversation, setChatConversation] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [chatUnreadDividerMessageId, setChatUnreadDividerMessageId] = useState(null);
   const [chatText, setChatText] = useState("");
   const [chatReplyToMessage, setChatReplyToMessage] = useState(null);
   const [chatTyping, setChatTyping] = useState(false);
@@ -187,7 +188,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const chatChannelReadyRef = useRef(false);
   const chatRealtimeChannelRef = useRef(null);
   const chatMessagesContainerRef = useRef(null);
-const chatMessagesBottomRef = useRef(null);
+  const chatMessagesBottomRef = useRef(null);
   const chatMediaInputRef = useRef(null);
   const chatGalleryInputRef = useRef(null);
   const chatVideoInputRef = useRef(null);
@@ -265,6 +266,8 @@ const chatMessagesBottomRef = useRef(null);
   });
   const [eventPublishStatus, setEventPublishStatus] = useState("");
   const [eventProLoading, setEventProLoading] = useState(false);
+  const [eventPaymentOrderId, setEventPaymentOrderId] = useState(null);
+  const [eventPaymentReturned, setEventPaymentReturned] = useState(false);
 
   const [adminEventForm, setAdminEventForm] = useState({
     title: "",
@@ -279,21 +282,32 @@ const chatMessagesBottomRef = useRef(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const eventPayment = params.get("event_payment");
-    const eventProPayment = params.get("event_pro_payment");
+    const eventOrderId = params.get("event_order_id");
 
-    if (eventPayment || eventProPayment) {
+    if (eventPayment || eventOrderId) {
+      const savedOrderId = eventOrderId || window.localStorage.getItem("moon_event_pending_order_id");
+
       setScreen("eventPublish");
       setEventPublishOpen(true);
-      setEventPublishPlan(null);
-      setEventPublishStatus(
-        eventPayment === "success"
-          ? "Pagamento recebido. Seu evento ficará aguardando aprovação da equipe MOON."
-          : eventPayment === "pending"
-            ? "Pagamento pendente. Assim que o Mercado Pago confirmar, o evento seguirá para aprovação."
-            : eventPayment === "failure"
-              ? "O pagamento não foi concluído. Você pode tentar novamente."
-              : "Retorno do pagamento recebido. Aguarde a confirmação do Mercado Pago."
-      );
+      setEventPaymentReturned(true);
+      setEventPaymentOrderId(savedOrderId || null);
+
+      if (eventPayment === "success") {
+        setEventPublishStatus("Pagamento recebido. Agora envie os dados do seu evento para análise da equipe MOON.");
+      } else if (eventPayment === "pending") {
+        setEventPublishStatus("Pagamento em processamento. Você já pode enviar os dados do evento. A equipe MOON fará a conferência antes da publicação.");
+      } else if (eventPayment === "failure") {
+        setEventPublishStatus("O pagamento não foi concluído. Escolha novamente uma opção para tentar.");
+        setEventPaymentReturned(false);
+      } else if (savedOrderId) {
+        setEventPublishStatus("Compra localizada. Agora envie os dados do seu evento para análise.");
+      }
+
+      try {
+        if (savedOrderId) {
+          window.localStorage.setItem("moon_event_pending_order_id", savedOrderId);
+        }
+      } catch {}
 
       window.history.replaceState({}, document.title, window.location.pathname);
       loadEventPlans();
@@ -1660,49 +1674,65 @@ const chatMessagesBottomRef = useRef(null);
     setScreen("events");
   }
 
-  async function startEventProCheckout() {
-    const plan = eventPlans.find((item) => item.slug === "moon-eventos-pro");
+  async function startEventCheckout(plan) {
     if (!plan) {
-      setEventPublishStatus("Plano MOON EVENTOS PRO não encontrado.");
+      setEventPublishStatus("Escolha uma opção para continuar.");
       return;
     }
 
-    setEventProLoading(true);
-    setEventPublishStatus("");
+    if (plan.slug === "moon-eventos-pro") {
+      setEventPublishStatus("Esta assinatura não está mais disponível. Escolha uma divulgação avulsa ou o pacote de 8 divulgações.");
+      return;
+    }
+
+    setEventPublishLoading(true);
+    setEventPublishStatus("Preparando seu pagamento...");
 
     try {
-      const { data, error } = await supabase.functions.invoke("create-mp-event-pro", {
-        body: {},
+      const { data: orderData, error: orderError } = await supabase.rpc("create_event_purchase", {
+        p_plan_id: plan.id,
       });
 
-      if (error) throw error;
+      if (orderError) throw orderError;
 
-      if (data?.status === "active") {
-        setEventPublishStatus("Seu MOON EVENTOS PRO já está ativo.");
-        setEventPublishPlan(plan);
-        return;
+      const order = Array.isArray(orderData) ? orderData[0] : orderData;
+      if (!order?.id) {
+        throw new Error("Não foi possível criar a compra do evento.");
       }
 
-      const checkoutUrl = data?.checkout_url || data?.init_point;
-      if (!checkoutUrl) throw new Error("O Mercado Pago não retornou o checkout.");
+      setEventPaymentOrderId(order.id);
+      setEventPublishPlan(plan);
+
+      try {
+        window.localStorage.setItem("moon_event_pending_order_id", order.id);
+        window.localStorage.setItem("moon_event_pending_plan_slug", plan.slug);
+      } catch {}
+
+      setEventPublishStatus("Abrindo pagamento...");
+
+      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke("create-mp-event", {
+        body: { event_order_id: order.id },
+      });
+
+      if (checkoutError) throw checkoutError;
+
+      const checkoutUrl = checkoutData?.checkout_url || checkoutData?.init_point;
+      if (!checkoutUrl) {
+        throw new Error("O Mercado Pago não retornou o checkout.");
+      }
 
       window.location.href = checkoutUrl;
     } catch (error) {
-      console.error("ERRO AO ABRIR MOON EVENTOS PRO:", error);
-      setEventPublishStatus(error?.message || "Não foi possível abrir o checkout do MOON EVENTOS PRO.");
+      console.error("ERRO AO ABRIR PAGAMENTO DO EVENTO:", error);
+      setEventPublishStatus(error?.message || "Não foi possível iniciar o pagamento.");
     } finally {
-      setEventProLoading(false);
+      setEventPublishLoading(false);
     }
   }
 
   async function submitUserEvent() {
-    if (!eventPublishPlan) {
-      setEventPublishStatus("Escolha um plano para continuar.");
-      return;
-    }
-
-    if (eventPublishPlan.slug === "moon-eventos-pro") {
-      await startEventProCheckout();
+    if (!eventPaymentReturned || !eventPaymentOrderId) {
+      setEventPublishStatus("Primeiro escolha uma divulgação e conclua o pagamento.");
       return;
     }
 
@@ -1742,11 +1772,12 @@ const chatMessagesBottomRef = useRef(null);
     }
 
     setEventPublishLoading(true);
-    setEventPublishStatus("Criando seu evento...");
+    setEventPublishStatus("Enviando seu evento para análise...");
 
     try {
-      const { data: eventId, error: createError } = await supabase.rpc("create_user_event", {
-        p_plan_id: eventPublishPlan.id,
+      // A criação do evento será concluída pela RPC do novo fluxo de compras.
+      const { data: eventId, error: createError } = await supabase.rpc("create_event_from_purchase", {
+        p_event_order_id: eventPaymentOrderId,
         p_title: title,
         p_description: description || null,
         p_location: location || null,
@@ -1758,7 +1789,7 @@ const chatMessagesBottomRef = useRef(null);
       if (createError) throw createError;
 
       const eventIdValue = Array.isArray(eventId) ? eventId[0] : eventId;
-      if (!eventIdValue) throw new Error("Não foi possível identificar o evento criado.");
+      if (!eventIdValue) throw new Error("Não foi possível criar o evento para análise.");
 
       if (eventPublishImageFile) {
         const extension = eventPublishImageFile.name.split(".").pop()?.toLowerCase() || "jpg";
@@ -1787,36 +1818,16 @@ const chatMessagesBottomRef = useRef(null);
         if (imageError) throw imageError;
       }
 
-      const { data: orderRow, error: orderError } = await supabase
-        .from("event_orders")
-        .select("id")
-        .eq("event_id", eventIdValue)
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      try {
+        window.localStorage.removeItem("moon_event_pending_order_id");
+        window.localStorage.removeItem("moon_event_pending_plan_slug");
+      } catch {}
 
-      if (orderError) throw orderError;
-      if (!orderRow?.id) throw new Error("Não foi possível localizar a cobrança do evento.");
-
-      setEventPublishStatus("Abrindo pagamento...");
-
-      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke("create-mp-event", {
-        body: { event_order_id: orderRow.id },
-      });
-
-      if (checkoutError) {
-        throw checkoutError;
-      }
-
-      const checkoutUrl = checkoutData?.checkout_url || checkoutData?.init_point;
-      if (!checkoutUrl) throw new Error("O Mercado Pago não retornou o checkout.");
-
-      window.location.href = checkoutUrl;
+      setEventPublishStatus("EVENTO EM ANÁLISE. A equipe MOON irá conferir o pagamento e os dados enviados. A publicação ocorrerá em até 24 horas.");
+      setEventPublishLoading(false);
     } catch (error) {
-      console.error("ERRO AO PUBLICAR EVENTO:", error);
-      setEventPublishStatus(error?.message || "Não foi possível iniciar a publicação do evento.");
-    } finally {
+      console.error("ERRO AO ENVIAR EVENTO PARA ANÁLISE:", error);
+      setEventPublishStatus(error?.message || "Não foi possível enviar o evento para análise.");
       setEventPublishLoading(false);
     }
   }
@@ -4072,11 +4083,9 @@ const chatMessagesBottomRef = useRef(null);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
+          const userId = currentUserId;
 
-          if (!user) {
+          if (!userId) {
             throw new Error("Usuário não encontrado.");
           }
 
@@ -4092,7 +4101,7 @@ const chatMessagesBottomRef = useRef(null);
               last_active_at: activeAt,
               updated_at: activeAt,
             })
-            .eq("id", user.id);
+            .eq("id", userId);
 
           if (error) {
             throw error;
@@ -5098,6 +5107,25 @@ const chatMessagesBottomRef = useRef(null);
 
               return [...currentMessages, hydratedMessage];
             });
+
+            setConversations((currentConversations) =>
+              currentConversations.map((conversation) =>
+                conversation.id === conversationId
+                  ? {
+                      ...conversation,
+                      lastMessage: {
+                        content: hydratedMessage.content,
+                        created_at: hydratedMessage.created_at,
+                        sender_id: hydratedMessage.sender_id,
+                      },
+                      unreadCount:
+                        hydratedMessage.sender_id === currentUserId
+                          ? conversation.unreadCount || 0
+                          : (conversation.unreadCount || 0) + 1,
+                    }
+                  : conversation
+              )
+            );
           });
 
           if (newMessage.sender_id !== currentUserId) {
@@ -5266,9 +5294,58 @@ const chatMessagesBottomRef = useRef(null);
     }
 
     const hydratedMessages = await hydrateChatMessages(data || []);
+
+    const firstUnreadMessage = (hydratedMessages || []).find(
+      (message) =>
+        message.sender_id !== currentUserId &&
+        !message.read_at
+    );
+
+    setChatUnreadDividerMessageId(firstUnreadMessage?.id || null);
     setChatMessages(hydratedMessages);
     await markConversationAsRead(conversationId);
   }
+
+  useEffect(() => {
+    if (
+      screen !== "chat" ||
+      !chatUnreadDividerMessageId ||
+      !chatMessages.length
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      const element = document.getElementById(
+        `moon-chat-message-${chatUnreadDividerMessageId}`
+      );
+
+      element?.scrollIntoView({
+        behavior: "auto",
+        block: "start",
+      });
+    }, 50);
+
+    return () => window.clearTimeout(timeout);
+  }, [screen, chatMessages.length, chatUnreadDividerMessageId]);
+
+  useEffect(() => {
+    if (screen !== "chat" || !chatMessagesContainerRef.current) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      const container = chatMessagesContainerRef.current;
+      if (!container) return;
+
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: "auto",
+      });
+    }, 50);
+
+    return () => window.clearTimeout(timeout);
+  }, [screen, chatMessages.length]);
 
   function getConversationDistance(profile) {
     if (
@@ -5310,22 +5387,18 @@ const chatMessagesBottomRef = useRef(null);
     setConversationsLoading(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const userId = currentUserId;
 
-      if (!user) {
+      if (!userId) {
         throw new Error("Usuário não encontrado.");
       }
 
-      setCurrentUserId(user.id);
-
-      const blockedIds = await getBlockedUserIds(user.id);
+      const blockedIds = await getBlockedUserIds(userId);
 
       const { data, error } = await supabase
         .from("conversations")
         .select("*")
-        .or(`user_one_id.eq.${user.id},user_two_id.eq.${user.id}`)
+        .or(`user_one_id.eq.${userId},user_two_id.eq.${userId}`)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -5336,7 +5409,7 @@ const chatMessagesBottomRef = useRef(null);
         await Promise.all(
           (data || []).map(async (conversation) => {
             const otherUserId =
-              conversation.user_one_id === user.id
+              conversation.user_one_id === userId
                 ? conversation.user_two_id
                 : conversation.user_one_id;
 
@@ -5390,7 +5463,7 @@ const chatMessagesBottomRef = useRef(null);
               .from("messages")
               .select("id", { count: "exact", head: true })
               .eq("conversation_id", conversation.id)
-              .neq("sender_id", user.id)
+              .neq("sender_id", userId)
               .is("read_at", null);
 
             return {
@@ -5829,11 +5902,11 @@ const chatMessagesBottomRef = useRef(null);
     setChatLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não encontrado.");
+      const userId = currentUserId;
+      if (!userId) throw new Error("Usuário não encontrado.");
 
-      const firstUserId = user.id < profile.id ? user.id : profile.id;
-      const secondUserId = user.id < profile.id ? profile.id : user.id;
+      const firstUserId = userId < profile.id ? userId : profile.id;
+      const secondUserId = userId < profile.id ? profile.id : userId;
 
       let { data: conversation, error } = await supabase
         .from("conversations")
@@ -5843,7 +5916,7 @@ const chatMessagesBottomRef = useRef(null);
 
       if (error) throw error;
 
-      const relationshipBlocked = await isUserBlocked(profile.id, user.id);
+      const relationshipBlocked = await isUserBlocked(profile.id, userId);
 
       if (relationshipBlocked && !conversation) {
         setMessage("ESTA CONTA ESTÁ INDISPONÍVEL");
@@ -5875,12 +5948,13 @@ const chatMessagesBottomRef = useRef(null);
       setChatConnection(icebreakerConnection || null);
       setChatFollowUpSuggestion(null);
       setChatDeepSuggestion(null);
-      setCurrentUserId(user.id);
+      setCurrentUserId(userId);
       setChatOrigin(origin);
       setChatTarget(profile);
       setChatConversation(conversation);
       setChatBlocked(relationshipBlocked);
       setChatMessages([]);
+      setChatUnreadDividerMessageId(null);
       setChatRevealedPhotoIds([]);
       setDismissedInsistenceWarningMessageIds([]);
       setChatText("");
@@ -5892,6 +5966,37 @@ const chatMessagesBottomRef = useRef(null);
     } finally {
       setChatLoading(false);
     }
+  }
+
+  function handleTogglePinnedConversation(conversationId) {
+    if (!conversationId || !currentUserId) {
+      return;
+    }
+
+    setPinnedConversationIds((currentIds) => {
+      const isPinned = currentIds.includes(conversationId);
+      const nextIds = isPinned
+        ? currentIds.filter((id) => id !== conversationId)
+        : [conversationId, ...currentIds];
+
+      try {
+        window.localStorage.setItem(
+          `moon_pinned_conversations_${currentUserId}`,
+          JSON.stringify(nextIds)
+        );
+      } catch (error) {
+        console.error("ERRO AO SALVAR CONVERSA FIXADA:", error);
+      }
+
+      showToast({
+        title: isPinned ? "Conversa desafixada" : "Conversa fixada",
+        body: isPinned
+          ? "A conversa voltou para a ordem normal."
+          : "A conversa ficará no topo da lista.",
+      });
+
+      return nextIds;
+    });
   }
 
   async function handleDeleteConversation(conversationId) {
@@ -7466,7 +7571,14 @@ const filteredConversations = conversations
             return aDistance - bDistance;
           }
 
-          return 0;
+          const aTime = a.lastMessage?.created_at
+            ? new Date(a.lastMessage.created_at).getTime()
+            : new Date(a.created_at || 0).getTime();
+          const bTime = b.lastMessage?.created_at
+            ? new Date(b.lastMessage.created_at).getTime()
+            : new Date(b.created_at || 0).getTime();
+
+          return bTime - aTime;
         });
 
   useEffect(() => {
@@ -8233,6 +8345,162 @@ const filteredConversations = conversations
               CREATE ACCOUNT
             </button>
 
+          </div>
+
+          <div
+            style={{
+              width: "min(900px, calc(100% - 32px))",
+              margin: "70px auto 40px",
+              color: "#f4ead7",
+              textAlign: "left",
+            }}
+          >
+            <div
+              style={{
+                textAlign: "center",
+                marginBottom: "55px",
+              }}
+            >
+              <p
+                style={{
+                  color: "#c9b58a",
+                  fontSize: "10px",
+                  letterSpacing: "4px",
+                  marginBottom: "14px",
+                }}
+              >
+                SOBRE A MOON
+              </p>
+
+              <h2
+                style={{
+                  fontSize: "28px",
+                  fontWeight: 400,
+                  letterSpacing: "2px",
+                  margin: "0 0 18px",
+                }}
+              >
+                Uma nova forma de se conectar.
+              </h2>
+
+              <p
+                style={{
+                  maxWidth: "680px",
+                  margin: "0 auto",
+                  color: "#aaa39a",
+                  fontSize: "14px",
+                  lineHeight: 1.8,
+                }}
+              >
+                A MOON é uma plataforma de conexões criada para aproximar pessoas,
+                descobrir interesses em comum, iniciar conversas e criar novas
+                possibilidades. Conheça pessoas, explore novos perfis e descubra
+                onde uma nova conexão pode levar.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "16px",
+              }}
+            >
+              {[
+                [
+                  "DESCUBRA",
+                  "Encontre novas pessoas e explore perfis próximos a você.",
+                ],
+                [
+                  "CONECTE",
+                  "Curta perfis, crie conexões e descubra interesses em comum.",
+                ],
+                [
+                  "CONVERSE",
+                  "Inicie conversas e compartilhe mensagens, fotos e mídias em tempo real.",
+                ],
+                [
+                  "EXPLORE",
+                  "Use filtros, mapa e diferentes recursos para encontrar novas possibilidades.",
+                ],
+              ].map(([title, text]) => (
+                <div
+                  key={title}
+                  style={{
+                    padding: "25px",
+                    border: "1px solid rgba(201,181,138,0.18)",
+                    borderRadius: "18px",
+                    background: "rgba(255,255,255,0.025)",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#c9b58a",
+                      fontSize: "10px",
+                      letterSpacing: "3px",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    {title}
+                  </div>
+
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "#aaa39a",
+                      fontSize: "12px",
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    {text}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div
+              style={{
+                marginTop: "55px",
+                padding: "32px",
+                border: "1px solid rgba(201,181,138,0.2)",
+                borderRadius: "20px",
+                textAlign: "center",
+                background: "rgba(201,181,138,0.035)",
+              }}
+            >
+              <p
+                style={{
+                  color: "#c9b58a",
+                  fontSize: "10px",
+                  letterSpacing: "4px",
+                  marginBottom: "14px",
+                }}
+              >
+                LANÇAMENTO
+              </p>
+
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: "30px",
+                  fontWeight: 400,
+                  letterSpacing: "5px",
+                }}
+              >
+                10.10.2026
+              </h2>
+
+              <p
+                style={{
+                  color: "#aaa39a",
+                  fontSize: "12px",
+                  marginTop: "15px",
+                  letterSpacing: "1px",
+                }}
+              >
+                FIND YOUR NIGHT.
+              </p>
+            </div>
           </div>
 
         </section>
@@ -11800,37 +12068,40 @@ const filteredConversations = conversations
 
           <div style={{ marginBottom: "25px" }}>
             <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "2px" }}>MOON EVENTOS</div>
-            <h1 style={{ color: "#f4ead7", fontSize: "28px", fontWeight: 500, margin: "8px 0 6px" }}>Publique seu evento.</h1>
-            <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: 0 }}>Escolha como você quer divulgar. Todo evento pago passa por aprovação antes de ficar público.</p>
+            <h1 style={{ color: "#f4ead7", fontSize: "28px", fontWeight: 500, margin: "8px 0 6px" }}>{eventPaymentReturned ? "Envie seu evento." : "Divulgue seu evento."}</h1>
+            <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: 0 }}>{eventPaymentReturned ? "Pagamento recebido. Agora envie os dados para análise da equipe MOON." : "Escolha uma opção de divulgação. Após o pagamento, você enviará os dados do evento."}</p>
           </div>
 
-          <div style={{ display: "grid", gap: "10px", marginBottom: "24px" }}>
-            {eventPlans.map((plan) => {
-              const selected = eventPublishPlan?.id === plan.id;
-              const isPro = plan.slug === "moon-eventos-pro";
-              return (
-                <button key={plan.id} type="button" onClick={() => { setEventPublishPlan(plan); setEventPublishStatus(""); }} style={{ textAlign: "left", padding: "18px", borderRadius: "14px", border: selected ? "1px solid #c9b58a" : "1px solid #292929", background: selected ? "linear-gradient(145deg, rgba(201,181,138,.12), rgba(11,11,11,.96))" : "#0b0b0b", color: "#f4ead7", cursor: "pointer" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
-                    <div>
-                      <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.6px", fontWeight: 700 }}>{isPro ? "ASSINATURA" : "AVULSO"}</div>
-                      <div style={{ fontSize: "17px", marginTop: "7px" }}>{plan.name}</div>
-                      <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6", marginTop: "7px" }}>{isPro ? "Até 8 eventos por mês, com assinatura mensal." : "1 evento, pagamento único."}</div>
-                    </div>
-                    <div style={{ color: "#f4ead7", fontSize: "17px", whiteSpace: "nowrap" }}>R$ {Number(plan.price).toFixed(2).replace(".", ",")}<span style={{ color: "#77736b", fontSize: "9px" }}>{isPro ? " / mês" : ""}</span></div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          {!eventPaymentReturned ? (
+            <>
+              <div style={{ display: "grid", gap: "10px", marginBottom: "16px" }}>
+                {eventPlans.filter((plan) => plan.slug !== "moon-eventos-pro").map((plan) => {
+                  const selected = eventPublishPlan?.id === plan.id;
+                  const isPackage = plan.slug === "pacote-8-divulgacoes";
+                  return (
+                    <button key={plan.id} type="button" onClick={() => { setEventPublishPlan(plan); setEventPublishStatus(""); }} style={{ textAlign: "left", padding: "18px", borderRadius: "14px", border: selected ? "1px solid #c9b58a" : "1px solid #292929", background: selected ? "linear-gradient(145deg, rgba(201,181,138,.12), rgba(11,11,11,.96))" : "#0b0b0b", color: "#f4ead7", cursor: "pointer" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.6px", fontWeight: 700 }}>{isPackage ? "PACOTE" : "AVULSO"}</div>
+                          <div style={{ fontSize: "17px", marginTop: "7px" }}>{isPackage ? "PACOTE MOON EVENTOS" : "DIVULGAÇÃO AVULSA"}</div>
+                          <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6", marginTop: "7px" }}>{isPackage ? "8 divulgações · R$25 por evento · economize R$39,20" : "1 divulgação de evento · pagamento único"}</div>
+                        </div>
+                        <div style={{ color: "#f4ead7", fontSize: "17px", whiteSpace: "nowrap" }}>R$ {Number(plan.price).toFixed(2).replace(".", ",")}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
 
-          {eventPublishPlan?.slug === "moon-eventos-pro" ? (
-            <div style={{ border: "1px solid #292929", borderRadius: "14px", padding: "20px", background: "#0b0b0b" }}>
-              <div style={{ color: "#f4ead7", fontSize: "16px" }}>MOON EVENTOS PRO</div>
-              <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7" }}>Assine por R$ 199,90/mês. Depois que o pagamento for confirmado, você poderá criar até 8 eventos dentro de cada período da assinatura.</p>
-              <button type="button" onClick={startEventProCheckout} disabled={eventProLoading} style={{ width: "100%", height: "48px", marginTop: "8px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventProLoading ? "default" : "pointer", opacity: eventProLoading ? .6 : 1 }}>{eventProLoading ? "ABRINDO CHECKOUT..." : "ASSINAR MOON EVENTOS PRO"}</button>
-            </div>
-          ) : eventPublishPlan ? (
+              {eventPublishPlan && (
+                <button type="button" onClick={() => startEventCheckout(eventPublishPlan)} disabled={eventPublishLoading} style={{ width: "100%", height: "50px", marginTop: "8px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventPublishLoading ? "default" : "pointer", opacity: eventPublishLoading ? .6 : 1 }}>{eventPublishLoading ? "ABRINDO PAGAMENTO..." : `PAGAR E CONTINUAR · R$ ${Number(eventPublishPlan.price).toFixed(2).replace(".", ",")}`}</button>
+              )}
+
+              {eventPublishStatus && <div style={{ marginTop: "14px", padding: "12px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{eventPublishStatus}</div>}
+            </>
+          ) : (
             <form onSubmit={(event) => { event.preventDefault(); submitUserEvent(); }} style={{ border: "1px solid #292929", borderRadius: "14px", padding: "20px", background: "#0b0b0b" }}>
+              <div style={{ padding: "12px", marginBottom: "16px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.6" }}>PAGAMENTO RECEBIDO · Agora envie os dados. Seu evento ficará como <strong>EVENTO EM ANÁLISE</strong> até a conferência da equipe MOON.</div>
               {[
                 ["title", "NOME DO EVENTO", "Ex.: Sunset MOON", "text"],
                 ["location", "LOCAL", "Ex.: Centro, Florianópolis", "text"],
@@ -11857,14 +12128,10 @@ const filteredConversations = conversations
 
               {eventPublishStatus && <div style={{ marginTop: "15px", padding: "12px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{eventPublishStatus}</div>}
 
-              <button type="submit" disabled={eventPublishLoading} style={{ width: "100%", height: "50px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventPublishLoading ? "default" : "pointer", opacity: eventPublishLoading ? .6 : 1 }}>{eventPublishLoading ? "PROCESSANDO..." : "CONTINUAR PARA PAGAMENTO · R$ 29,90"}</button>
-              <div style={{ color: "#55514a", fontSize: "9px", lineHeight: "1.6", marginTop: "10px", textAlign: "center" }}>Pagamento aprovado não publica o evento automaticamente. Ele seguirá para análise da equipe MOON.</div>
+              <button type="submit" disabled={eventPublishLoading} style={{ width: "100%", height: "50px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventPublishLoading ? "default" : "pointer", opacity: eventPublishLoading ? .6 : 1 }}>{eventPublishLoading ? "ENVIANDO..." : "ENVIAR PARA ANÁLISE"}</button>
+              <div style={{ color: "#55514a", fontSize: "9px", lineHeight: "1.6", marginTop: "10px", textAlign: "center" }}>A equipe MOON confere o pagamento e os dados enviados. A publicação ocorre em até 24 horas após a análise.</div>
             </form>
-          ) : (
-            <div style={{ padding: "28px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b", color: "#77736b", fontSize: "10px" }}>CARREGANDO PLANOS...</div>
           )}
-
-          {eventPublishStatus && eventPublishPlan?.slug === "moon-eventos-pro" && <div style={{ marginTop: "14px", padding: "12px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{eventPublishStatus}</div>}
         </section>
       )}
 
@@ -13114,6 +13381,7 @@ const filteredConversations = conversations
                 setChatTarget(null);
                 setChatConversation(null);
                 setChatMessages([]);
+                setChatUnreadDividerMessageId(null);
                 setChatText("");
                 setChatReplyToMessage(null);
                 setChatIcebreaker(null);
@@ -13404,7 +13672,26 @@ const filteredConversations = conversations
               </div>
             ) : (
               chatMessages.map((chatMessage) => (
-                <div
+                <React.Fragment key={chatMessage.id}>
+                  {chatUnreadDividerMessageId === chatMessage.id && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        margin: "8px 0 2px",
+                        color: "#c9b58a",
+                        fontSize: "8px",
+                        letterSpacing: "1.5px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      <div style={{ flex: 1, height: "1px", background: "rgba(201,181,138,0.18)" }} />
+                      <span>NOVAS MENSAGENS</span>
+                      <div style={{ flex: 1, height: "1px", background: "rgba(201,181,138,0.18)" }} />
+                    </div>
+                  )}
+                  <div
                   key={chatMessage.id}
                   id={`moon-chat-message-${chatMessage.id}`}
                   onClick={() => selectChatMessageForReply(chatMessage)}
@@ -13881,7 +14168,8 @@ const filteredConversations = conversations
                       )}
                     </div>
                   )}
-                </div>
+                  </div>
+                </React.Fragment>
               ))
             )}
             <div
