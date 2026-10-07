@@ -331,7 +331,6 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [boostActivatingId, setBoostActivatingId] = useState(null);
   const [userActiveBoost, setUserActiveBoost] = useState(null);
   const [boostSecondsLeft, setBoostSecondsLeft] = useState(0);
-  const [premiumLoading, setPremiumLoading] = useState(false);
 
   const [advertisements, setAdvertisements] = useState([]);
   const [advertisementsLoading, setAdvertisementsLoading] = useState(false);
@@ -978,40 +977,6 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       supabase.removeChannel(channel);
     };
   }, [currentUserId, notificationSoundEnabled]);
-
-  async function handlePremiumSubscribe() {
-    if (!currentUserId) {
-      setMessage("Faça login para assinar o MOON PREMIUM.");
-      setScreen("login");
-      return;
-    }
-
-    setPremiumLoading(true);
-    setMessage("");
-
-    try {
-      const { data, error } = await supabase.functions.invoke("create-mp-premium", {
-        body: {},
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      const checkoutUrl = data?.init_point || data?.checkout_url || data?.url;
-
-      if (!checkoutUrl) {
-        throw new Error("Não foi possível gerar o checkout do MOON PREMIUM.");
-      }
-
-      window.location.href = checkoutUrl;
-    } catch (error) {
-      console.error("ERRO AO ABRIR MOON PREMIUM:", error);
-      setMessage(error?.message || "Não foi possível iniciar a assinatura agora.");
-    } finally {
-      setPremiumLoading(false);
-    }
-  }
 
   async function checkAdminStatus() {
     try {
@@ -9795,7 +9760,7 @@ const filteredConversations = conversations
                                   </div>
                                 </div>
                                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: "135px" }}>
-                                  <button type="button" onClick={() => approveAdminEvent(event.id)} disabled={adminEventActionLoading || !paid} title={!paid ? "Aguarde o pagamento ser aprovado." : "Aprovar evento"} style={{ minHeight: "40px", borderRadius: "9px", border: "1px solid rgba(155,199,165,.35)", background: "rgba(155,199,165,.08)", color: "#9bc7a5", fontSize: "8px", fontWeight: 700, letterSpacing: ".1em", cursor: adminEventActionLoading || !paid ? "default" : "pointer", opacity: adminEventActionLoading || !paid ? .45 : 1 }}>✓ APROVAR</button>
+                                  <button type="button" onClick={() => approveAdminEvent(event.id)} disabled={adminEventActionLoading} title="Aprovar evento" style={{ minHeight: "40px", borderRadius: "9px", border: "1px solid rgba(155,199,165,.35)", background: "rgba(155,199,165,.08)", color: "#9bc7a5", fontSize: "8px", fontWeight: 700, letterSpacing: ".1em", cursor: adminEventActionLoading ? "default" : "pointer", opacity: adminEventActionLoading ? .45 : 1 }}>✓ APROVAR</button>
                                   <button type="button" onClick={() => rejectAdminEvent(event.id)} disabled={adminEventActionLoading} style={{ minHeight: "40px", borderRadius: "9px", border: "1px solid rgba(211,107,95,.25)", background: "transparent", color: "#d36b5f", fontSize: "8px", fontWeight: 700, letterSpacing: ".1em", cursor: adminEventActionLoading ? "default" : "pointer", opacity: adminEventActionLoading ? .5 : 1 }}>REJEITAR</button>
                                 </div>
                               </div>
@@ -12199,42 +12164,6 @@ const filteredConversations = conversations
                       >
                         MEUS BOOSTS
                       </button>
-
-                      <div
-                        style={{
-                          marginTop: "10px",
-                          padding: "18px",
-                          border: "1px solid rgba(201,181,138,.42)",
-                          borderRadius: "10px",
-                          background: "linear-gradient(145deg, rgba(201,181,138,.075), rgba(11,11,11,.92))",
-                        }}
-                      >
-                        <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "2px", fontWeight: "600" }}>MOON PREMIUM</div>
-                        <div style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "1px", marginTop: "8px" }}>Mais recursos. Mais possibilidades.</div>
-                        <div style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", marginTop: "8px" }}>4 Boosts por mês + Quem viu você por 30 dias, com renovação mensal.</div>
-                        <div style={{ color: "#f4ead7", fontSize: "15px", marginTop: "13px" }}>R$ 19,90 <span style={{ color: "#77736b", fontSize: "10px" }}>/ mês</span></div>
-                        <button
-                          type="button"
-                          onClick={handlePremiumSubscribe}
-                          disabled={premiumLoading}
-                          style={{
-                            marginTop: "14px",
-                            width: "100%",
-                            height: "46px",
-                            background: "#c9b58a",
-                            border: "1px solid #c9b58a",
-                            borderRadius: "10px",
-                            color: "#080706",
-                            fontSize: "10px",
-                            letterSpacing: "2px",
-                            fontWeight: "700",
-                            cursor: premiumLoading ? "default" : "pointer",
-                            opacity: premiumLoading ? .65 : 1,
-                          }}
-                        >
-                          {premiumLoading ? "ABRINDO CHECKOUT..." : "ASSINAR PREMIUM"}
-                        </button>
-                      </div>
 
                       <button
                         type="button"
@@ -16288,36 +16217,6 @@ const filteredConversations = conversations
 
           {!selectedProfile && (
             <>
-                        {/* MOON PREMIUM FIXO */}
-                        <button
-                          type="button"
-                          onClick={handlePremiumSubscribe}
-                          disabled={premiumLoading}
-                          aria-label="Assinar MOON Premium"
-                          style={{
-                            position: "fixed",
-                            left: "50%",
-                            bottom: "76px",
-                            transform: "translateX(-50%)",
-                            zIndex: 2001,
-                            width: "min(210px, calc(100vw - 44px))",
-                            height: "34px",
-                            padding: "0 16px",
-                            border: "1px solid rgba(201,181,138,0.58)",
-                            borderRadius: "10px",
-                            background: "linear-gradient(180deg, rgba(201,181,138,0.16), rgba(12,12,12,0.96))",
-                            color: "#e8d7b5",
-                            fontSize: "9px",
-                            fontWeight: 700,
-                            letterSpacing: "2px",
-                            cursor: premiumLoading ? "default" : "pointer",
-                            opacity: premiumLoading ? 0.65 : 1,
-                            backdropFilter: "blur(14px)",
-                            boxShadow: "0 10px 30px rgba(0,0,0,0.48), 0 0 24px rgba(201,181,138,0.06)",
-                          }}
-                        >
-                          {premiumLoading ? "ABRINDO..." : "✦ MOON PREMIUM"}
-                        </button>
 
                         {/* NAVEGAÇÃO INFERIOR */}
                         <div
