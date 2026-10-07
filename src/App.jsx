@@ -8313,537 +8313,128 @@ const filteredConversations = conversations
       )}
 
       {screen === "home" && (
-        <section className="home-screen">
-
-          <div className="moon-logo">
-            MOON
-          </div>
-
-          <p className="moon-tagline">
-            FIND YOUR NIGHT.
-          </p>
+        <section
+          className="home-screen"
+          style={{
+            minHeight: "100vh",
+            overflowY: "auto",
+            boxSizing: "border-box",
+            paddingBottom: "80px",
+          }}
+        >
+          <div className="moon-logo">MOON</div>
+          <p className="moon-tagline">FIND YOUR NIGHT.</p>
 
           <div className="home-buttons">
-
-            <button
-              onClick={() =>
-                setScreen(
-                  "login"
-                )
-              }
-            >
-              ENTER
-            </button>
-
-            <button
-              onClick={() =>
-                setScreen(
-                  "register"
-                )
-              }
-            >
-              CREATE ACCOUNT
-            </button>
-
+            <button onClick={() => setScreen("login")}>ENTER</button>
+            <button onClick={() => setScreen("register")}>CREATE ACCOUNT</button>
           </div>
 
-          <div
-            style={{
-              width: "min(900px, calc(100% - 32px))",
-              margin: "70px auto 40px",
-              color: "#f4ead7",
-              textAlign: "left",
-            }}
-          >
-            <div
-              style={{
-                textAlign: "center",
-                marginBottom: "55px",
-              }}
-            >
-              <p
-                style={{
-                  color: "#c9b58a",
-                  fontSize: "10px",
-                  letterSpacing: "4px",
-                  marginBottom: "14px",
-                }}
-              >
-                SOBRE A MOON
-              </p>
-
-              <h2
-                style={{
-                  fontSize: "28px",
-                  fontWeight: 400,
-                  letterSpacing: "2px",
-                  margin: "0 0 18px",
-                }}
-              >
-                Uma nova forma de se conectar.
-              </h2>
-
-              <p
-                style={{
-                  maxWidth: "680px",
-                  margin: "0 auto",
-                  color: "#aaa39a",
-                  fontSize: "14px",
-                  lineHeight: 1.8,
-                }}
-              >
-                A MOON é uma plataforma de conexões criada para aproximar pessoas,
-                descobrir interesses em comum, iniciar conversas e criar novas
-                possibilidades. Conheça pessoas, explore novos perfis e descubra
-                onde uma nova conexão pode levar.
-              </p>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: "16px",
-              }}
-            >
-              {[
-                [
-                  "DESCUBRA",
-                  "Encontre novas pessoas e explore perfis próximos a você.",
-                ],
-                [
-                  "CONECTE",
-                  "Curta perfis, crie conexões e descubra interesses em comum.",
-                ],
-                [
-                  "CONVERSE",
-                  "Inicie conversas e compartilhe mensagens, fotos e mídias em tempo real.",
-                ],
-                [
-                  "EXPLORE",
-                  "Use filtros, mapa e diferentes recursos para encontrar novas possibilidades.",
-                ],
-              ].map(([title, text]) => (
-                <div
-                  key={title}
-                  style={{
-                    padding: "25px",
-                    border: "1px solid rgba(201,181,138,0.18)",
-                    borderRadius: "18px",
-                    background: "rgba(255,255,255,0.025)",
-                  }}
-                >
-                  <div
-                    style={{
-                      color: "#c9b58a",
-                      fontSize: "10px",
-                      letterSpacing: "3px",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    {title}
-                  </div>
-
-                  <p
-                    style={{
-                      margin: 0,
-                      color: "#aaa39a",
-                      fontSize: "12px",
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    {text}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div
-              style={{
-                marginTop: "55px",
-                padding: "32px",
-                border: "1px solid rgba(201,181,138,0.2)",
-                borderRadius: "20px",
-                textAlign: "center",
-                background: "rgba(201,181,138,0.035)",
-              }}
-            >
-              <p
-                style={{
-                  color: "#c9b58a",
-                  fontSize: "10px",
-                  letterSpacing: "4px",
-                  marginBottom: "14px",
-                }}
-              >
-                LANÇAMENTO
-              </p>
-
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: "30px",
-                  fontWeight: 400,
-                  letterSpacing: "5px",
-                }}
-              >
-                10.10.2026
-              </h2>
-
-              <p
-                style={{
-                  color: "#aaa39a",
-                  fontSize: "12px",
-                  marginTop: "15px",
-                  letterSpacing: "1px",
-                }}
-              >
-                FIND YOUR NIGHT.
-              </p>
-            </div>
-
-            <div style={{ marginTop: "70px" }}>
-              <div
-                style={{
-                  textAlign: "center",
-                  marginBottom: "34px",
-                }}
-              >
-                <p
-                  style={{
-                    color: "#c9b58a",
-                    fontSize: "10px",
-                    letterSpacing: "4px",
-                    marginBottom: "12px",
-                  }}
-                >
-                  COMO FUNCIONA
-                </p>
-                <h2
-                  style={{
-                    margin: 0,
-                    color: "#f4ead7",
-                    fontSize: "24px",
-                    fontWeight: 400,
-                    letterSpacing: "1px",
-                  }}
-                >
-                  Feita para descobrir novas possibilidades.
-                </h2>
+          <div style={{ width: "min(920px, calc(100% - 32px))", margin: "75px auto 0", textAlign: "left" }}>
+            <section style={{ padding: "42px 0 20px", borderTop: "1px solid rgba(201,181,138,0.16)" }}>
+              <div style={{ textAlign: "center", maxWidth: "760px", margin: "0 auto" }}>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "3.5px", marginBottom: "15px" }}>SOBRE A MOON</div>
+                <h2 style={{ color: "#f4ead7", fontSize: "clamp(24px, 4vw, 34px)", fontWeight: 400, letterSpacing: "1.5px", lineHeight: 1.25, margin: "0 0 18px" }}>Uma nova forma de se conectar.</h2>
+                <p style={{ color: "#aaa59b", fontSize: "13px", lineHeight: 1.9, margin: 0 }}>A MOON é uma plataforma de relacionamento e conexões criada para aproximar pessoas. Um espaço para conhecer novos perfis, descobrir interesses em comum, iniciar conversas e explorar novas possibilidades.</p>
+                <p style={{ color: "#aaa59b", fontSize: "13px", lineHeight: 1.9, margin: "14px 0 0" }}>A plataforma nasceu em Florianópolis e foi pensada para pessoas gays, bissexuais, trans e queer que desejam conhecer novas pessoas com mais liberdade, controle e segurança.</p>
               </div>
+            </section>
 
-              <div
-                style={{
-                  display: "grid",
-                  gap: "12px",
-                }}
-              >
+            <section style={{ padding: "55px 0 20px" }}>
+              <div style={{ textAlign: "center", marginBottom: "28px" }}>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "3.5px", marginBottom: "12px" }}>COMO FUNCIONA</div>
+                <h2 style={{ color: "#f4ead7", fontSize: "25px", fontWeight: 400, letterSpacing: "1.5px", margin: 0 }}>Conheça. Conecte. Converse.</h2>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "12px" }}>
                 {[
-                  ["01", "CRIE SEU PERFIL", "Adicione suas informações, fotos e conte um pouco sobre você."],
-                  ["02", "DESCUBRA PESSOAS", "Explore perfis, use filtros e descubra pessoas na sua região."],
-                  ["03", "CONECTE-SE", "Curta perfis, crie conexões e encontre interesses em comum."],
-                  ["04", "CONVERSE", "Comece uma conversa e compartilhe mensagens, fotos e mídias em tempo real."],
+                  ["01", "CRIE SEU PERFIL", "Adicione suas fotos, informações e conte um pouco sobre você."],
+                  ["02", "DESCUBRA PESSOAS", "Explore perfis, use filtros e descubra pessoas próximas."],
+                  ["03", "CONECTE-SE", "Curta perfis, encontre interesses em comum e crie novas conexões."],
+                  ["04", "CONVERSE", "Comece uma conversa e continue a conexão em tempo real."],
                 ].map(([number, title, text]) => (
-                  <div
-                    key={number}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "48px 1fr",
-                      gap: "18px",
-                      alignItems: "start",
-                      padding: "22px",
-                      border: "1px solid rgba(255,255,255,0.07)",
-                      borderRadius: "16px",
-                      background: "rgba(255,255,255,0.018)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: "#c9b58a",
-                        fontSize: "11px",
-                        letterSpacing: "2px",
-                        paddingTop: "2px",
-                      }}
-                    >
-                      {number}
-                    </div>
-                    <div>
-                      <div
-                        style={{
-                          color: "#f4ead7",
-                          fontSize: "11px",
-                          letterSpacing: "2px",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        {title}
-                      </div>
-                      <p
-                        style={{
-                          margin: 0,
-                          color: "#8f8a82",
-                          fontSize: "12px",
-                          lineHeight: 1.7,
-                        }}
-                      >
-                        {text}
-                      </p>
-                    </div>
-                  </div>
+                  <article key={number} style={{ minHeight: "170px", boxSizing: "border-box", padding: "24px", border: "1px solid rgba(201,181,138,0.16)", background: "rgba(255,255,255,0.018)" }}>
+                    <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "2px", marginBottom: "20px" }}>{number}</div>
+                    <h3 style={{ color: "#f4ead7", fontSize: "11px", fontWeight: 500, letterSpacing: "1.5px", margin: "0 0 12px" }}>{title}</h3>
+                    <p style={{ color: "#8f8a82", fontSize: "11px", lineHeight: 1.75, margin: 0 }}>{text}</p>
+                  </article>
                 ))}
               </div>
-            </div>
+            </section>
 
-            <div style={{ marginTop: "70px" }}>
-              <div
-                style={{
-                  textAlign: "center",
-                  marginBottom: "30px",
-                }}
-              >
-                <p
-                  style={{
-                    color: "#c9b58a",
-                    fontSize: "10px",
-                    letterSpacing: "4px",
-                    marginBottom: "12px",
-                  }}
-                >
-                  RECURSOS
-                </p>
-                <h2
-                  style={{
-                    margin: 0,
-                    color: "#f4ead7",
-                    fontSize: "24px",
-                    fontWeight: 400,
-                  }}
-                >
-                  Recursos para uma experiência mais completa.
-                </h2>
+            <section style={{ padding: "55px 0 20px" }}>
+              <div style={{ textAlign: "center", marginBottom: "28px" }}>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "3.5px", marginBottom: "12px" }}>RECURSOS</div>
+                <h2 style={{ color: "#f4ead7", fontSize: "25px", fontWeight: 400, letterSpacing: "1.5px", margin: 0 }}>Feito para você explorar.</h2>
               </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                  gap: "10px",
-                }}
-              >
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "10px" }}>
                 {[
-                  "Filtros ilimitados",
-                  "Mapa de usuários até 50 km",
-                  "Status ativo em tempo real",
-                  "Confirmação de leitura",
-                  "Indicador de digitação",
-                  "Ocultar perfil",
-                  "Curtidas e conexões",
-                  "Conversas em tempo real",
-                  "Bloquear e denunciar",
-                  "Verificação de vivacidade",
+                  "Filtros ilimitados", "Status ativo em tempo real", "Confirmação de leitura", "Indicador de digitação", "Mapa de usuários até 50 km", "Ocultar perfil", "Curtidas e conexões", "Conversas em tempo real", "Verificação de vivacidade", "Bloquear e denunciar",
                 ].map((item) => (
-                  <div
-                    key={item}
-                    style={{
-                      padding: "17px 18px",
-                      border: "1px solid rgba(201,181,138,0.13)",
-                      borderRadius: "12px",
-                      color: "#aaa39a",
-                      fontSize: "11px",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    <span style={{ color: "#c9b58a", marginRight: "8px" }}>•</span>
-                    {item}
+                  <div key={item} style={{ padding: "16px 18px", border: "1px solid rgba(201,181,138,0.12)", color: "#b4aea4", fontSize: "10px", lineHeight: 1.5 }}>
+                    <span style={{ color: "#c9b58a", marginRight: "9px" }}>+</span>{item}
                   </div>
                 ))}
               </div>
-            </div>
+            </section>
 
-            <div
-              style={{
-                marginTop: "70px",
-                padding: "34px 28px",
-                border: "1px solid rgba(201,181,138,0.15)",
-                borderRadius: "20px",
-                background: "rgba(255,255,255,0.018)",
-              }}
-            >
-              <p
-                style={{
-                  color: "#c9b58a",
-                  fontSize: "10px",
-                  letterSpacing: "4px",
-                  marginBottom: "14px",
-                }}
-              >
-                SEGURANÇA
-              </p>
-
-              <h2
-                style={{
-                  margin: "0 0 15px",
-                  color: "#f4ead7",
-                  fontSize: "24px",
-                  fontWeight: 400,
-                }}
-              >
-                Sua experiência. Seu controle.
-              </h2>
-
-              <p
-                style={{
-                  margin: 0,
-                  color: "#969087",
-                  fontSize: "12px",
-                  lineHeight: 1.8,
-                }}
-              >
-                A MOON é destinada exclusivamente a maiores de 18 anos.
-                A plataforma conta com recursos para ajudar você a controlar
-                sua experiência, incluindo ocultar perfis, bloquear usuários,
-                denunciar conteúdos e realizar verificação de vivacidade.
-              </p>
-            </div>
-
-            <div style={{ marginTop: "70px" }}>
-              <div
-                style={{
-                  textAlign: "center",
-                  marginBottom: "30px",
-                }}
-              >
-                <p
-                  style={{
-                    color: "#c9b58a",
-                    fontSize: "10px",
-                    letterSpacing: "4px",
-                    marginBottom: "12px",
-                  }}
-                >
-                  PERGUNTAS FREQUENTES
-                </p>
-                <h2
-                  style={{
-                    margin: 0,
-                    color: "#f4ead7",
-                    fontSize: "24px",
-                    fontWeight: 400,
-                  }}
-                >
-                  Perguntas frequentes
-                </h2>
+            <section style={{ padding: "55px 0 20px" }}>
+              <div style={{ border: "1px solid rgba(201,181,138,0.16)", background: "rgba(201,181,138,0.025)", padding: "34px clamp(22px, 5vw, 48px)" }}>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "3.5px", marginBottom: "14px" }}>SEGURANÇA</div>
+                <h2 style={{ color: "#f4ead7", fontSize: "25px", fontWeight: 400, letterSpacing: "1.2px", margin: "0 0 16px" }}>Sua segurança vem primeiro.</h2>
+                <p style={{ color: "#9e988f", fontSize: "12px", lineHeight: 1.8, margin: "0 0 14px" }}>A MOON oferece recursos para que você tenha mais controle sobre sua experiência, incluindo ocultar perfis, bloquear usuários e denunciar comportamentos inadequados.</p>
+                <p style={{ color: "#9e988f", fontSize: "12px", lineHeight: 1.8, margin: 0 }}>A plataforma é destinada exclusivamente a maiores de 18 anos e conta com verificação de vivacidade para ajudar a confirmar a presença de uma pessoa real por trás do perfil.</p>
               </div>
+            </section>
 
-              <div style={{ display: "grid", gap: "10px" }}>
+            <section style={{ padding: "55px 0 20px" }}>
+              <div style={{ textAlign: "center", marginBottom: "28px" }}>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "3.5px", marginBottom: "12px" }}>FAQ</div>
+                <h2 style={{ color: "#f4ead7", fontSize: "25px", fontWeight: 400, letterSpacing: "1.5px", margin: 0 }}>Perguntas frequentes.</h2>
+              </div>
+              <div style={{ display: "grid", gap: "8px" }}>
                 {[
-                  ["A MOON É GRATUITA?", "Sim. A MOON oferece diversos recursos gratuitamente. Alguns recursos adicionais podem fazer parte da experiência Premium."],
-                  ["PRECISO DAR MATCH PARA CONVERSAR?", "Não. Na MOON, você pode conversar sem precisar esperar um Match."],
+                  ["A MOON É GRATUITA?", "A MOON possui recursos gratuitos para criar perfil, descobrir pessoas, curtir perfis e conversar. Alguns recursos adicionais podem ser disponibilizados como recursos pagos."],
                   ["A MOON É 18+?", "Sim. A MOON é destinada exclusivamente a pessoas maiores de 18 anos."],
+                  ["PRECISO DAR MATCH PARA CONVERSAR?", "Não. Na MOON, você pode iniciar uma conversa sem precisar esperar um Match."],
                   ["COMO FUNCIONA A VERIFICAÇÃO?", "A verificação de vivacidade utiliza a câmera para ajudar a confirmar que existe uma pessoa real por trás do perfil."],
-                  ["POSSO BLOQUEAR OU DENUNCIAR ALGUÉM?", "Sim. A plataforma oferece recursos para bloquear perfis e realizar denúncias."],
-                  ["POSSO OCULTAR MEU PERFIL?", "Sim. Você pode utilizar o recurso de ocultar perfil para ter mais controle sobre sua presença na plataforma."],
+                  ["POSSO OCULTAR OU BLOQUEAR UM PERFIL?", "Sim. A MOON oferece recursos para ocultar perfis, bloquear usuários e realizar denúncias."],
+                  ["A MOON É DE FLORIANÓPOLIS?", "A MOON nasceu em Florianópolis, mas a plataforma foi criada para conectar pessoas independentemente da cidade."],
                 ].map(([question, answer]) => (
-                  <div
-                    key={question}
-                    style={{
-                      padding: "20px",
-                      border: "1px solid rgba(255,255,255,0.07)",
-                      borderRadius: "14px",
-                      background: "rgba(255,255,255,0.015)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: "#f4ead7",
-                        fontSize: "10px",
-                        letterSpacing: "1.7px",
-                        marginBottom: "9px",
-                      }}
-                    >
-                      {question}
-                    </div>
-                    <p
-                      style={{
-                        margin: 0,
-                        color: "#8f8a82",
-                        fontSize: "11px",
-                        lineHeight: 1.7,
-                      }}
-                    >
-                      {answer}
-                    </p>
+                  <div key={question} style={{ padding: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.012)" }}>
+                    <div style={{ color: "#f4ead7", fontSize: "10px", fontWeight: 500, letterSpacing: "1.2px", marginBottom: "9px" }}>{question}</div>
+                    <p style={{ color: "#89847c", fontSize: "11px", lineHeight: 1.75, margin: 0 }}>{answer}</p>
                   </div>
                 ))}
               </div>
-            </div>
+            </section>
 
-            <div
-              style={{
-                marginTop: "70px",
-                padding: "30px",
-                textAlign: "center",
-                borderTop: "1px solid rgba(255,255,255,0.07)",
-              }}
-            >
-              <p
-                style={{
-                  margin: "0 0 18px",
-                  color: "#77736b",
-                  fontSize: "10px",
-                  letterSpacing: "1px",
-                  lineHeight: 1.7,
-                }}
-              >
-                Consulte os documentos e informações legais da MOON.
-              </p>
+            <section style={{ padding: "55px 0 20px" }}>
+              <div style={{ textAlign: "center", padding: "42px 24px", border: "1px solid rgba(201,181,138,0.22)", background: "radial-gradient(circle at center, rgba(201,181,138,0.08), rgba(0,0,0,0) 65%)" }}>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "4px", marginBottom: "14px" }}>LANÇAMENTO</div>
+                <div style={{ color: "#f4ead7", fontSize: "clamp(28px, 6vw, 44px)", fontWeight: 400, letterSpacing: "5px" }}>10.10.2026</div>
+                <p style={{ color: "#8f8a82", fontSize: "11px", letterSpacing: "1.5px", margin: "16px 0 0" }}>A MOON ESTÁ CHEGANDO.</p>
+              </div>
+            </section>
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  gap: "10px",
-                  flexWrap: "wrap",
-                }}
-              >
-                {[
-                  ["TERMOS DE USO", "terms"],
-                  ["PRIVACIDADE", "privacy"],
-                  ["COOKIES", "cookies"],
-                ].map(([label, page]) => (
-                  <button
-                    key={page}
-                    type="button"
-                    onClick={() => { setLegalPage(page); setMessage(""); }}
-                    style={{
-                      padding: "10px 14px",
-                      border: "1px solid rgba(201,181,138,0.18)",
-                      borderRadius: "999px",
-                      background: "transparent",
-                      color: "#c9b58a",
-                      fontSize: "8px",
-                      letterSpacing: "1.4px",
-                      cursor: "pointer",
-                    }}
-                  >
+            <section style={{ padding: "55px 0 20px" }}>
+              <div style={{ textAlign: "center", marginBottom: "25px" }}>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "3.5px", marginBottom: "12px" }}>INFORMAÇÕES</div>
+                <h2 style={{ color: "#f4ead7", fontSize: "22px", fontWeight: 400, letterSpacing: "1px", margin: 0 }}>Transparência e controle.</h2>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "10px" }}>
+                {[["TERMOS DE USO", "terms"], ["POLÍTICA DE PRIVACIDADE", "privacy"], ["POLÍTICA DE COOKIES", "cookies"]].map(([label, page]) => (
+                  <button key={page} type="button" onClick={() => { setLegalPage(page); setMessage(""); }} style={{ minHeight: "58px", padding: "0 18px", border: "1px solid rgba(201,181,138,0.16)", background: "rgba(255,255,255,0.012)", color: "#f4ead7", cursor: "pointer", fontSize: "9px", letterSpacing: "1.3px" }}>
                     {label}
                   </button>
                 ))}
               </div>
+            </section>
 
-              <div
-                style={{
-                  marginTop: "28px",
-                  color: "#55514b",
-                  fontSize: "9px",
-                  letterSpacing: "1.5px",
-                }}
-              >
-                MOON · FIND YOUR NIGHT.
-              </div>
+            <div style={{ padding: "45px 0 10px", textAlign: "center", color: "#55514b", fontSize: "9px", lineHeight: 1.8, letterSpacing: "0.8px" }}>
+              MOON · FIND YOUR NIGHT.<br />
+              Plataforma 18+ de relacionamento e conexões.
             </div>
           </div>
-
         </section>
       )}
 
