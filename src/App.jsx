@@ -8501,6 +8501,347 @@ const filteredConversations = conversations
                 FIND YOUR NIGHT.
               </p>
             </div>
+
+            <div style={{ marginTop: "70px" }}>
+              <div
+                style={{
+                  textAlign: "center",
+                  marginBottom: "34px",
+                }}
+              >
+                <p
+                  style={{
+                    color: "#c9b58a",
+                    fontSize: "10px",
+                    letterSpacing: "4px",
+                    marginBottom: "12px",
+                  }}
+                >
+                  COMO FUNCIONA
+                </p>
+                <h2
+                  style={{
+                    margin: 0,
+                    color: "#f4ead7",
+                    fontSize: "24px",
+                    fontWeight: 400,
+                    letterSpacing: "1px",
+                  }}
+                >
+                  Feita para descobrir novas possibilidades.
+                </h2>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: "12px",
+                }}
+              >
+                {[
+                  ["01", "CRIE SEU PERFIL", "Adicione suas informações, fotos e conte um pouco sobre você."],
+                  ["02", "DESCUBRA PESSOAS", "Explore perfis, use filtros e descubra pessoas na sua região."],
+                  ["03", "CONECTE-SE", "Curta perfis, crie conexões e encontre interesses em comum."],
+                  ["04", "CONVERSE", "Comece uma conversa e compartilhe mensagens, fotos e mídias em tempo real."],
+                ].map(([number, title, text]) => (
+                  <div
+                    key={number}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "48px 1fr",
+                      gap: "18px",
+                      alignItems: "start",
+                      padding: "22px",
+                      border: "1px solid rgba(255,255,255,0.07)",
+                      borderRadius: "16px",
+                      background: "rgba(255,255,255,0.018)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#c9b58a",
+                        fontSize: "11px",
+                        letterSpacing: "2px",
+                        paddingTop: "2px",
+                      }}
+                    >
+                      {number}
+                    </div>
+                    <div>
+                      <div
+                        style={{
+                          color: "#f4ead7",
+                          fontSize: "11px",
+                          letterSpacing: "2px",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        {title}
+                      </div>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#8f8a82",
+                          fontSize: "12px",
+                          lineHeight: 1.7,
+                        }}
+                      >
+                        {text}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginTop: "70px" }}>
+              <div
+                style={{
+                  textAlign: "center",
+                  marginBottom: "30px",
+                }}
+              >
+                <p
+                  style={{
+                    color: "#c9b58a",
+                    fontSize: "10px",
+                    letterSpacing: "4px",
+                    marginBottom: "12px",
+                  }}
+                >
+                  RECURSOS
+                </p>
+                <h2
+                  style={{
+                    margin: 0,
+                    color: "#f4ead7",
+                    fontSize: "24px",
+                    fontWeight: 400,
+                  }}
+                >
+                  Recursos para uma experiência mais completa.
+                </h2>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gap: "10px",
+                }}
+              >
+                {[
+                  "Filtros ilimitados",
+                  "Mapa de usuários até 50 km",
+                  "Status ativo em tempo real",
+                  "Confirmação de leitura",
+                  "Indicador de digitação",
+                  "Ocultar perfil",
+                  "Curtidas e conexões",
+                  "Conversas em tempo real",
+                  "Bloquear e denunciar",
+                  "Verificação de vivacidade",
+                ].map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      padding: "17px 18px",
+                      border: "1px solid rgba(201,181,138,0.13)",
+                      borderRadius: "12px",
+                      color: "#aaa39a",
+                      fontSize: "11px",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <span style={{ color: "#c9b58a", marginRight: "8px" }}>•</span>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: "70px",
+                padding: "34px 28px",
+                border: "1px solid rgba(201,181,138,0.15)",
+                borderRadius: "20px",
+                background: "rgba(255,255,255,0.018)",
+              }}
+            >
+              <p
+                style={{
+                  color: "#c9b58a",
+                  fontSize: "10px",
+                  letterSpacing: "4px",
+                  marginBottom: "14px",
+                }}
+              >
+                SEGURANÇA
+              </p>
+
+              <h2
+                style={{
+                  margin: "0 0 15px",
+                  color: "#f4ead7",
+                  fontSize: "24px",
+                  fontWeight: 400,
+                }}
+              >
+                Sua experiência. Seu controle.
+              </h2>
+
+              <p
+                style={{
+                  margin: 0,
+                  color: "#969087",
+                  fontSize: "12px",
+                  lineHeight: 1.8,
+                }}
+              >
+                A MOON é destinada exclusivamente a maiores de 18 anos.
+                A plataforma conta com recursos para ajudar você a controlar
+                sua experiência, incluindo ocultar perfis, bloquear usuários,
+                denunciar conteúdos e realizar verificação de vivacidade.
+              </p>
+            </div>
+
+            <div style={{ marginTop: "70px" }}>
+              <div
+                style={{
+                  textAlign: "center",
+                  marginBottom: "30px",
+                }}
+              >
+                <p
+                  style={{
+                    color: "#c9b58a",
+                    fontSize: "10px",
+                    letterSpacing: "4px",
+                    marginBottom: "12px",
+                  }}
+                >
+                  PERGUNTAS FREQUENTES
+                </p>
+                <h2
+                  style={{
+                    margin: 0,
+                    color: "#f4ead7",
+                    fontSize: "24px",
+                    fontWeight: 400,
+                  }}
+                >
+                  Perguntas frequentes
+                </h2>
+              </div>
+
+              <div style={{ display: "grid", gap: "10px" }}>
+                {[
+                  ["A MOON É GRATUITA?", "Sim. A MOON oferece diversos recursos gratuitamente. Alguns recursos adicionais podem fazer parte da experiência Premium."],
+                  ["PRECISO DAR MATCH PARA CONVERSAR?", "Não. Na MOON, você pode conversar sem precisar esperar um Match."],
+                  ["A MOON É 18+?", "Sim. A MOON é destinada exclusivamente a pessoas maiores de 18 anos."],
+                  ["COMO FUNCIONA A VERIFICAÇÃO?", "A verificação de vivacidade utiliza a câmera para ajudar a confirmar que existe uma pessoa real por trás do perfil."],
+                  ["POSSO BLOQUEAR OU DENUNCIAR ALGUÉM?", "Sim. A plataforma oferece recursos para bloquear perfis e realizar denúncias."],
+                  ["POSSO OCULTAR MEU PERFIL?", "Sim. Você pode utilizar o recurso de ocultar perfil para ter mais controle sobre sua presença na plataforma."],
+                ].map(([question, answer]) => (
+                  <div
+                    key={question}
+                    style={{
+                      padding: "20px",
+                      border: "1px solid rgba(255,255,255,0.07)",
+                      borderRadius: "14px",
+                      background: "rgba(255,255,255,0.015)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#f4ead7",
+                        fontSize: "10px",
+                        letterSpacing: "1.7px",
+                        marginBottom: "9px",
+                      }}
+                    >
+                      {question}
+                    </div>
+                    <p
+                      style={{
+                        margin: 0,
+                        color: "#8f8a82",
+                        fontSize: "11px",
+                        lineHeight: 1.7,
+                      }}
+                    >
+                      {answer}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: "70px",
+                padding: "30px",
+                textAlign: "center",
+                borderTop: "1px solid rgba(255,255,255,0.07)",
+              }}
+            >
+              <p
+                style={{
+                  margin: "0 0 18px",
+                  color: "#77736b",
+                  fontSize: "10px",
+                  letterSpacing: "1px",
+                  lineHeight: 1.7,
+                }}
+              >
+                Consulte os documentos e informações legais da MOON.
+              </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                }}
+              >
+                {[
+                  ["TERMOS DE USO", "terms"],
+                  ["PRIVACIDADE", "privacy"],
+                  ["COOKIES", "cookies"],
+                ].map(([label, page]) => (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => { setLegalPage(page); setMessage(""); }}
+                    style={{
+                      padding: "10px 14px",
+                      border: "1px solid rgba(201,181,138,0.18)",
+                      borderRadius: "999px",
+                      background: "transparent",
+                      color: "#c9b58a",
+                      fontSize: "8px",
+                      letterSpacing: "1.4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  marginTop: "28px",
+                  color: "#55514b",
+                  fontSize: "9px",
+                  letterSpacing: "1.5px",
+                }}
+              >
+                MOON · FIND YOUR NIGHT.
+              </div>
+            </div>
           </div>
 
         </section>
