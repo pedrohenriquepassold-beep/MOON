@@ -249,6 +249,12 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [adminEventActionLoading, setAdminEventActionLoading] = useState(false);
   const [adminEventRejectReason, setAdminEventRejectReason] = useState("");
   const [expandedEventDescriptions, setExpandedEventDescriptions] = useState([]);
+  const [eventSearchDraft, setEventSearchDraft] = useState("");
+  const [eventCityDraft, setEventCityDraft] = useState("");
+  const [eventDateDraft, setEventDateDraft] = useState("all");
+  const [eventSearchTerm, setEventSearchTerm] = useState("");
+  const [eventCityFilter, setEventCityFilter] = useState("");
+  const [eventDateFilter, setEventDateFilter] = useState("all");
 
   // MOON EVENTOS - publicação comercial
   const [eventPlans, setEventPlans] = useState([]);
@@ -1777,6 +1783,93 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       console.error("ERRO AO CARREGAR EVENTOS:", error);
       setAdminEvents([]);
     }
+  }
+
+  function getFilteredPublicEvents() {
+    const now = new Date();
+    const search = eventSearchTerm.trim().toLowerCase();
+    const city = eventCityFilter.trim().toLowerCase();
+
+    function startOfDay(date) {
+      const value = new Date(date);
+      value.setHours(0, 0, 0, 0);
+      return value;
+    }
+
+    function endOfDay(date) {
+      const value = new Date(date);
+      value.setHours(23, 59, 59, 999);
+      return value;
+    }
+
+    const today = startOfDay(now);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const weekStart = new Date(today);
+    const dayOfWeek = weekStart.getDay();
+    const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    weekStart.setDate(weekStart.getDate() - daysSinceMonday);
+
+    const nextWeekStart = new Date(weekStart);
+    nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    return adminEvents
+      .filter((event) => {
+        if (!event.is_active || event.approval_status !== "approved") return false;
+        if (new Date(event.starts_at).getTime() < Date.now() - 86400000) return false;
+
+        const title = String(event.title || "").toLowerCase();
+        const location = String(event.location || "").toLowerCase();
+        const description = String(event.description || "").toLowerCase();
+
+        if (search && !`${title} ${location} ${description}`.includes(search)) {
+          return false;
+        }
+
+        if (city && !location.includes(city)) {
+          return false;
+        }
+
+        const eventDate = new Date(event.starts_at);
+
+        if (eventDateFilter === "today") {
+          if (eventDate < today || eventDate > endOfDay(today)) return false;
+        } else if (eventDateFilter === "tomorrow") {
+          if (eventDate < tomorrow || eventDate > endOfDay(tomorrow)) return false;
+        } else if (eventDateFilter === "thisWeek") {
+          if (eventDate < weekStart || eventDate >= nextWeekStart) return false;
+        } else if (eventDateFilter === "nextWeek") {
+          const afterNextWeek = new Date(nextWeekStart);
+          afterNextWeek.setDate(afterNextWeek.getDate() + 7);
+          if (eventDate < nextWeekStart || eventDate >= afterNextWeek) return false;
+        } else if (eventDateFilter === "thisMonth") {
+          if (eventDate < monthStart || eventDate >= nextMonthStart) return false;
+        } else if (eventDateFilter === "nextMonth") {
+          if (eventDate < nextMonthStart || eventDate >= new Date(now.getFullYear(), now.getMonth() + 2, 1)) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  }
+
+  function applyEventFilters() {
+    setEventSearchTerm(eventSearchDraft.trim());
+    setEventCityFilter(eventCityDraft.trim());
+    setEventDateFilter(eventDateDraft);
+  }
+
+  function clearEventFilters() {
+    setEventSearchDraft("");
+    setEventCityDraft("");
+    setEventDateDraft("all");
+    setEventSearchTerm("");
+    setEventCityFilter("");
+    setEventDateFilter("all");
   }
 
   async function loadEventPlans() {
@@ -7327,7 +7420,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: "https://www.moonsite.com.br",
+        redirectTo: window.location.origin,
       });
 
       if (error) {
@@ -12184,14 +12277,65 @@ const filteredConversations = conversations
             Os eventos passam por análise antes da publicação. A publicação pode ocorrer em até <strong style={{ color: "#c9b58a", fontWeight: 500 }}>24 horas</strong>. Caso seja necessário algum ajuste ou esclarecimento, a equipe MOON entrará em contato.
           </div>
 
-          {adminEvents.filter((event) => event.is_active && event.approval_status === "approved" && new Date(event.starts_at).getTime() >= Date.now() - 86400000).length === 0 ? (
+          <div style={{ marginBottom: "18px", padding: "16px", border: "1px solid #242424", borderRadius: "12px", background: "#0b0b0b" }}>
+            <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.8px", marginBottom: "12px" }}>ENCONTRAR EVENTO</div>
+
+            <input
+              type="text"
+              value={eventSearchDraft}
+              onChange={(event) => setEventSearchDraft(event.target.value)}
+              placeholder="Buscar evento, local ou nome..."
+              style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", marginBottom: "10px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }}
+            />
+
+            <input
+              type="text"
+              value={eventCityDraft}
+              onChange={(event) => setEventCityDraft(event.target.value)}
+              placeholder="Cidade"
+              style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", marginBottom: "10px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }}
+            />
+
+            <select
+              value={eventDateDraft}
+              onChange={(event) => setEventDateDraft(event.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", marginBottom: "12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }}
+            >
+              <option value="all">Todas as datas</option>
+              <option value="today">Hoje</option>
+              <option value="tomorrow">Amanhã</option>
+              <option value="thisWeek">Esta semana</option>
+              <option value="nextWeek">Próxima semana</option>
+              <option value="thisMonth">Este mês</option>
+              <option value="nextMonth">Próximo mês</option>
+            </select>
+
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                onClick={applyEventFilters}
+                style={{ flex: 1, minHeight: "46px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#050505", fontSize: "9px", fontWeight: 700, letterSpacing: "1.5px", cursor: "pointer" }}
+              >
+                APLICAR FILTROS
+              </button>
+              <button
+                type="button"
+                onClick={clearEventFilters}
+                style={{ minWidth: "110px", minHeight: "46px", border: "1px solid #292929", borderRadius: "10px", background: "transparent", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}
+              >
+                LIMPAR
+              </button>
+            </div>
+          </div>
+
+          {getFilteredPublicEvents().length === 0 ? (
             <div style={{ padding: "50px 20px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b" }}>
               <div style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px" }}>NENHUM EVENTO</div>
               <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: "12px auto 0", maxWidth: "400px" }}>Quando um novo evento for aprovado, ele aparecerá aqui automaticamente.</p>
             </div>
           ) : (
             <div style={{ display: "grid", gap: "12px" }}>
-              {adminEvents.filter((event) => event.is_active && event.approval_status === "approved" && new Date(event.starts_at).getTime() >= Date.now() - 86400000).map((event) => (
+              {getFilteredPublicEvents().map((event) => (
                 <article key={event.id} style={{ border: "1px solid #242424", borderRadius: "12px", background: "rgba(11,11,11,.92)", padding: "18px" }}>
                   <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "7px" }}>{new Date(event.starts_at).toLocaleString("pt-BR")}</div>
                   <h2 style={{ margin: 0, color: "#f4ead7", fontSize: "20px", fontWeight: 500 }}>{event.title}</h2>
