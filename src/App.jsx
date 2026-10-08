@@ -483,8 +483,10 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [blockedUsersLoading, setBlockedUsersLoading] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
+  const [deleteAccountFeedback, setDeleteAccountFeedback] = useState("");
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+  const [changePasswordFeedback, setChangePasswordFeedback] = useState("");
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
 
   const [supportForm, setSupportForm] = useState({
@@ -7325,7 +7327,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin,
+        redirectTo: "https://www.moonsite.com.br",
       });
 
       if (error) {
@@ -7590,22 +7592,30 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     if (deleteAccountLoading) return;
 
     setDeleteAccountLoading(true);
+    setDeleteAccountFeedback("");
     setMessage("");
 
     try {
-      const { data, error } = await supabase.functions.invoke("delete-account");
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
 
-      if (error) {
-        throw error;
+      if (!accessToken) {
+        throw new Error("Sua sessão expirou. Entre novamente para excluir a conta.");
       }
 
-      if (data?.error) {
-        throw new Error(data.error);
-      }
+      const { data, error } = await supabase.functions.invoke("delete-account", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       await supabase.auth.signOut();
 
       setDeleteAccountOpen(false);
+      setDeleteAccountFeedback("");
       setScreen("ageGate");
       setAgeVerified(false);
       setMessage("");
@@ -7623,7 +7633,8 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       setChatText("");
     } catch (error) {
       console.error("ERRO AO EXCLUIR CONTA:", error);
-      setMessage(error.message || "Não foi possível excluir sua conta.");
+      const errorMessage = error?.message || "Não foi possível excluir sua conta.";
+      setDeleteAccountFeedback(errorMessage);
     } finally {
       setDeleteAccountLoading(false);
     }
@@ -7636,23 +7647,25 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     const newPassword = changePasswordForm.newPassword;
     const confirmPassword = changePasswordForm.confirmPassword;
 
+    setChangePasswordFeedback("");
+    setMessage("");
+
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setMessage("Preencha todos os campos da senha.");
+      setChangePasswordFeedback("Preencha todos os campos da senha.");
       return;
     }
 
     if (newPassword.length < 8) {
-      setMessage("A nova senha deve ter pelo menos 8 caracteres.");
+      setChangePasswordFeedback("A nova senha deve ter pelo menos 8 caracteres.");
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setMessage("A confirmação da nova senha não confere.");
+      setChangePasswordFeedback("A confirmação da nova senha não confere.");
       return;
     }
 
     setChangePasswordLoading(true);
-    setMessage("");
 
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -7674,9 +7687,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         password: newPassword,
       });
 
-      if (updateError) {
-        throw updateError;
-      }
+      if (updateError) throw updateError;
 
       setChangePasswordForm({
         currentPassword: "",
@@ -7684,10 +7695,11 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         confirmPassword: "",
       });
       setChangePasswordOpen(false);
+      setChangePasswordFeedback("");
       setMessage("Senha alterada com sucesso.");
     } catch (error) {
       console.error("ERRO AO ALTERAR SENHA:", error);
-      setMessage(error.message || "Não foi possível alterar sua senha.");
+      setChangePasswordFeedback(error?.message || "Não foi possível alterar sua senha.");
     } finally {
       setChangePasswordLoading(false);
     }
@@ -11633,7 +11645,7 @@ const filteredConversations = conversations
           <div style={{ marginTop: "18px", border: "1px solid #2b1b1b", background: "#0b0b0b" }}>
             <button
               type="button"
-              onClick={() => { setDeleteAccountOpen(true); setMessage(""); }}
+              onClick={() => { setDeleteAccountFeedback(""); setDeleteAccountOpen(true); setMessage(""); }}
               style={{
                 width: "100%",
                 minHeight: "58px",
@@ -11716,6 +11728,11 @@ const filteredConversations = conversations
                   <div style={{ color: "#55524d", fontSize: "9px", lineHeight: "1.5", letterSpacing: "0.5px" }}>
                     A nova senha deve ter pelo menos 8 caracteres.
                   </div>
+                  {changePasswordFeedback && (
+                    <div style={{ color: "#c99a9a", fontSize: "9px", lineHeight: "1.5", padding: "10px", border: "1px solid rgba(201,154,154,.25)", background: "rgba(120,40,40,.08)" }}>
+                      {changePasswordFeedback}
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={handleChangePassword}
@@ -11785,6 +11802,11 @@ const filteredConversations = conversations
                 <p style={{ color: "#8a857c", fontSize: "11px", lineHeight: "1.7", margin: "0 0 24px" }}>
                   Essa ação é permanente. Seu perfil, fotos, curtidas, bloqueios, denúncias, conversas e demais dados vinculados à conta serão excluídos.
                 </p>
+                {deleteAccountFeedback && (
+                  <div style={{ color: "#c99a9a", fontSize: "9px", lineHeight: "1.5", padding: "10px", marginBottom: "12px", border: "1px solid rgba(201,154,154,.25)", background: "rgba(120,40,40,.08)" }}>
+                    {deleteAccountFeedback}
+                  </div>
+                )}
                 <div style={{ display: "grid", gap: "8px" }}>
                   <button
                     type="button"
@@ -12157,6 +12179,10 @@ const filteredConversations = conversations
           </div>
 
           <button type="button" onClick={openEventPublisher} style={{ width: "100%", minHeight: "52px", marginBottom: "18px", border: "1px solid #c9b58a", borderRadius: "12px", background: "linear-gradient(135deg, rgba(201,181,138,.16), rgba(201,181,138,.04))", color: "#f4ead7", fontSize: "10px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer", boxShadow: "0 12px 30px rgba(0,0,0,.24)" }}>＋ PUBLICAR EVENTO</button>
+
+          <div style={{ marginTop: "-6px", marginBottom: "18px", padding: "12px 14px", border: "1px solid #242424", borderRadius: "10px", background: "#0b0b0b", color: "#77736b", fontSize: "9px", lineHeight: "1.65", textAlign: "center" }}>
+            Os eventos passam por análise antes da publicação. A publicação pode ocorrer em até <strong style={{ color: "#c9b58a", fontWeight: 500 }}>24 horas</strong>. Caso seja necessário algum ajuste ou esclarecimento, a equipe MOON entrará em contato.
+          </div>
 
           {adminEvents.filter((event) => event.is_active && event.approval_status === "approved" && new Date(event.starts_at).getTime() >= Date.now() - 86400000).length === 0 ? (
             <div style={{ padding: "50px 20px", textAlign: "center", border: "1px solid #242424", background: "#0b0b0b" }}>
