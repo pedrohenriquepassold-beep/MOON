@@ -313,6 +313,103 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       loadEventPlans();
     }
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const boostPayment = params.get("boost_payment");
+    const boostOrderId = params.get("boost_order_id");
+
+    if (!boostPayment && !boostOrderId) return;
+
+    const savedOrderId =
+      boostOrderId || window.localStorage.getItem("moon_boost_pending_order_id");
+
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    try {
+      if (savedOrderId) {
+        window.localStorage.removeItem("moon_boost_pending_order_id");
+      }
+    } catch {}
+
+    if (boostPayment === "failure") {
+      showToast({
+        title: "PAGAMENTO NÃO CONCLUÍDO",
+        body: "O pagamento do Boost não foi concluído. Você pode tentar novamente quando quiser.",
+      });
+      return;
+    }
+
+    if (boostPayment === "pending") {
+      showToast({
+        title: "PAGAMENTO EM ANÁLISE",
+        body: "Recebemos seu pagamento. Nossa equipe irá conferir e liberar seu Boost em até 30 minutos.",
+      });
+    } else if (boostPayment === "success") {
+      showToast({
+        title: "PAGAMENTO APROVADO",
+        body: "Recebemos seu pagamento. Nossa equipe irá conferir e liberar seu Boost em até 30 minutos.",
+      });
+    } else {
+      showToast({
+        title: "PAGAMENTO ENVIADO",
+        body: "Recebemos seu pagamento. Nossa equipe irá conferir e liberar seu Boost em até 30 minutos.",
+      });
+    }
+
+    const redirectTimer = window.setTimeout(() => {
+      setSelectedProfile(null);
+      setScreen("inside");
+      setMessage("");
+    }, 3900);
+
+    return () => window.clearTimeout(redirectTimer);
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const profileViewPayment = params.get("profile_view_payment");
+    const profileViewOrderId = params.get("profile_view_order_id");
+
+    if (!profileViewPayment && !profileViewOrderId) return;
+
+    const savedOrderId = profileViewOrderId || window.localStorage.getItem("moon_profile_view_pending_order_id");
+
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    try {
+      if (savedOrderId) {
+        window.localStorage.removeItem("moon_profile_view_pending_order_id");
+      }
+    } catch {}
+
+    if (profileViewPayment === "failure") {
+      showToast({
+        title: "PAGAMENTO NÃO CONCLUÍDO",
+        body: "O pagamento do Viu Você não foi concluído. Você pode tentar novamente quando quiser.",
+      });
+      return;
+    }
+
+    if (profileViewPayment === "pending") {
+      showToast({
+        title: "PAGAMENTO EM ANÁLISE",
+        body: "Recebemos seu pagamento. Nossa equipe irá conferir e liberar o Viu Você em até 30 minutos.",
+      });
+    } else {
+      showToast({
+        title: "PAGAMENTO ENVIADO",
+        body: "Recebemos seu pagamento. Nossa equipe irá conferir e liberar o Viu Você em até 30 minutos.",
+      });
+    }
+
+    const refreshTimer = window.setTimeout(() => {
+      loadProfileViewAccess();
+    }, 2500);
+
+    return () => window.clearTimeout(refreshTimer);
+  }, []);
+
   const [userSupportTickets, setUserSupportTickets] = useState([]);
   const [userSupportLoading, setUserSupportLoading] = useState(false);
   const [adminActionReportId, setAdminActionReportId] = useState(null);
@@ -331,6 +428,8 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [boostActivatingId, setBoostActivatingId] = useState(null);
   const [userActiveBoost, setUserActiveBoost] = useState(null);
   const [boostSecondsLeft, setBoostSecondsLeft] = useState(0);
+  const [boostPurchaseLoading, setBoostPurchaseLoading] = useState(false);
+  const [profileViewPurchaseLoading, setProfileViewPurchaseLoading] = useState(false);
 
   const [advertisements, setAdvertisements] = useState([]);
   const [advertisementsLoading, setAdvertisementsLoading] = useState(false);
@@ -1367,6 +1466,90 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     return () => window.clearInterval(timer);
   }, [userActiveBoost, currentUserId]);
+
+  async function startBoostCheckout() {
+    if (boostPurchaseLoading) return;
+
+    setBoostPurchaseLoading(true);
+    setMessage("");
+
+    try {
+      const { data: orderData, error: orderError } = await supabase.rpc("create_boost_order");
+
+      if (orderError) throw orderError;
+
+      const order = Array.isArray(orderData) ? orderData[0] : orderData;
+      const boostOrderId = order?.id || orderData;
+
+      if (!boostOrderId) {
+        throw new Error("Não foi possível criar a compra do Boost.");
+      }
+
+      try {
+        window.localStorage.setItem("moon_boost_pending_order_id", boostOrderId);
+      } catch {}
+
+      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke("create-mp-boost", {
+        body: { boost_order_id: boostOrderId },
+      });
+
+      if (checkoutError) throw checkoutError;
+
+      const checkoutUrl = checkoutData?.checkout_url || checkoutData?.init_point;
+      if (!checkoutUrl) {
+        throw new Error("O Mercado Pago não retornou o checkout.");
+      }
+
+      window.location.href = checkoutUrl;
+    } catch (error) {
+      console.error("ERRO AO ABRIR PAGAMENTO DO BOOST:", error);
+      setMessage(error?.message || "Não foi possível iniciar o pagamento do Boost.");
+    } finally {
+      setBoostPurchaseLoading(false);
+    }
+  }
+
+  async function startProfileViewCheckout() {
+    if (profileViewPurchaseLoading) return;
+
+    setProfileViewPurchaseLoading(true);
+    setMessage("");
+
+    try {
+      const { data: orderData, error: orderError } = await supabase.rpc("create_profile_view_order");
+
+      if (orderError) throw orderError;
+
+      const order = Array.isArray(orderData) ? orderData[0] : orderData;
+      const profileViewOrderId = order?.id || orderData;
+
+      if (!profileViewOrderId) {
+        throw new Error("Não foi possível criar a compra do Viu Você.");
+      }
+
+      try {
+        window.localStorage.setItem("moon_profile_view_pending_order_id", profileViewOrderId);
+      } catch {}
+
+      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke("create-mp-profile-view", {
+        body: { order_id: profileViewOrderId },
+      });
+
+      if (checkoutError) throw checkoutError;
+
+      const checkoutUrl = checkoutData?.checkout_url || checkoutData?.init_point;
+      if (!checkoutUrl) {
+        throw new Error("O Mercado Pago não retornou o checkout.");
+      }
+
+      window.location.href = checkoutUrl;
+    } catch (error) {
+      console.error("ERRO AO ABRIR PAGAMENTO DO VIU VOCÊ:", error);
+      setMessage(error?.message || "Não foi possível iniciar o pagamento do Viu Você.");
+    } finally {
+      setProfileViewPurchaseLoading(false);
+    }
+  }
 
   async function loadAdminReports() {
     if (!isAdmin) return;
@@ -2995,11 +3178,58 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         throw error;
       }
 
-      const profiles = data || [];
+      let profiles = data || [];
 
       const { data: { user } } = await supabase.auth.getUser();
       const blockedIds = await getBlockedUserIds(user?.id);
-      const visibleProfiles = profiles.filter((profile) => !blockedIds.has(profile.id) && profile.is_hidden !== true);
+
+      // Se a RPC estiver retornando vazio por algum problema na função SQL,
+      // fazemos uma busca direta nos perfis com localização e calculamos a
+      // distância no cliente. Assim, o Discovery não fica vazio por causa
+      // de uma falha isolada da RPC.
+      if (profiles.length === 0 && user?.id) {
+        const { data: profileRows, error: profileRowsError } = await supabase
+          .from("profiles")
+          .select("id, name, birth_date, gender, sexuality, position, availability, profession, education, intention, habits, hobbies, personality, relationship, interests, languages, latitude, longitude, is_hidden, last_active_at")
+          .not("latitude", "is", null)
+          .not("longitude", "is", null);
+
+        if (profileRowsError) {
+          console.error("ERRO NA BUSCA DIRETA DOS PERFIS DA DISCOVERY:", profileRowsError);
+        } else {
+          const centerLatitude = Number(latitude);
+          const centerLongitude = Number(longitude);
+          const earthRadiusKm = 6371;
+          const toRadians = (value) => (value * Math.PI) / 180;
+
+          profiles = (profileRows || [])
+            .filter((profile) =>
+              profile.id !== user.id &&
+              !blockedIds.has(profile.id) &&
+              profile.is_hidden !== true
+            )
+            .map((profile) => {
+              const profileLatitude = Number(profile.latitude);
+              const profileLongitude = Number(profile.longitude);
+              const deltaLatitude = toRadians(profileLatitude - centerLatitude);
+              const deltaLongitude = toRadians(profileLongitude - centerLongitude);
+              const a =
+                Math.sin(deltaLatitude / 2) ** 2 +
+                Math.cos(toRadians(centerLatitude)) *
+                  Math.cos(toRadians(profileLatitude)) *
+                  Math.sin(deltaLongitude / 2) ** 2;
+              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+              return {
+                ...profile,
+                distance_km: earthRadiusKm * c,
+              };
+            })
+            .filter((profile) => Number.isFinite(profile.distance_km) && profile.distance_km <= 50);
+        }
+      }
+
+      const visibleProfiles = profiles.filter((profile) => !blockedIds.has(profile.id) && profile.id !== user?.id && profile.is_hidden !== true);
 
       const visibleProfileIds = visibleProfiles.map((profile) => profile.id).filter(Boolean);
 
@@ -3017,10 +3247,10 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
           .lte("starts_at", nowIso);
 
         if (boostError) {
-          throw boostError;
+          console.error("ERRO AO CARREGAR BOOSTS DA DISCOVERY:", boostError);
+        } else {
+            activeBoostIds = new Set((activeBoosts || []).map((boost) => boost.user_id).filter(Boolean));
         }
-
-        activeBoostIds = new Set((activeBoosts || []).map((boost) => boost.user_id).filter(Boolean));
       }
 
       let profileDetailsMap = new Map();
@@ -3032,10 +3262,10 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
           .in("id", visibleProfileIds);
 
         if (profileDetailsError) {
-          throw profileDetailsError;
+          console.error("ERRO AO CARREGAR DETALHES DOS PERFIS DA DISCOVERY:", profileDetailsError);
+        } else {
+            profileDetailsMap = new Map((profileDetails || []).map((profile) => [profile.id, profile]));
         }
-
-        profileDetailsMap = new Map((profileDetails || []).map((profile) => [profile.id, profile]));
       }
 
       const enrichedVisibleProfiles = visibleProfiles
@@ -3057,9 +3287,12 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         .or(`ends_at.is.null,ends_at.gte.${new Date().toISOString()}`)
         .order("created_at", { ascending: true });
 
-      if (advertisementError) throw advertisementError;
-
-      setActiveAdvertisements(advertisementData || []);
+      if (advertisementError) {
+        console.error("ERRO AO CARREGAR ANÚNCIOS DA DISCOVERY:", advertisementError);
+        setActiveAdvertisements([]);
+      } else {
+        setActiveAdvertisements(advertisementData || []);
+      }
 
       const profilesWithPhotos =
         await Promise.all(
@@ -12167,6 +12400,49 @@ const filteredConversations = conversations
 
                       <button
                         type="button"
+                        onClick={startBoostCheckout}
+                        disabled={boostPurchaseLoading}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          height: "48px",
+                          background: "rgba(201, 181, 138, 0.08)",
+                          border: "1px solid #c9b58a",
+                          borderRadius: "10px",
+                          color: "#c9b58a",
+                          fontSize: "10px",
+                          letterSpacing: "1.7px",
+                          fontWeight: "600",
+                          cursor: boostPurchaseLoading ? "default" : "pointer",
+                          opacity: boostPurchaseLoading ? .55 : 1,
+                        }}
+                      >
+                        {boostPurchaseLoading ? "ABRINDO PAGAMENTO..." : "BOOST • 3 HORAS • R$ 10,00"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setLikesTab("quemviu"); setScreen("likes"); setMessage(""); }}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          minHeight: "48px",
+                          padding: "10px 14px",
+                          background: "rgba(201, 181, 138, 0.02)",
+                          border: "1px solid #292929",
+                          borderRadius: "10px",
+                          color: "#c9b58a",
+                          fontSize: "10px",
+                          letterSpacing: "1.7px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                        }}
+                      >
+                        👁 VIU VOCÊ • R$ 10,00
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => { setScreen("settings"); setMessage(""); }}
                         style={{
                           marginTop: "10px",
@@ -12679,7 +12955,28 @@ const filteredConversations = conversations
               <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b", borderRadius: "10px" }}>
                 <div style={{ color: "#c9b58a", fontSize: "22px", marginBottom: "16px" }}>◉</div>
                 <p style={{ color: "#f4ead7", fontSize: "18px", letterSpacing: "3px", marginBottom: "15px" }}>ACESSO PRIVADO</p>
-                <p style={{ color: "#77736b", fontSize: "12px", lineHeight: "1.7", maxWidth: "400px", margin: "0 auto" }}>O recurso VIU VOCÊ ainda não está disponível para esta conta.</p>
+                <p style={{ color: "#77736b", fontSize: "12px", lineHeight: "1.7", maxWidth: "400px", margin: "0 auto 20px" }}>Descubra quem demonstrou interesse e abriu seu perfil.</p>
+                <button
+                  type="button"
+                  onClick={startProfileViewCheckout}
+                  disabled={profileViewPurchaseLoading}
+                  style={{
+                    width: "100%",
+                    maxWidth: "360px",
+                    height: "48px",
+                    border: "1px solid #c9b58a",
+                    borderRadius: "10px",
+                    background: "rgba(201,181,138,0.08)",
+                    color: "#c9b58a",
+                    fontSize: "10px",
+                    letterSpacing: "1.7px",
+                    fontWeight: "600",
+                    cursor: profileViewPurchaseLoading ? "default" : "pointer",
+                    opacity: profileViewPurchaseLoading ? .55 : 1,
+                  }}
+                >
+                  {profileViewPurchaseLoading ? "ABRINDO PAGAMENTO..." : "COMPRAR VIU VOCÊ • R$ 10,00"}
+                </button>
               </div>
             ) : viewedProfiles.length === 0 ? (
               <div style={{ textAlign: "center", padding: "70px 20px", border: "1px solid #191919", background: "#0b0b0b", borderRadius: "10px" }}>
