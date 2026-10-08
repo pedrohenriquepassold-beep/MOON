@@ -12277,7 +12277,7 @@ const filteredConversations = conversations
             Os eventos passam por análise antes da publicação. A publicação pode ocorrer em até <strong style={{ color: "#c9b58a", fontWeight: 500 }}>24 horas</strong>. Caso seja necessário algum ajuste ou esclarecimento, a equipe MOON entrará em contato.
           </div>
 
-          <div style={{ marginBottom: "18px", padding: "16px", border: "1px solid #242424", borderRadius: "12px", background: "#0b0b0b" }}>
+          <div style={{ position: "relative", zIndex: 3000, pointerEvents: "auto", marginBottom: "18px", padding: "16px", border: "1px solid #242424", borderRadius: "12px", background: "#0b0b0b" }}>
             <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.8px", marginBottom: "12px" }}>ENCONTRAR EVENTO</div>
 
             <input
@@ -12313,15 +12313,15 @@ const filteredConversations = conversations
             <div style={{ display: "flex", gap: "8px" }}>
               <button
                 type="button"
-                onClick={applyEventFilters}
-                style={{ flex: 1, minHeight: "46px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#050505", fontSize: "9px", fontWeight: 700, letterSpacing: "1.5px", cursor: "pointer" }}
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); applyEventFilters(); }}
+                style={{ flex: 1, minHeight: "46px", position: "relative", zIndex: 3001, pointerEvents: "auto", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#050505", fontSize: "9px", fontWeight: 700, letterSpacing: "1.5px", cursor: "pointer" }}
               >
                 APLICAR FILTROS
               </button>
               <button
                 type="button"
-                onClick={clearEventFilters}
-                style={{ minWidth: "110px", minHeight: "46px", border: "1px solid #292929", borderRadius: "10px", background: "transparent", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); clearEventFilters(); }}
+                style={{ minWidth: "110px", minHeight: "46px", position: "relative", zIndex: 3001, pointerEvents: "auto", border: "1px solid #292929", borderRadius: "10px", background: "transparent", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}
               >
                 LIMPAR
               </button>
