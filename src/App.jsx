@@ -822,7 +822,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
           minFaceDetectionConfidence: 0.6,
           minFacePresenceConfidence: 0.6,
           minTrackingConfidence: 0.6,
-          outputFaceBlendshapes: false,
+          outputFaceBlendshapes: true,
         });
 
         if (cancelled) {
@@ -832,21 +832,13 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
         verificationFaceDetectorRef.current = landmarker;
 
-        const distance = (a, b) =>
-          Math.hypot(a.x - b.x, a.y - b.y);
+        const getEyeBlinkScore = (blendshapes) => {
+          const categories = blendshapes?.categories || [];
+          const left = categories.find((item) => item.categoryName === "eyeBlinkLeft")?.score;
+          const right = categories.find((item) => item.categoryName === "eyeBlinkRight")?.score;
 
-        const eyeAspectRatio = (landmarks, indices) => {
-          const p1 = landmarks[indices[0]];
-          const p2 = landmarks[indices[1]];
-          const p3 = landmarks[indices[2]];
-          const p4 = landmarks[indices[3]];
-          const p5 = landmarks[indices[4]];
-          const p6 = landmarks[indices[5]];
-
-          return (
-            (distance(p2, p6) + distance(p3, p5)) /
-            (2 * distance(p1, p4))
-          );
+          if (typeof left !== "number" || typeof right !== "number") return null;
+          return (left + right) / 2;
         };
 
         const detectFace = () => {
@@ -869,20 +861,22 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
                 setVerificationFaceDetected(hasFace);
 
                 if (hasFace && !verificationBlinkDetectedRef.current) {
-                  const leftEar = eyeAspectRatio(landmarks, [33, 160, 158, 133, 153, 144]);
-                  const rightEar = eyeAspectRatio(landmarks, [362, 385, 387, 263, 373, 380]);
-                  const averageEar = (leftEar + rightEar) / 2;
+                  const blinkScore = getEyeBlinkScore(result?.faceBlendshapes?.[0]);
 
-                  if (averageEar < 0.20) {
-                    verificationBlinkStateRef.current = "closed";
-                  } else if (
-                    averageEar > 0.24 &&
-                    verificationBlinkStateRef.current === "closed"
-                  ) {
-                    verificationBlinkStateRef.current = "open";
-                    verificationBlinkDetectedRef.current = true;
-                    setVerificationLivenessPassed(true);
-                    setMessage("Verificação concluída. Você pode continuar.");
+                  // O score de piscada sobe quando os olhos fecham e cai quando reabrem.
+                  // A confirmação exige as duas etapas para evitar aprovar apenas por abrir muito os olhos.
+                  if (blinkScore !== null) {
+                    if (blinkScore >= 0.55) {
+                      verificationBlinkStateRef.current = "closed";
+                    } else if (
+                      blinkScore <= 0.30 &&
+                      verificationBlinkStateRef.current === "closed"
+                    ) {
+                      verificationBlinkStateRef.current = "open";
+                      verificationBlinkDetectedRef.current = true;
+                      setVerificationLivenessPassed(true);
+                      setMessage("Verificação concluída. Você pode continuar.");
+                    }
                   }
                 }
               } catch (error) {
@@ -9069,7 +9063,7 @@ const filteredConversations = conversations
             {verificationLivenessPassed
               ? "VERIFICAÇÃO CONCLUÍDA"
               : verificationFaceDetected
-                ? "PIQUE UMA VEZ"
+                ? "PISQUE UMA VEZ"
                 : "AGUARDANDO ROSTO"}
           </div>
 
