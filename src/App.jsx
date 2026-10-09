@@ -7540,11 +7540,10 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     setMessage("");
 
-    if (!locationSaved) {
-      setMessage(
-        "Use sua localização antes de continuar."
-      );
-
+    // A localização é obrigatória apenas durante a criação inicial do perfil.
+    // Na edição, ela não deve impedir que o usuário salve outras alterações.
+    if (profileOnboarding && !locationSaved) {
+      setMessage("Use sua localização antes de concluir o perfil.");
       return;
     }
 
@@ -7553,25 +7552,39 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       return;
     }
 
-    if (!profileForm.gender || !profileForm.sexuality || !profileForm.position || !profileForm.availability) {
-      setMessage("Selecione identidade, sexualidade, posição e disponibilidade.");
+    const normalizedName = profileDisplayName.trim();
+    if (!normalizedName) {
+      setMessage("Informe seu nome.");
       return;
     }
 
-    if (profileOnboarding && !profileForm.education.trim()) {
-      setMessage("Informe sua educação ou estudos.");
+    if (!profileForm.gender) {
+      setMessage("Selecione sua identidade de gênero.");
       return;
     }
 
-    if (profileOnboarding && profileForm.intention.length === 0) {
+    if (!profileForm.sexuality) {
+      setMessage("Selecione sua sexualidade.");
+      return;
+    }
+
+    if (!profileForm.position) {
+      setMessage("Selecione sua posição.");
+      return;
+    }
+
+    if (!profileForm.availability) {
+      setMessage("Selecione sua disponibilidade.");
+      return;
+    }
+
+    if (!Array.isArray(profileForm.intention) || profileForm.intention.length === 0) {
       setMessage("Selecione pelo menos uma intenção.");
       return;
     }
 
-    const normalizedName = profileDisplayName.trim();
-    const nameChanged = normalizedName !== profileOriginalName.trim();
-    if (!normalizedName) {
-      setMessage("Informe seu nome.");
+    if (!Array.isArray(profileForm.relationship) || profileForm.relationship.length === 0) {
+      setMessage("Selecione seu tipo de relacionamento.");
       return;
     }
 
@@ -7658,6 +7671,10 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       setProfileOnboarding(false);
       setProfileEditMode(false);
       setScreen("profile");
+      showToast({
+        title: "PERFIL ATUALIZADO",
+        body: "Suas alterações foram salvas com sucesso.",
+      });
 
       await loadNearbyProfiles(
         userLocation.latitude,
@@ -12957,7 +12974,7 @@ const filteredConversations = conversations
                     boxShadow: "none"
                   }}
                 />
-                <button type="submit" disabled={loading || !profileDisplayName.trim() || !profileForm.gender || !profileForm.sexuality || !profileForm.position || !profileForm.availability || (profileOnboarding && photos.length === 0)}>{loading ? "SALVANDO..." : profileOnboarding ? "CONCLUIR PERFIL" : "SALVAR ALTERAÇÕES"}</button>
+                <button type="submit" disabled={loading}>{loading ? "SALVANDO..." : profileOnboarding ? "CONCLUIR PERFIL" : "SALVAR ALTERAÇÕES"}</button>
               </form>
 
               {message && <p className="form-subtitle">{message}</p>}
