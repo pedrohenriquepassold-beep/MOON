@@ -822,7 +822,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
           minFaceDetectionConfidence: 0.6,
           minFacePresenceConfidence: 0.6,
           minTrackingConfidence: 0.6,
-          outputFaceBlendshapes: true,
+          outputFaceBlendshapes: false,
         });
 
         if (cancelled) {
@@ -832,13 +832,21 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
         verificationFaceDetectorRef.current = landmarker;
 
-        const getEyeBlinkScore = (blendshapes) => {
-          const categories = blendshapes?.categories || [];
-          const left = categories.find((item) => item.categoryName === "eyeBlinkLeft")?.score;
-          const right = categories.find((item) => item.categoryName === "eyeBlinkRight")?.score;
+        const distance = (a, b) =>
+          Math.hypot(a.x - b.x, a.y - b.y);
 
-          if (typeof left !== "number" || typeof right !== "number") return null;
-          return (left + right) / 2;
+        const eyeAspectRatio = (landmarks, indices) => {
+          const p1 = landmarks[indices[0]];
+          const p2 = landmarks[indices[1]];
+          const p3 = landmarks[indices[2]];
+          const p4 = landmarks[indices[3]];
+          const p5 = landmarks[indices[4]];
+          const p6 = landmarks[indices[5]];
+
+          return (
+            (distance(p2, p6) + distance(p3, p5)) /
+            (2 * distance(p1, p4))
+          );
         };
 
         const detectFace = () => {
@@ -861,22 +869,20 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
                 setVerificationFaceDetected(hasFace);
 
                 if (hasFace && !verificationBlinkDetectedRef.current) {
-                  const blinkScore = getEyeBlinkScore(result?.faceBlendshapes?.[0]);
+                  const leftEar = eyeAspectRatio(landmarks, [33, 160, 158, 133, 153, 144]);
+                  const rightEar = eyeAspectRatio(landmarks, [362, 385, 387, 263, 373, 380]);
+                  const averageEar = (leftEar + rightEar) / 2;
 
-                  // O score de piscada sobe quando os olhos fecham e cai quando reabrem.
-                  // A confirmação exige as duas etapas para evitar aprovar apenas por abrir muito os olhos.
-                  if (blinkScore !== null) {
-                    if (blinkScore >= 0.55) {
-                      verificationBlinkStateRef.current = "closed";
-                    } else if (
-                      blinkScore <= 0.30 &&
-                      verificationBlinkStateRef.current === "closed"
-                    ) {
-                      verificationBlinkStateRef.current = "open";
-                      verificationBlinkDetectedRef.current = true;
-                      setVerificationLivenessPassed(true);
-                      setMessage("Verificação concluída. Você pode continuar.");
-                    }
+                  if (averageEar < 0.20) {
+                    verificationBlinkStateRef.current = "closed";
+                  } else if (
+                    averageEar > 0.24 &&
+                    verificationBlinkStateRef.current === "closed"
+                  ) {
+                    verificationBlinkStateRef.current = "open";
+                    verificationBlinkDetectedRef.current = true;
+                    setVerificationLivenessPassed(true);
+                    setMessage("Verificação concluída. Você pode continuar.");
                   }
                 }
               } catch (error) {
@@ -7541,10 +7547,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       return;
     }
 
-    if (profileOnboarding && photos.length === 0) {
-      setMessage("Adicione pelo menos uma foto para continuar.");
-      return;
-    }
+    // Foto opcional: o usuário pode concluir o perfil e adicionar imagens depois.
 
     const normalizedName = profileDisplayName.trim();
     if (!normalizedName) {
@@ -9063,7 +9066,7 @@ const filteredConversations = conversations
             {verificationLivenessPassed
               ? "VERIFICAÇÃO CONCLUÍDA"
               : verificationFaceDetected
-                ? "PISQUE UMA VEZ"
+                ? "PIQUE UMA VEZ"
                 : "AGUARDANDO ROSTO"}
           </div>
 
@@ -12695,7 +12698,7 @@ const filteredConversations = conversations
             <section className="form-screen" style={{ minHeight: "auto", padding: "0" }}>
               <div className="moon-logo">MOON</div>
               <h1>{profileOnboarding ? "Complete seu perfil" : "Editar perfil"}</h1>
-              <p className="form-subtitle">{profileOnboarding ? "Adicione suas informações para começar a usar a MOON." : "Atualize suas informações."}</p>
+              <p className="form-subtitle">{profileOnboarding ? "Adicione suas informações para começar a usar a MOON. A foto é opcional e pode ser adicionada depois." : "Atualize suas informações."}</p>
 
               {/* FOTOS */}
               <div className="photo-section">
