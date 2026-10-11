@@ -3267,74 +3267,41 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
       const blockedIds = await getBlockedUserIds(user.id);
 
-      // O Discovery só pode exibir perfis dentro de 50 km da localização real do usuário.
-      // Sem coordenadas próprias válidas, não mostramos perfis aleatórios nem presumimos uma cidade.
-      if (!hasCenter) {
-        setNearbyProfiles([]);
-        setDiscoveryLoading(false);
-        return;
-      }
+      // Usar a RPC existente como fonte principal para respeitar o raio real de 50 km
+      // e as regras de visibilidade já configuradas no Supabase.
+      const { data: nearbyData, error: nearbyError } = await supabase.rpc(
+        "get_nearby_profiles",
+        {
+          user_lat: Number(latitude),
+          user_lng: Number(longitude),
+          max_distance_km: 50,
+        }
+      );
+      if (nearbyError) throw nearbyError;
 
-      const { data: profileRows, error: profileRowsError } = await supabase
-        .from("profiles")
-        .select("id, name, birth_date, gender, sexuality, position, availability, profession, education, intention, habits, hobbies, personality, relationship, interests, languages, latitude, longitude, is_hidden, last_active_at")
-        .neq("id", user.id);
+      const now = Date.now();
+      const visibleProfiles = (nearbyData || []).filter((profile) => {
+        if (!profile?.id || profile.id === user.id) return false;
+        if (blockedIds.has(profile.id) || profile.is_hidden === true) return false;
 
-      if (profileRowsError) throw profileRowsError;
+        const age = calculateAge(profile.birth_date);
+        if (!Number.isInteger(age) || age < 18) return false;
 
-      const earthRadiusKm = 6371;
-      const toRadians = (value) => (value * Math.PI) / 180;
-      const validCoordinate = (value, min, max) => {
-        if (value === null || value === undefined || value === "") return false;
-        const number = Number(value);
-        return Number.isFinite(number) && number >= min && number <= max;
-      };
-
-      const visibleProfiles = (profileRows || [])
-        .filter((profile) => {
-          if (!profile?.id || profile.id === user.id) return false;
-          if (blockedIds.has(profile.id) || profile.is_hidden === true) return false;
-
-          // Exibir perfis ativos nas últimas 24 horas. Aceitar pequena diferença
-          // futura de relógio/fuso (até 6h) para não ocultar perfis por timestamps
-          // gravados com horário inconsistente. Datas muito antigas ou inválidas ficam fora.
-          const lastActiveAt = profile.last_active_at
-            ? new Date(profile.last_active_at).getTime()
-            : NaN;
-          const activityAgeMs = Date.now() - lastActiveAt;
-          const isRecentlyActive =
-            Number.isFinite(lastActiveAt) &&
-            activityAgeMs <= 24 * 60 * 60 * 1000 &&
-            activityAgeMs >= -6 * 60 * 60 * 1000;
-          if (!isRecentlyActive) return false;
-
-          const age = calculateAge(profile.birth_date);
-          return Number.isInteger(age) && age >= 18;
-        })
-        .map((profile) => {
-          const profileHasCoordinates =
-            validCoordinate(profile.latitude, -90, 90) &&
-            validCoordinate(profile.longitude, -180, 180);
-          if (!profileHasCoordinates) return null;
-
-          const centerLatitude = Number(latitude);
-          const centerLongitude = Number(longitude);
-          const profileLatitude = Number(profile.latitude);
-          const profileLongitude = Number(profile.longitude);
-          const deltaLatitude = toRadians(profileLatitude - centerLatitude);
-          const deltaLongitude = toRadians(profileLongitude - centerLongitude);
-          const a =
-            Math.sin(deltaLatitude / 2) ** 2 +
-            Math.cos(toRadians(centerLatitude)) *
-              Math.cos(toRadians(profileLatitude)) *
-              Math.sin(deltaLongitude / 2) ** 2;
-          const c = 2 * Math.atan2(Math.sqrt(Math.max(0, a)), Math.sqrt(Math.max(0, 1 - a)));
-          const distanceKm = earthRadiusKm * c;
-          if (distanceKm > 50) return null;
-          return { ...profile, distance_km: distanceKm };
-        })
-        .filter(Boolean);
-
+        // O perfil sai do Discovery após 24 horas sem atividade.
+        // Isso só controla a exibição; não apaga nem altera dados no Supabase.
+        const lastActiveAt = profile.last_active_at
+          ? new Date(profile.last_active_at).getTime()
+          : NaN;
+        if (Number.isFinite(lastActiveAt)) {
+          const inactiveForMs = now - lastActiveAt;
+          if (inactiveForMs > 24 * 60 * 60 * 1000) return false;
+          if (inactiveForMs < -24 * 60 * 60 * 1000) return false;
+        } else {
+          // Sem timestamp não dá para confirmar atividade recente.
+          return false;
+        }
+        return true;
+      });
 
       const visibleProfileIds = visibleProfiles.map((profile) => profile.id).filter(Boolean);
 
