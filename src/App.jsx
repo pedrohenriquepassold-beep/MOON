@@ -3294,6 +3294,18 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         .filter((profile) => {
           if (!profile?.id || profile.id === user.id) return false;
           if (blockedIds.has(profile.id) || profile.is_hidden === true) return false;
+
+          // O Discovery mostra apenas perfis ativos nas últimas 24 horas.
+          // Sem last_active_at válido, não é possível confirmar atividade recente.
+          const lastActiveAt = profile.last_active_at
+            ? new Date(profile.last_active_at).getTime()
+            : NaN;
+          const isRecentlyActive =
+            Number.isFinite(lastActiveAt) &&
+            lastActiveAt <= Date.now() &&
+            Date.now() - lastActiveAt <= 24 * 60 * 60 * 1000;
+          if (!isRecentlyActive) return false;
+
           const age = calculateAge(profile.birth_date);
           return Number.isInteger(age) && age >= 18;
         })
