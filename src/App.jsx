@@ -2789,7 +2789,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       data.intention.length > 0
     );
 
-    if (hasMainProfileData && hasPhoto && hasLocation) {
+    if (hasMainProfileData && hasPhoto) {
       setProfileOnboarding(false);
       setProfileEditMode(false);
       setScreen("profile");
@@ -3247,84 +3247,74 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     latitude,
     longitude
   ) {
-    if (
-      latitude === null ||
-      latitude === undefined ||
-      longitude === null ||
-      longitude === undefined
-    ) {
-      return;
-    }
+    const hasCenter =
+      latitude !== null &&
+      latitude !== undefined &&
+      longitude !== null &&
+      longitude !== undefined &&
+      Number.isFinite(Number(latitude)) &&
+      Number.isFinite(Number(longitude)) &&
+      Number(latitude) >= -90 &&
+      Number(latitude) <= 90 &&
+      Number(longitude) >= -180 &&
+      Number(longitude) <= 180;
 
     setDiscoveryLoading(true);
 
     try {
-      const { data, error } =
-        await supabase.rpc(
-          "get_nearby_profiles",
-          {
-            user_lat: latitude,
-            user_lng: longitude,
-            max_distance_km: 50,
-          }
-        );
-
-      if (error) {
-        throw error;
-      }
-
-      let profiles = data || [];
-
       const { data: { user } } = await supabase.auth.getUser();
-      const blockedIds = await getBlockedUserIds(user?.id);
+      if (!user?.id) throw new Error("Usuário não encontrado.");
 
-      // Se a RPC estiver retornando vazio por algum problema na função SQL,
-      // fazemos uma busca direta nos perfis com localização e calculamos a
-      // distância no cliente. Assim, o Discovery não fica vazio por causa
-      // de uma falha isolada da RPC.
-      if (profiles.length === 0 && user?.id) {
-        const { data: profileRows, error: profileRowsError } = await supabase
-          .from("profiles")
-          .select("id, name, birth_date, gender, sexuality, position, availability, profession, education, intention, habits, hobbies, personality, relationship, interests, languages, latitude, longitude, is_hidden, last_active_at")
-          .not("latitude", "is", null)
-          .not("longitude", "is", null);
+      const blockedIds = await getBlockedUserIds(user.id);
 
-        if (profileRowsError) {
-          console.error("ERRO NA BUSCA DIRETA DOS PERFIS DA DISCOVERY:", profileRowsError);
-        } else {
-          const centerLatitude = Number(latitude);
-          const centerLongitude = Number(longitude);
-          const earthRadiusKm = 6371;
-          const toRadians = (value) => (value * Math.PI) / 180;
+      // Busca todos os perfis visíveis; localização é opcional e nunca filtra resultados.
+      const { data: profileRows, error: profileRowsError } = await supabase
+        .from("profiles")
+        .select("id, name, birth_date, gender, sexuality, position, availability, profession, education, intention, habits, hobbies, personality, relationship, interests, languages, latitude, longitude, is_hidden, last_active_at")
+        .neq("id", user.id);
 
-          profiles = (profileRows || [])
-            .filter((profile) =>
-              profile.id !== user.id &&
-              !blockedIds.has(profile.id) &&
-              profile.is_hidden !== true
-            )
-            .map((profile) => {
-              const profileLatitude = Number(profile.latitude);
-              const profileLongitude = Number(profile.longitude);
-              const deltaLatitude = toRadians(profileLatitude - centerLatitude);
-              const deltaLongitude = toRadians(profileLongitude - centerLongitude);
-              const a =
-                Math.sin(deltaLatitude / 2) ** 2 +
-                Math.cos(toRadians(centerLatitude)) *
-                  Math.cos(toRadians(profileLatitude)) *
-                  Math.sin(deltaLongitude / 2) ** 2;
-              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      if (profileRowsError) throw profileRowsError;
 
-              return {
-                ...profile,
-                distance_km: earthRadiusKm * c,
-              };
-            })
-            .filter((profile) => Number.isFinite(profile.distance_km) && profile.distance_km <= 50);
-        }
-      }
+      const earthRadiusKm = 6371;
+      const toRadians = (value) => (value * Math.PI) / 180;
+      const validCoordinate = (value, min, max) => {
+        if (value === null || value === undefined || value === "") return false;
+        const number = Number(value);
+        return Number.isFinite(number) && number >= min && number <= max;
+      };
 
-      const visibleProfiles = profiles.filter((profile) => !blockedIds.has(profile.id) && profile.id !== user?.id && profile.is_hidden !== true);
+      const visibleProfiles = (profileRows || [])
+        .filter((profile) => {
+          if (!profile?.id || profile.id === user.id) return false;
+          if (blockedIds.has(profile.id) || profile.is_hidden === true) return false;
+          const age = calculateAge(profile.birth_date);
+          return Number.isInteger(age) && age >= 18;
+        })
+        .map((profile) => {
+          const profileHasCoordinates =
+            validCoordinate(profile.latitude, -90, 90) &&
+            validCoordinate(profile.longitude, -180, 180);
+
+          let distanceKm = null;
+          if (hasCenter && profileHasCoordinates) {
+            const centerLatitude = Number(latitude);
+            const centerLongitude = Number(longitude);
+            const profileLatitude = Number(profile.latitude);
+            const profileLongitude = Number(profile.longitude);
+            const deltaLatitude = toRadians(profileLatitude - centerLatitude);
+            const deltaLongitude = toRadians(profileLongitude - centerLongitude);
+            const a =
+              Math.sin(deltaLatitude / 2) ** 2 +
+              Math.cos(toRadians(centerLatitude)) *
+                Math.cos(toRadians(profileLatitude)) *
+                Math.sin(deltaLongitude / 2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(Math.max(0, a)), Math.sqrt(Math.max(0, 1 - a)));
+            distanceKm = earthRadiusKm * c;
+          }
+
+          return { ...profile, distance_km: distanceKm };
+        });
+
 
       const visibleProfileIds = visibleProfiles.map((profile) => profile.id).filter(Boolean);
 
@@ -3370,6 +3360,9 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
           isBoosted: activeBoostIds.has(profile.id),
         }))
         .sort((a, b) => {
+          const aDistance = Number.isFinite(a.distance_km) ? a.distance_km : Number.POSITIVE_INFINITY;
+          const bDistance = Number.isFinite(b.distance_km) ? b.distance_km : Number.POSITIVE_INFINITY;
+          if (aDistance !== bDistance) return aDistance - bDistance;
           if (a.isBoosted === b.isBoosted) return 0;
           return a.isBoosted ? -1 : 1;
         });
@@ -3467,38 +3460,30 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   function calculateAge(
     birthDate
   ) {
-    if (!birthDate) {
-      return "";
-    }
+    if (typeof birthDate !== "string" || !birthDate.trim()) return null;
 
-    const today =
-      new Date();
+    const datePart = birthDate.trim().slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+    if (!match) return null;
 
-    const birth =
-      new Date(
-        birthDate +
-          "T00:00:00"
-      );
-
-    let age =
-      today.getFullYear() -
-      birth.getFullYear();
-
-    const monthDifference =
-      today.getMonth() -
-      birth.getMonth();
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const birth = new Date(Date.UTC(year, month - 1, day));
 
     if (
-      monthDifference < 0 ||
-      (
-        monthDifference === 0 &&
-        today.getDate() <
-          birth.getDate()
-      )
-    ) {
-      age--;
-    }
+      birth.getUTCFullYear() !== year ||
+      birth.getUTCMonth() !== month - 1 ||
+      birth.getUTCDate() !== day
+    ) return null;
 
+    const today = new Date();
+    let age = today.getFullYear() - year;
+    const monthNow = today.getMonth() + 1;
+    const dayNow = today.getDate();
+    if (monthNow < month || (monthNow === month && dayNow < day)) age--;
+
+    if (age < 0 || age > 120) return null;
     return age;
   }
 
@@ -4366,10 +4351,23 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     setLocationLoading(true);
     setDiscoveryLoading(true);
 
+    const refreshWithoutGps = async (body) => {
+      try {
+        await loadNearbyProfiles(userLocation.latitude, userLocation.longitude);
+        showToast({
+          title: "Discovery atualizado",
+          body: body || "Os perfis elegíveis foram atualizados. Você pode ativar a localização quando quiser.",
+        });
+      } catch (error) {
+        setMessage(error?.message || "Não foi possível atualizar o Discovery.");
+      } finally {
+        setLocationLoading(false);
+        setDiscoveryLoading(false);
+      }
+    };
+
     if (!navigator.geolocation) {
-      setMessage("Seu navegador não suporta localização.");
-      setLocationLoading(false);
-      setDiscoveryLoading(false);
+      await refreshWithoutGps("Seu navegador não oferece GPS. Os perfis foram atualizados sem localização.");
       return;
     }
 
@@ -4377,10 +4375,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       async (position) => {
         try {
           const userId = currentUserId;
-
-          if (!userId) {
-            throw new Error("Usuário não encontrado.");
-          }
+          if (!userId) throw new Error("Usuário não encontrado.");
 
           const latitude = position.coords.latitude;
           const longitude = position.coords.longitude;
@@ -4388,59 +4383,36 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
           const { error } = await supabase
             .from("profiles")
-            .update({
-              latitude,
-              longitude,
-              last_active_at: activeAt,
-              updated_at: activeAt,
-            })
+            .update({ latitude, longitude, last_active_at: activeAt, updated_at: activeAt })
             .eq("id", userId);
 
-          if (error) {
-            throw error;
-          }
+          if (error) throw error;
 
           setLocationSaved(true);
           setUserLocation({ latitude, longitude });
-
           await loadNearbyProfiles(latitude, longitude);
 
           showToast({
-            title: "Atualizado",
-            body: "Localização e descoberta foram atualizadas.",
+            title: "Discovery atualizado",
+            body: "Sua localização foi atualizada e os perfis foram ordenados por proximidade.",
           });
         } catch (error) {
           console.error("ERRO AO ATUALIZAR LOCALIZAÇÃO E DISCOVERY:", error);
-          setMessage(
-            error.message ||
-            "Não foi possível atualizar sua localização e a descoberta."
-          );
+          setMessage(error?.message || "Não foi possível atualizar sua localização.");
+          await refreshWithoutGps("Os perfis foram atualizados, mas não foi possível atualizar o GPS.");
         } finally {
           setLocationLoading(false);
           setDiscoveryLoading(false);
         }
       },
-      (error) => {
-        console.error("ERRO DE GEOLOCALIZAÇÃO:", error);
-
-        if (error.code === 1) {
-          setMessage("Permita o acesso à localização para continuar.");
-        } else if (error.code === 2) {
-          setMessage("Não foi possível encontrar sua localização.");
-        } else if (error.code === 3) {
-          setMessage("A localização demorou muito para responder.");
-        } else {
-          setMessage("Não foi possível obter sua localização.");
-        }
-
-        setLocationLoading(false);
-        setDiscoveryLoading(false);
+      async (error) => {
+        console.warn("GPS não autorizado ou indisponível; atualizando Discovery sem GPS:", error);
+        const body = error?.code === 1
+          ? "O acesso ao GPS não foi permitido. Os perfis foram atualizados mesmo assim."
+          : "Não foi possível atualizar o GPS. Os perfis foram atualizados mesmo assim.";
+        await refreshWithoutGps(body);
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
-      }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   }
 
@@ -7540,12 +7512,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     setMessage("");
 
-    // A localização é obrigatória apenas durante a criação inicial do perfil.
-    // Na edição, ela não deve impedir que o usuário salve outras alterações.
-    if (profileOnboarding && !locationSaved) {
-      setMessage("Use sua localização antes de concluir o perfil.");
-      return;
-    }
+    // A localização é opcional. O perfil pode ser concluído sem GPS e atualizado depois.
 
     // Foto opcional: o usuário pode concluir o perfil e adicionar imagens depois.
 
@@ -13225,7 +13192,7 @@ const filteredConversations = conversations
                   </div>
                   <div style={{ padding: "10px" }}>
                     <div style={{ color: "#f4ead7", fontSize: "12px", letterSpacing: "0.7px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {profile.name || "Sem nome"}{profile.birth_date ? `, ${calculateAge(profile.birth_date)}` : ""}
+                      {profile.name || "Sem nome"}{Number.isInteger(calculateAge(profile.birth_date)) ? `, ${calculateAge(profile.birth_date)}` : ""}
                     </div>
                   </div>
                 </button>
@@ -15826,9 +15793,44 @@ const filteredConversations = conversations
                 marginLeft: "3px",
               }}
             >
-              {discoveryLoading ? "ATUALIZANDO" : locationLoading ? "LOCALIZANDO" : "50 KM"}
+              {discoveryLoading ? "ATUALIZANDO" : locationLoading ? "LOCALIZANDO" : "TODOS OS PERFIS"}
             </span>
           </div>
+
+          {!locationSaved && (
+            <div
+              style={{
+                maxWidth: "820px",
+                margin: "0 auto 18px",
+                padding: "14px 16px",
+                border: "1px solid rgba(201,181,138,0.28)",
+                borderRadius: "10px",
+                background: "rgba(201,181,138,0.06)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ flex: "1 1 210px" }}>
+                <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.4px", marginBottom: "5px" }}>
+                  ATIVE SUA LOCALIZAÇÃO
+                </div>
+                <div style={{ color: "#8e877b", fontSize: "11px", lineHeight: "1.5" }}>
+                  Você já pode usar o Discovery sem GPS. Ative a localização para priorizar pessoas próximas.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleUseLocation}
+                disabled={locationLoading}
+                style={{ border: "1px solid #c9b58a", borderRadius: "8px", background: "#15130f", color: "#c9b58a", padding: "10px 12px", fontSize: "9px", letterSpacing: "1px", cursor: locationLoading ? "wait" : "pointer" }}
+              >
+                {locationLoading ? "LOCALIZANDO..." : "PERMITIR LOCALIZAÇÃO"}
+              </button>
+            </div>
+          )}
 
           <div
             style={{
@@ -16073,7 +16075,10 @@ const filteredConversations = conversations
               {nearbyProfiles
                 .filter((profile) => {
                   const age = calculateAge(profile.birth_date);
-                  const matchesAge = age >= minAge && age <= maxAge;
+                  const ageFilterActive = minAge !== 18 || maxAge !== 65;
+                  const matchesAge =
+                    !ageFilterActive ||
+                    (Number.isInteger(age) && age >= minAge && age <= maxAge);
                   const matchesIdentity =
                     identityFilter.length === 0 || identityFilter.includes(profile.gender);
                   const matchesSexuality =
@@ -16396,7 +16401,7 @@ const filteredConversations = conversations
                             </strong>
                             {profile.birth_date && (
                               <span style={{ color: "#8e877c", fontSize: "10px" }}>
-                                {calculateAge(profile.birth_date)} anos
+                                {Number.isInteger(calculateAge(profile.birth_date)) ? `${calculateAge(profile.birth_date)} anos` : "Idade não informada"}
                               </span>
                             )}
                           </div>
