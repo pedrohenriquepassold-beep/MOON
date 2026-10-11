@@ -16090,7 +16090,7 @@ const filteredConversations = conversations
               disabled={locationLoading || discoveryLoading}
               title="Atualizar localização e Discovery"
               style={{
-                minWidth: "112px",
+                minWidth: "190px",
                 height: "34px",
                 padding: "0 14px",
                 border: "1px solid #292929",
@@ -16103,7 +16103,7 @@ const filteredConversations = conversations
                 opacity: (locationLoading || discoveryLoading) ? 0.55 : 1,
               }}
             >
-              {(locationLoading || discoveryLoading) ? "ATUALIZANDO..." : "↻ ATUALIZAR"}
+              {(locationLoading || discoveryLoading) ? "ATUALIZANDO LOCALIZAÇÃO..." : "↻ ATUALIZAR LOCALIZAÇÃO"}
             </button>
 
 
