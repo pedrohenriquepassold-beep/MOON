@@ -133,6 +133,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationSaved, setLocationSaved] = useState(false);
+  const [signupLocation, setSignupLocation] = useState(null);
 
   const [userLocation, setUserLocation] = useState({
     latitude: null,
@@ -2789,19 +2790,17 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       data.intention.length > 0
     );
 
-    if (hasMainProfileData && hasPhoto) {
-      setProfileOnboarding(false);
-      setProfileEditMode(false);
-      setScreen("profile");
+    // Ao retornar ao site, abrir o próprio perfil em modo de visualização.
+    // A edição deve ser iniciada somente pela ação explícita do usuário.
+    setProfileOnboarding(false);
+    setProfileEditMode(false);
+    setScreen("profile");
 
+    if (hasMainProfileData && hasPhoto && hasLocation) {
       await loadNearbyProfiles(
         data.latitude,
         data.longitude
       );
-    } else {
-      setProfileOnboarding(true);
-      setProfileEditMode(true);
-      setScreen("profile");
     }
   }
 
@@ -5646,6 +5645,15 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       }
 
       const blockedIds = await getBlockedUserIds(userId);
+      let hiddenConversationIds = [];
+      try {
+        hiddenConversationIds = JSON.parse(
+          window.localStorage.getItem(`moon_hidden_conversations_${userId}`) || "[]"
+        );
+        if (!Array.isArray(hiddenConversationIds)) hiddenConversationIds = [];
+      } catch (storageError) {
+        console.warn("NÃO FOI POSSÍVEL LER CONVERSAS OCULTAS:", storageError);
+      }
 
       const { data, error } = await supabase
         .from("conversations")
@@ -5659,7 +5667,9 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
       const conversationsWithProfiles =
         await Promise.all(
-          (data || []).map(async (conversation) => {
+          (data || [])
+            .filter((conversation) => !hiddenConversationIds.includes(conversation.id))
+            .map(async (conversation) => {
             const otherUserId =
               conversation.user_one_id === userId
                 ? conversation.user_two_id
@@ -5710,6 +5720,11 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
                 ascending: false,
               })
               .limit(1);
+
+            // Conversas só entram na lista depois de existir uma mensagem real.
+            if (!lastMessageData || lastMessageData.length === 0) {
+              return null;
+            }
 
             const { count: unreadCount } = await supabase
               .from("messages")
@@ -6175,19 +6190,9 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         return;
       }
 
-      let isNewConversation = false;
-
-      if (!conversation) {
-        const { data: newConversation, error: createError } = await supabase
-          .from("conversations")
-          .insert({ user_one_id: firstUserId, user_two_id: secondUserId })
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        conversation = newConversation;
-        isNewConversation = true;
-      }
+      // Apenas abrir o perfil/chat não cria uma conversa persistente.
+      // A conversa será criada quando a primeira mensagem for enviada.
+      const isNewConversation = !conversation;
 
       const commonConnections = getCommonConnections(profile);
       const icebreakerConnection = commonConnections[0] || null;
@@ -6261,13 +6266,29 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     if (!confirmed) return;
 
     try {
-      const { error } = await supabase
+      // Persist the removal from this user's list so it does not reappear
+      // when the Conversations tab is reopened, even if RLS blocks DB deletion.
+      const hiddenKey = `moon_hidden_conversations_${currentUserId}`;
+      let hiddenIds = [];
+      try {
+        hiddenIds = JSON.parse(window.localStorage.getItem(hiddenKey) || "[]");
+        if (!Array.isArray(hiddenIds)) hiddenIds = [];
+      } catch {
+        hiddenIds = [];
+      }
+      if (!hiddenIds.includes(conversationId)) hiddenIds.push(conversationId);
+      window.localStorage.setItem(hiddenKey, JSON.stringify(hiddenIds));
+
+      const { data: deletedRows, error } = await supabase
         .from("conversations")
         .delete()
-        .eq("id", conversationId);
+        .eq("id", conversationId)
+        .select("id");
 
       if (error) {
-        throw error;
+        console.warn("A CONVERSA FOI OCULTADA LOCALMENTE, MAS O SUPABASE NÃO CONFIRMOU A EXCLUSÃO:", error);
+      } else if (!deletedRows || deletedRows.length === 0) {
+        console.warn("A CONVERSA FOI OCULTADA LOCALMENTE, MAS A POLÍTICA DO SUPABASE NÃO CONFIRMOU A EXCLUSÃO DO REGISTRO.");
       }
 
       setConversations((current) =>
@@ -6495,8 +6516,47 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     return true;
   }
 
+  async function ensureChatConversationExists() {
+    if (chatConversation?.id) return chatConversation;
+    if (!currentUserId || !chatTarget?.id) {
+      throw new Error("Não foi possível identificar esta conversa.");
+    }
+
+    const firstUserId = currentUserId < chatTarget.id ? currentUserId : chatTarget.id;
+    const secondUserId = currentUserId < chatTarget.id ? chatTarget.id : currentUserId;
+    const { data: existingConversation, error: lookupError } = await supabase
+      .from("conversations")
+      .select("*")
+      .or(`and(user_one_id.eq.${firstUserId},user_two_id.eq.${secondUserId}),and(user_one_id.eq.${secondUserId},user_two_id.eq.${firstUserId})`)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+
+    let activeConversation = existingConversation;
+    if (!activeConversation) {
+      const { data: createdConversation, error: createError } = await supabase
+        .from("conversations")
+        .insert({ user_one_id: firstUserId, user_two_id: secondUserId })
+        .select()
+        .single();
+      if (createError) throw createError;
+      activeConversation = createdConversation;
+    }
+
+    setChatConversation(activeConversation);
+    try {
+      const hiddenKey = `moon_hidden_conversations_${currentUserId}`;
+      const hiddenIds = JSON.parse(window.localStorage.getItem(hiddenKey) || "[]");
+      window.localStorage.setItem(hiddenKey, JSON.stringify(
+        (Array.isArray(hiddenIds) ? hiddenIds : []).filter((id) => id !== activeConversation.id)
+      ));
+    } catch (storageError) {
+      console.warn("NÃO FOI POSSÍVEL ATUALIZAR CONVERSAS OCULTAS:", storageError);
+    }
+    return activeConversation;
+  }
+
   async function sendChatTextMessage(content) {
-    if (!content || !chatConversation?.id) return;
+    if (!content || !chatTarget?.id) return;
     if (!(await ensureChatInteractionAllowed())) return;
 
     try {
@@ -6508,6 +6568,31 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         throw new Error("Usuário não encontrado.");
       }
 
+      let activeConversation = chatConversation;
+      if (!activeConversation?.id) {
+        const firstUserId = user.id < chatTarget.id ? user.id : chatTarget.id;
+        const secondUserId = user.id < chatTarget.id ? chatTarget.id : user.id;
+        const { data: existingConversation, error: lookupError } = await supabase
+          .from("conversations")
+          .select("*")
+          .or(`and(user_one_id.eq.${firstUserId},user_two_id.eq.${secondUserId}),and(user_one_id.eq.${secondUserId},user_two_id.eq.${firstUserId})`)
+          .maybeSingle();
+        if (lookupError) throw lookupError;
+
+        if (existingConversation) {
+          activeConversation = existingConversation;
+        } else {
+          const { data: newConversation, error: createError } = await supabase
+            .from("conversations")
+            .insert({ user_one_id: firstUserId, user_two_id: secondUserId })
+            .select()
+            .single();
+          if (createError) throw createError;
+          activeConversation = newConversation;
+        }
+        setChatConversation(activeConversation);
+      }
+
       const restrictionUntil = await loadAbusiveApproachRestriction(user.id);
       if (restrictionUntil && restrictionUntil > Date.now()) {
         setMessage(getAbusiveRestrictionMessage(restrictionUntil));
@@ -6517,7 +6602,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       const { data: insertedMessage, error } = await supabase
         .from("messages")
         .insert({
-          conversation_id: chatConversation.id,
+          conversation_id: activeConversation.id,
           sender_id: user.id,
           content,
           message_type: "text",
@@ -6536,6 +6621,17 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         }
         return [...currentMessages, insertedMessage];
       });
+
+      try {
+        const hiddenKey = `moon_hidden_conversations_${user.id}`;
+        const hiddenIds = JSON.parse(window.localStorage.getItem(hiddenKey) || "[]");
+        window.localStorage.setItem(hiddenKey, JSON.stringify(
+          (Array.isArray(hiddenIds) ? hiddenIds : []).filter((id) => id !== activeConversation.id)
+        ));
+      } catch (storageError) {
+        console.warn("NÃO FOI POSSÍVEL ATUALIZAR CONVERSAS OCULTAS:", storageError);
+      }
+      await loadConversations();
 
       setChatIcebreaker(null);
       setChatFollowUpSuggestion(null);
@@ -6566,7 +6662,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     const content = chatText.trim();
 
-    if (!content || !chatConversation?.id) {
+    if (!content || !chatTarget?.id) {
       return;
     }
 
@@ -6732,7 +6828,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     const file = event.target.files?.[0];
     const mode = chatMediaMode;
 
-    if (!file || !chatConversation?.id || !currentUserId) {
+    if (!file || !chatTarget?.id || !currentUserId) {
       event.target.value = "";
       return;
     }
@@ -6779,11 +6875,12 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     setMessage("");
 
     try {
+      const activeConversation = await ensureChatConversationExists();
       const extension =
         file.name.split(".").pop()?.toLowerCase() ||
         (isVideo ? "mp4" : "jpg");
       const fileName = `${crypto.randomUUID()}.${extension}`;
-      const filePath = `${currentUserId}/${chatConversation.id}/${fileName}`;
+      const filePath = `${currentUserId}/${activeConversation.id}/${fileName}`;
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
       const { error: uploadError } = await supabase.storage
@@ -6798,7 +6895,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       const { data: insertedMessage, error } = await supabase
         .from("messages")
         .insert({
-          conversation_id: chatConversation.id,
+          conversation_id: activeConversation.id,
           sender_id: currentUserId,
           content: file.name,
           message_type: isVideo ? "video" : "image",
@@ -6842,7 +6939,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   }
 
   async function handleSendLocation() {
-    if (!chatConversation?.id || !currentUserId) return;
+    if (!currentUserId || !chatTarget?.id) return;
 
     setShowChatAttachMenu(false);
     setMessage("");
@@ -6865,12 +6962,13 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         });
       });
 
+      const activeConversation = await ensureChatConversationExists();
       const { latitude, longitude } = position.coords;
 
       const { data: insertedMessage, error } = await supabase
         .from("messages")
         .insert({
-          conversation_id: chatConversation.id,
+          conversation_id: activeConversation.id,
           sender_id: currentUserId,
           content: "Localização compartilhada",
           message_type: "location",
@@ -7267,12 +7365,66 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     }
   }
 
+  async function handleSignupLocation() {
+    setMessage("");
+
+    if (!navigator.geolocation) {
+      setMessage("Este navegador não oferece localização. Abra o MOON em um navegador compatível para continuar.");
+      return;
+    }
+
+    setLocationLoading(true);
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 0,
+        });
+      });
+
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error("Não foi possível confirmar sua localização. Tente novamente.");
+      }
+
+      setSignupLocation({ latitude, longitude });
+      setUserLocation({ latitude, longitude });
+      setLocationSaved(true);
+      setMessage("");
+      setScreen("register");
+    } catch (error) {
+      console.error("ERRO NA LOCALIZAÇÃO OBRIGATÓRIA DO CADASTRO:", error);
+
+      if (error?.code === 1) {
+        setMessage("A localização é obrigatória para criar sua conta. Permita o acesso à localização nas configurações do navegador e tente novamente.");
+      } else if (error?.code === 2) {
+        setMessage("Não foi possível encontrar sua localização. Confira se o serviço de localização está ativado e tente novamente.");
+      } else if (error?.code === 3) {
+        setMessage("A localização demorou demais para responder. Tente novamente em um local com melhor sinal.");
+      } else {
+        setMessage(error?.message || "Não foi possível obter sua localização. Tente novamente.");
+      }
+    } finally {
+      setLocationLoading(false);
+    }
+  }
+
   async function handleSubmit(
     event
   ) {
     event.preventDefault();
 
     setMessage("");
+
+    if (signupLocation?.latitude == null || signupLocation?.longitude == null) {
+      setMessage("Ative sua localização antes de criar a conta.");
+      setScreen("registerLocation");
+      return;
+    }
 
     if (!form.terms) {
       setMessage(
@@ -7330,6 +7482,9 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
             name: form.name.trim(),
             birth_date:
               form.birthDate,
+            latitude: signupLocation.latitude,
+            longitude: signupLocation.longitude,
+            last_active_at: new Date().toISOString(),
             instagram_username: (form.instagram_username || "").trim().replace(/^@+/, ""),
           });
 
@@ -7339,6 +7494,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
       setMessage("");
       setScreen("verification");
+      setSignupLocation(null);
 
       setForm({
         name: "",
@@ -7675,10 +7831,24 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
+        body: {},
       });
 
-      if (error) throw error;
+      if (error) {
+        let detail = error.message || "Falha na função delete-account.";
+        try {
+          const context = error.context;
+          if (context && typeof context.json === "function") {
+            const responseBody = await context.json();
+            detail = responseBody?.error || responseBody?.message || detail;
+          }
+        } catch {
+          // Mantém a mensagem original quando a resposta não for JSON.
+        }
+        throw new Error(detail);
+      }
       if (data?.error) throw new Error(data.error);
+      if (data?.success === false) throw new Error(data?.message || "O servidor não confirmou a exclusão da conta.");
 
       await supabase.auth.signOut();
 
@@ -8641,7 +8811,7 @@ const filteredConversations = conversations
 
           <div className="home-buttons">
             <button onClick={() => setScreen("login")}>ENTER</button>
-            <button onClick={() => setScreen("register")}>CREATE ACCOUNT</button>
+            <button onClick={() => { setMessage(""); setScreen("registerLocation"); }}>CREATE ACCOUNT</button>
           </div>
 
           <div style={{ width: "min(920px, calc(100% - 32px))", margin: "75px auto 0", textAlign: "left" }}>
@@ -8749,6 +8919,102 @@ const filteredConversations = conversations
               Plataforma 18+ de relacionamento e conexões.
             </div>
           </div>
+        </section>
+      )}
+
+      {/* ETAPA OBRIGATÓRIA DE LOCALIZAÇÃO ANTES DO CADASTRO */}
+
+      {screen === "registerLocation" && (
+        <section
+          className="form-screen"
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            boxSizing: "border-box",
+            padding: "28px 22px",
+            textAlign: "center",
+          }}
+        >
+          <div className="moon-logo">MOON</div>
+
+          <div
+            aria-hidden="true"
+            style={{
+              width: "112px",
+              height: "112px",
+              margin: "26px auto",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "1px solid rgba(201,181,138,0.5)",
+              background: "radial-gradient(circle, rgba(201,181,138,0.16), rgba(201,181,138,0.025) 72%)",
+              color: "#c9b58a",
+              fontSize: "48px",
+            }}
+          >
+            ⌖
+          </div>
+
+          <h1 style={{ maxWidth: "440px", marginBottom: "12px" }}>
+            Encontre pessoas perto de você
+          </h1>
+
+          <p className="form-subtitle" style={{ maxWidth: "390px", lineHeight: 1.8 }}>
+            Antes de criar sua conta, precisamos da sua localização para ajudar o MOON a encontrar e ordenar perfis próximos de você.
+          </p>
+
+          <button
+            type="button"
+            onClick={handleSignupLocation}
+            disabled={locationLoading}
+            style={{
+              width: "100%",
+              maxWidth: "390px",
+              minHeight: "52px",
+              marginTop: "22px",
+              border: "1px solid #c9b58a",
+              borderRadius: "10px",
+              background: "#c9b58a",
+              color: "#080808",
+              fontSize: "11px",
+              fontWeight: 700,
+              letterSpacing: "1.5px",
+              cursor: locationLoading ? "wait" : "pointer",
+              opacity: locationLoading ? 0.7 : 1,
+            }}
+          >
+            {locationLoading ? "OBTENDO LOCALIZAÇÃO..." : "PERMITIR LOCALIZAÇÃO"}
+          </button>
+
+          <p style={{ maxWidth: "360px", color: "#77736b", fontSize: "10px", lineHeight: 1.7, marginTop: "16px" }}>
+            A permissão será solicitada pelo navegador. É necessário permitir e obter a localização para continuar o cadastro.
+          </p>
+
+          {message && (
+            <p role="alert" className="form-subtitle" style={{ maxWidth: "390px", color: "#d9a7a7", lineHeight: 1.7 }}>
+              {message}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={() => { setMessage(""); setScreen("home"); }}
+            style={{
+              marginTop: "20px",
+              border: "none",
+              background: "transparent",
+              color: "#aaa59b",
+              fontSize: "10px",
+              letterSpacing: "1px",
+              cursor: "pointer",
+            }}
+          >
+            VOLTAR
+          </button>
         </section>
       )}
 
