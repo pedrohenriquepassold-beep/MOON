@@ -3295,15 +3295,17 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
           if (!profile?.id || profile.id === user.id) return false;
           if (blockedIds.has(profile.id) || profile.is_hidden === true) return false;
 
-          // O Discovery mostra apenas perfis ativos nas últimas 24 horas.
-          // Sem last_active_at válido, não é possível confirmar atividade recente.
+          // Exibir perfis ativos nas últimas 24 horas. Aceitar pequena diferença
+          // futura de relógio/fuso (até 6h) para não ocultar perfis por timestamps
+          // gravados com horário inconsistente. Datas muito antigas ou inválidas ficam fora.
           const lastActiveAt = profile.last_active_at
             ? new Date(profile.last_active_at).getTime()
             : NaN;
+          const activityAgeMs = Date.now() - lastActiveAt;
           const isRecentlyActive =
             Number.isFinite(lastActiveAt) &&
-            lastActiveAt <= Date.now() &&
-            Date.now() - lastActiveAt <= 24 * 60 * 60 * 1000;
+            activityAgeMs <= 24 * 60 * 60 * 1000 &&
+            activityAgeMs >= -6 * 60 * 60 * 1000;
           if (!isRecentlyActive) return false;
 
           const age = calculateAge(profile.birth_date);
@@ -7889,6 +7891,42 @@ const filteredConversations = conversations
 
           return bTime - aTime;
         });
+
+  async function markCurrentUserActive(userId) {
+    if (!userId) return;
+    try {
+      const activeAt = new Date().toISOString();
+      const { error } = await supabase
+        .from("profiles")
+        .update({ last_active_at: activeAt })
+        .eq("id", userId);
+      if (error) {
+        console.error("ERRO AO ATUALIZAR ATIVIDADE DO USUÁRIO:", error);
+      }
+    } catch (error) {
+      console.error("ERRO AO ATUALIZAR ATIVIDADE DO USUÁRIO:", error);
+    }
+  }
+
+  // Atualiza a atividade ao abrir o app e enquanto o usuário estiver usando-o.
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const updateActivityIfVisible = () => {
+      if (document.visibilityState === "visible") {
+        void markCurrentUserActive(currentUserId);
+      }
+    };
+
+    updateActivityIfVisible();
+    const intervalId = window.setInterval(updateActivityIfVisible, 5 * 60 * 1000);
+    document.addEventListener("visibilitychange", updateActivityIfVisible);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", updateActivityIfVisible);
+    };
+  }, [currentUserId]);
 
   useEffect(() => {
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
