@@ -3267,7 +3267,14 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
       const blockedIds = await getBlockedUserIds(user.id);
 
-      // Busca todos os perfis visíveis; localização é opcional e nunca filtra resultados.
+      // O Discovery só pode exibir perfis dentro de 50 km da localização real do usuário.
+      // Sem coordenadas próprias válidas, não mostramos perfis aleatórios nem presumimos uma cidade.
+      if (!hasCenter) {
+        setNearbyProfiles([]);
+        setDiscoveryLoading(false);
+        return;
+      }
+
       const { data: profileRows, error: profileRowsError } = await supabase
         .from("profiles")
         .select("id, name, birth_date, gender, sexuality, position, availability, profession, education, intention, habits, hobbies, personality, relationship, interests, languages, latitude, longitude, is_hidden, last_active_at")
@@ -3294,26 +3301,25 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
           const profileHasCoordinates =
             validCoordinate(profile.latitude, -90, 90) &&
             validCoordinate(profile.longitude, -180, 180);
+          if (!profileHasCoordinates) return null;
 
-          let distanceKm = null;
-          if (hasCenter && profileHasCoordinates) {
-            const centerLatitude = Number(latitude);
-            const centerLongitude = Number(longitude);
-            const profileLatitude = Number(profile.latitude);
-            const profileLongitude = Number(profile.longitude);
-            const deltaLatitude = toRadians(profileLatitude - centerLatitude);
-            const deltaLongitude = toRadians(profileLongitude - centerLongitude);
-            const a =
-              Math.sin(deltaLatitude / 2) ** 2 +
-              Math.cos(toRadians(centerLatitude)) *
-                Math.cos(toRadians(profileLatitude)) *
-                Math.sin(deltaLongitude / 2) ** 2;
-            const c = 2 * Math.atan2(Math.sqrt(Math.max(0, a)), Math.sqrt(Math.max(0, 1 - a)));
-            distanceKm = earthRadiusKm * c;
-          }
-
+          const centerLatitude = Number(latitude);
+          const centerLongitude = Number(longitude);
+          const profileLatitude = Number(profile.latitude);
+          const profileLongitude = Number(profile.longitude);
+          const deltaLatitude = toRadians(profileLatitude - centerLatitude);
+          const deltaLongitude = toRadians(profileLongitude - centerLongitude);
+          const a =
+            Math.sin(deltaLatitude / 2) ** 2 +
+            Math.cos(toRadians(centerLatitude)) *
+              Math.cos(toRadians(profileLatitude)) *
+              Math.sin(deltaLongitude / 2) ** 2;
+          const c = 2 * Math.atan2(Math.sqrt(Math.max(0, a)), Math.sqrt(Math.max(0, 1 - a)));
+          const distanceKm = earthRadiusKm * c;
+          if (distanceKm > 50) return null;
           return { ...profile, distance_km: distanceKm };
-        });
+        })
+        .filter(Boolean);
 
 
       const visibleProfileIds = visibleProfiles.map((profile) => profile.id).filter(Boolean);
@@ -7522,6 +7528,12 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       return;
     }
 
+    const birthDateAge = calculateAge(profileBirthDate);
+    if (!profileBirthDate || !Number.isInteger(birthDateAge) || birthDateAge < 18) {
+      setMessage("Informe sua data de nascimento verdadeira. Você precisa ter 18 anos ou mais para usar a MOON.");
+      return;
+    }
+
     if (!profileForm.gender) {
       setMessage("Selecione sua identidade de gênero.");
       return;
@@ -7582,6 +7594,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
             ...(profileDisplayName.trim() !== profileOriginalName.trim()
               ? { name: profileDisplayName.trim() }
               : {}),
+            birth_date: profileBirthDate,
             bio:
               profileForm.bio,
             gender:
@@ -12756,6 +12769,32 @@ const filteredConversations = conversations
                 </div>
 
                 <div style={{ marginBottom: "22px" }}>
+                  <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>DATA DE NASCIMENTO</p>
+                  <input
+                    type="date"
+                    value={profileBirthDate || ""}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(event) => setProfileBirthDate(event.target.value)}
+                    required
+                    style={{
+                      width: "100%",
+                      height: "48px",
+                      boxSizing: "border-box",
+                      background: "rgba(201, 181, 138, 0.035)",
+                      border: "1px solid #292929",
+                      borderRadius: "10px",
+                      color: "#f4ead7",
+                      padding: "0 14px",
+                      outline: "none",
+                      fontFamily: "inherit",
+                      fontSize: "13px",
+                      colorScheme: "dark",
+                    }}
+                  />
+                  <p className="form-subtitle" style={{ marginTop: "8px", marginBottom: "0" }}>Use sua data de nascimento verdadeira. É necessário ter 18 anos ou mais para aparecer no Discovery.</p>
+                </div>
+
+                <div style={{ marginBottom: "22px" }}>
                   <p style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px", margin: "0 0 10px" }}>IDENTIDADE</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
                     {["Homem cis", "Homem trans", "Não binário"].map((option) => (
@@ -15793,7 +15832,7 @@ const filteredConversations = conversations
                 marginLeft: "3px",
               }}
             >
-              {discoveryLoading ? "ATUALIZANDO" : locationLoading ? "LOCALIZANDO" : "TODOS OS PERFIS"}
+              {discoveryLoading ? "ATUALIZANDO" : locationLoading ? "LOCALIZANDO" : "50 KM"}
             </span>
           </div>
 
