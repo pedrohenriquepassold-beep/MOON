@@ -546,7 +546,14 @@ function App() {
   }
 
   async function toggleSiteNotifications() {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      setMessage("Sua sessão não foi identificada. Saia da conta e entre novamente para ativar as notificações.");
+      showToast({
+        title: "SESSÃO NÃO IDENTIFICADA",
+        body: "Entre novamente na MOON para ativar as notificações.",
+      });
+      return;
+    }
 
     try {
       if (siteNotificationsEnabled) {
