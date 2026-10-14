@@ -545,6 +545,24 @@ function App() {
     return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
   }
 
+  // Solicita ao servidor um push relacionado a um evento já salvo no Supabase.
+  // O token da sessão é enviado automaticamente por supabase.functions.invoke.
+  async function triggerMoonPush(eventType, eventId) {
+    if (!eventType || !eventId) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("send-push", {
+        body: { event_type: eventType, event_id: eventId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    } catch (error) {
+      // O evento principal já foi salvo. Uma falha de push não deve cancelar a ação.
+      console.error("ERRO AO DISPARAR PUSH DA MOON:", eventType, error);
+      return null;
+    }
+  }
+
   async function toggleSiteNotifications() {
     if (!currentUserId) {
       setMessage("Sua sessão não foi identificada. Saia da conta e entre novamente para ativar as notificações.");
@@ -5290,13 +5308,16 @@ function App() {
       }
 
       const {
+        data: insertedLike,
         error,
       } = await supabase
         .from("likes")
         .insert({
           user_id: user.id,
           liked_user_id: profileId,
-        });
+        })
+        .select("id")
+        .single();
 
       if (!error) {
         const { data: reciprocalLike, error: reciprocalError } = await supabase
@@ -5308,6 +5329,10 @@ function App() {
 
         if (reciprocalError) {
           console.error("ERRO AO VERIFICAR MATCH:", reciprocalError);
+        }
+
+        if (insertedLike?.id) {
+          await triggerMoonPush("like", insertedLike.id);
         }
 
         if (reciprocalLike) {
@@ -6806,6 +6831,8 @@ function App() {
         throw error;
       }
 
+      if (insertedMessage?.id) await triggerMoonPush("message", insertedMessage.id);
+
       setChatMessages((currentMessages) => {
         if (!insertedMessage || currentMessages.some((message) => message.id === insertedMessage.id)) {
           return currentMessages;
@@ -7102,6 +7129,8 @@ function App() {
         throw error;
       }
 
+      if (insertedMessage?.id) await triggerMoonPush("message", insertedMessage.id);
+
       const [hydratedMessage] = await hydrateChatMessages([insertedMessage]);
 
       setChatMessages((currentMessages) => {
@@ -7170,6 +7199,8 @@ function App() {
         .single();
 
       if (error) throw error;
+
+      if (insertedMessage?.id) await triggerMoonPush("message", insertedMessage.id);
 
       setChatMessages((currentMessages) => {
         if (!insertedMessage || currentMessages.some((item) => item.id === insertedMessage.id)) {
