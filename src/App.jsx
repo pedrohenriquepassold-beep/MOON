@@ -65,7 +65,11 @@ function App() {
   const [showIosInstallGuide, setShowIosInstallGuide] = useState(false);
 
   const [toast, setToast] = useState(null);
-const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
+  const [siteNotificationsEnabled, setSiteNotificationsEnabled] = useState(false);
+  const [installGuidePlatform, setInstallGuidePlatform] = useState(null);
+  const [chatMessageReactions, setChatMessageReactions] = useState([]);
+  const chatMessageClickTimerRef = useRef(null);
   const [notificationCount, setNotificationCount] = useState({
     like: 0,
     message: 0,
@@ -223,6 +227,20 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [abusiveRestrictionLoading, setAbusiveRestrictionLoading] = useState(false);
   useEffect(() => {
     if (!currentUserId) return;
+
+    try {
+      const savedSiteNotifications = window.localStorage.getItem(`moon-site-notifications-${currentUserId}`);
+      setSiteNotificationsEnabled(savedSiteNotifications === "true");
+      const lastVisitKey = `moon-last-visit-${currentUserId}`;
+      const previousVisit = Number(window.localStorage.getItem(lastVisitKey) || 0);
+      const now = Date.now();
+      if (savedSiteNotifications === "true" && previousVisit && now - previousVisit >= 3 * 24 * 60 * 60 * 1000 && "Notification" in window && Notification.permission === "granted") {
+        new Notification("A MOON sentiu sua falta 🌙", { body: "Tem gente nova esperando para você descobrir. Entre e veja quem chegou.", icon: "/apple-touch-icon.png", tag: "moon-comeback" });
+      }
+      window.localStorage.setItem(lastVisitKey, String(now));
+    } catch (error) {
+      console.warn("NÃO FOI POSSÍVEL CARREGAR A PREFERÊNCIA DE NOTIFICAÇÕES:", error);
+    }
 
     try {
       const savedPreference = window.localStorage.getItem(`moon-chat-photo-confirmation-${currentUserId}`);
@@ -519,6 +537,98 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
   const [matchTarget, setMatchTarget] = useState(null);
 
   const notificationAudioContextRef = useRef(null);
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+  }
+
+  async function toggleSiteNotifications() {
+    if (!currentUserId) return;
+
+    try {
+      if (siteNotificationsEnabled) {
+        setSiteNotificationsEnabled(false);
+        window.localStorage.setItem(`moon-site-notifications-${currentUserId}`, "false");
+
+        if ("serviceWorker" in navigator && "PushManager" in window) {
+          const registration = await navigator.serviceWorker.getRegistration("/");
+          const subscription = await registration?.pushManager.getSubscription();
+          if (subscription) {
+            await supabase
+              .from("push_subscriptions")
+              .delete()
+              .eq("user_id", currentUserId)
+              .eq("endpoint", subscription.endpoint);
+            await subscription.unsubscribe();
+          }
+        }
+
+        showToast({ title: "NOTIFICAÇÕES DESATIVADAS", body: "As notificações push foram desativadas neste dispositivo." });
+        return;
+      }
+
+      if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+        setMessage("Este navegador não oferece suporte a notificações push.");
+        return;
+      }
+
+      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+      if (!vapidPublicKey) {
+        setMessage("Configure VITE_VAPID_PUBLIC_KEY no arquivo .env do projeto e publique novamente.");
+        return;
+      }
+
+      const permission = Notification.permission === "granted"
+        ? "granted"
+        : await Notification.requestPermission();
+
+      if (permission !== "granted") {
+        setMessage("Permita as notificações nas configurações do navegador para ativá-las na MOON.");
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+      }
+
+      const { error: saveError } = await supabase
+        .from("push_subscriptions")
+        .upsert({
+          user_id: currentUserId,
+          endpoint: subscription.endpoint,
+          subscription: subscription.toJSON(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "endpoint" });
+
+      if (saveError) throw saveError;
+
+      setSiteNotificationsEnabled(true);
+      window.localStorage.setItem(`moon-site-notifications-${currentUserId}`, "true");
+      registration.showNotification("Notificações da MOON ativadas 🌙", {
+        body: "Este dispositivo está inscrito para receber notificações push.",
+        icon: "/apple-touch-icon.png",
+        tag: "moon-notifications-enabled",
+      });
+      showToast({ title: "NOTIFICAÇÕES ATIVADAS", body: "Este dispositivo foi inscrito para receber notificações push." });
+    } catch (error) {
+      console.error("ERRO AO ATIVAR NOTIFICAÇÕES PUSH:", error);
+      setMessage(error?.message || "Não foi possível ativar as notificações push.");
+    }
+  }
+
+  function sendBrowserNotification(title, body, tag) {
+    if (!siteNotificationsEnabled || !("Notification" in window) || Notification.permission !== "granted" || document.visibilityState === "visible") return;
+    try { new Notification(title, { body, icon: "/apple-touch-icon.png", tag }); } catch (error) { console.warn("NOTIFICAÇÃO DO NAVEGADOR INDISPONÍVEL:", error); }
+  }
 
   function unlockNotificationAudio() {
     try {
@@ -1040,18 +1150,21 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
           }
 
           if (notification.type === "like") {
+            sendBrowserNotification(notification.title || "Nova curtida na MOON", notification.body || "Alguém curtiu você.", `moon-like-${notification.id}`);
             playNotificationSound();
           showToast({
               title: notification.title || "Nova curtida",
               body: notification.body || "Alguém curtiu você.",
             });
           } else if (notification.type === "message") {
+          sendBrowserNotification(notification.title || "Nova mensagem na MOON", notification.body || "Você recebeu uma nova mensagem.", `moon-message-${notification.id}`);
           playNotificationSound();
             showToast({
               title: notification.title || "Nova mensagem",
               body: notification.body || "Você recebeu uma nova mensagem.",
             });
           } else if (notification.type === "match") {
+            sendBrowserNotification("Vocês se conectaram 🌙", "Você tem um novo Match na MOON.", `moon-match-${notification.id}`);
             playNotificationSound();
             showToast({
               title: "Vocês se conectaram",
@@ -1064,12 +1177,14 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
               body: "A outra pessoa tirou uma captura de tela.",
             });
           } else if (notification.type === "boost") {
+            sendBrowserNotification("Você ganhou um Boost 🚀", "Um Boost foi concedido ao seu perfil. Ative quando quiser.", `moon-boost-${notification.id}`);
             playNotificationSound();
             showToast({
               title: "Você ganhou um Boost 🚀",
               body: "Um Boost foi concedido ao seu perfil. Ative quando quiser.",
             });
           } else if (notification.type === "profile_view_access") {
+            sendBrowserNotification("👁 VIU VOCÊ LIBERADO", "O recurso Viu Você foi liberado para sua conta.", `moon-profile-view-${notification.id}`);
             playNotificationSound();
             showToast({
               title: "👁 VIU VOCÊ LIBERADO",
@@ -1084,7 +1199,7 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, [currentUserId, notificationSoundEnabled]);
+  }, [currentUserId, notificationSoundEnabled, siteNotificationsEnabled]);
 
   async function checkAdminStatus() {
     try {
@@ -4305,6 +4420,26 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
     setScreen("inside");
   }
 
+  async function refreshDiscoveryFromTab() {
+    setMessage("");
+    try {
+      let latitude = userLocation.latitude;
+      let longitude = userLocation.longitude;
+      if ((latitude == null || longitude == null) && currentUserId) {
+        const { data, error } = await supabase.from("profiles").select("latitude, longitude").eq("id", currentUserId).maybeSingle();
+        if (error) throw error;
+        latitude = data?.latitude ?? null;
+        longitude = data?.longitude ?? null;
+        if (latitude != null && longitude != null) setUserLocation({ latitude: Number(latitude), longitude: Number(longitude) });
+      }
+      if (latitude != null && longitude != null) {
+        await loadNearbyProfiles(Number(latitude), Number(longitude));
+      }
+    } catch (error) {
+      console.error("ERRO AO ATUALIZAR DISCOVERY PELA NAVEGAÇÃO:", error);
+    }
+  }
+
   async function refreshDiscovery() {
     setMessage("");
 
@@ -5409,6 +5544,25 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       .on(
         "postgres_changes",
         {
+          event: "*",
+          schema: "public",
+          table: "message_reactions",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          if (!isMounted) return;
+          if (payload.eventType === "INSERT" && payload.new?.id) {
+            setChatMessageReactions((current) => current.some((item) => item.id === payload.new.id) ? current : [...current, payload.new]);
+          } else if (payload.eventType === "DELETE" && payload.old?.id) {
+            setChatMessageReactions((current) => current.filter((item) => item.id !== payload.old.id));
+          } else if (payload.eventType === "UPDATE" && payload.new?.id) {
+            setChatMessageReactions((current) => current.map((item) => item.id === payload.new.id ? payload.new : item));
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
           event: "UPDATE",
           schema: "public",
           table: "conversations",
@@ -5554,6 +5708,17 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     setChatUnreadDividerMessageId(firstUnreadMessage?.id || null);
     setChatMessages(hydratedMessages);
+    try {
+      const { data: reactions, error: reactionsError } = await supabase
+        .from("message_reactions")
+        .select("id, message_id, user_id, reaction")
+        .eq("conversation_id", conversationId);
+      if (reactionsError) throw reactionsError;
+      setChatMessageReactions(reactions || []);
+    } catch (reactionError) {
+      console.warn("REAÇÕES NÃO CARREGADAS. APLIQUE O SQL DE message_reactions ENTREGUE COM O APP:", reactionError);
+      setChatMessageReactions([]);
+    }
     await markConversationAsRead(conversationId);
   }
 
@@ -6222,6 +6387,25 @@ const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
       setMessage(error.message || "Não foi possível abrir a conversa.");
     } finally {
       setChatLoading(false);
+    }
+  }
+
+  async function toggleMoonMessageReaction(chatMessage) {
+    if (!currentUserId || !chatConversation?.id || !chatMessage?.id || chatMessage.deleted_for_everyone) return;
+    const existing = chatMessageReactions.find((reaction) => reaction.message_id === chatMessage.id && reaction.user_id === currentUserId && reaction.reaction === "moon");
+    try {
+      if (existing) {
+        const { error } = await supabase.from("message_reactions").delete().eq("id", existing.id).eq("user_id", currentUserId);
+        if (error) throw error;
+        setChatMessageReactions((current) => current.filter((reaction) => reaction.id !== existing.id));
+      } else {
+        const { data, error } = await supabase.from("message_reactions").insert({ message_id: chatMessage.id, conversation_id: chatConversation.id, user_id: currentUserId, reaction: "moon" }).select("id, message_id, user_id, reaction").single();
+        if (error) throw error;
+        setChatMessageReactions((current) => [...current.filter((reaction) => !(reaction.message_id === chatMessage.id && reaction.user_id === currentUserId)), data]);
+      }
+    } catch (error) {
+      console.error("ERRO AO REAGIR À MENSAGEM:", error);
+      setMessage("Não foi possível reagir. Confira se o SQL de reações da MOON foi executado no Supabase.");
     }
   }
 
@@ -8813,6 +8997,9 @@ const filteredConversations = conversations
             <button onClick={() => setScreen("login")}>ENTER</button>
             <button onClick={() => { setMessage(""); setScreen("registerLocation"); }}>CREATE ACCOUNT</button>
           </div>
+          <div style={{ margin: "18px auto 0", textAlign: "center" }}>
+            <button type="button" onClick={() => setInstallGuidePlatform("choose")} style={{ padding: "10px 14px", border: "1px solid rgba(201,181,138,.35)", borderRadius: "12px", background: "rgba(201,181,138,.06)", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>＋ ADICIONAR MOON À TELA INICIAL</button>
+          </div>
 
           <div style={{ width: "min(920px, calc(100% - 32px))", margin: "75px auto 0", textAlign: "left" }}>
             <section style={{ padding: "42px 0 20px", borderTop: "1px solid rgba(201,181,138,0.16)" }}>
@@ -9150,6 +9337,8 @@ const filteredConversations = conversations
               autoCorrect="off"
               spellCheck={false}
             />
+
+            <button type="button" onClick={() => setInstallGuidePlatform("choose")} style={{ width: "100%", margin: "4px 0 18px", padding: "12px 14px", border: "1px solid rgba(201,181,138,.28)", borderRadius: "12px", background: "rgba(201,181,138,.045)", color: "#c9b58a", fontSize: "9px", letterSpacing: "1px", cursor: "pointer" }}>📲 COMO ADICIONAR A MOON À TELA INICIAL</button>
 
             <label className="terms">
 
@@ -9650,7 +9839,8 @@ const filteredConversations = conversations
 
                 <h2>8. CONDUTAS PROIBIDAS</h2>
                 <p>É proibido utilizar a MOON para assédio, perseguição, intimidação, ameaças, fraude, falsidade de identidade, spam, golpes, conteúdo ilegal, exploração sexual, qualquer conteúdo envolvendo menores de idade, discurso de ódio ou discriminação ilícita.</p>
-                <p>Também é proibido tentar burlar sistemas de segurança, acessar contas de terceiros, utilizar bots sem autorização, realizar scraping não autorizado ou interferir no funcionamento da plataforma.</p>
+                <p>É expressamente proibido publicar ou enviar fotos, vídeos ou outros conteúdos que promovam ou exibam armas de forma ameaçadora, drogas ilícitas, violência explícita, crueldade, atividades criminosas ou anúncios de prostituição, oferta ou intermediação de serviços sexuais pagos. Também são proibidos aliciamento, exploração, tráfico de pessoas e qualquer conteúdo que coloque usuários em risco.</p>
+                <p>Também é proibido tentar burlar sistemas de segurança, acessar contas de terceiros, utilizar bots sem autorização, realizar scraping não autorizado ou interferir no funcionamento da plataforma. Conteúdos e contas que violem estas regras poderão ser removidos ou suspensos após análise.</p>
 
                 <h2>9. DENÚNCIAS, BLOQUEIOS E MODERAÇÃO</h2>
                 <p>A MOON disponibiliza mecanismos para denúncia e bloqueio. As denúncias poderão ser analisadas pela equipe responsável pela plataforma.</p>
@@ -11553,7 +11743,7 @@ const filteredConversations = conversations
             Controle sua experiência na MOON.
           </p>
 
-          <div style={{ border: "1px solid #242424", background: "#0b0b0b" }}>
+          <div style={{ border: "1px solid #242424", borderRadius: "14px", overflow: "hidden", background: "#0b0b0b" }}>
             {isAdmin && currentUserId === "41dab763-1cdc-46a7-9efb-023d31c5b5d8" && (
               <>
                       <button
@@ -11624,6 +11814,7 @@ const filteredConversations = conversations
                     style={{
                       minWidth: "112px",
                       height: "38px",
+                      borderRadius: "10px",
                       border: "1px solid #c9b58a",
                       background: "#15130f",
                       color: "#c9b58a",
@@ -11711,7 +11902,7 @@ const filteredConversations = conversations
                     setMessage("Não foi possível atualizar o status de leitura.");
                     console.error("ERRO AO ATUALIZAR STATUS DE LEITURA:", error);
                   }
-                }} style={{ minWidth: "112px", height: "38px", border: readReceiptsEnabled ? "1px solid #c9b58a" : "1px solid #292929", background: readReceiptsEnabled ? "#15130f" : "transparent", color: readReceiptsEnabled ? "#c9b58a" : "#77736b", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer" }}>
+                }} style={{ minWidth: "112px", height: "38px", borderRadius: "10px", border: readReceiptsEnabled ? "1px solid #c9b58a" : "1px solid #292929", background: readReceiptsEnabled ? "#15130f" : "transparent", color: readReceiptsEnabled ? "#c9b58a" : "#77736b", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer" }}>
                   {readReceiptsEnabled ? "ATIVADO" : "DESATIVADO"}
                 </button>
               </div>
@@ -11789,7 +11980,7 @@ const filteredConversations = conversations
                       console.error("ERRO AO SALVAR PROTEÇÃO DE FOTOS:", error);
                     }
                   }}
-                  style={{ minWidth: "112px", height: "38px", border: chatPhotoConfirmationEnabled ? "1px solid #c9b58a" : "1px solid #292929", background: chatPhotoConfirmationEnabled ? "#15130f" : "transparent", color: chatPhotoConfirmationEnabled ? "#c9b58a" : "#77736b", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer" }}
+                  style={{ minWidth: "112px", height: "38px", borderRadius: "10px", border: chatPhotoConfirmationEnabled ? "1px solid #c9b58a" : "1px solid #292929", background: chatPhotoConfirmationEnabled ? "#15130f" : "transparent", color: chatPhotoConfirmationEnabled ? "#c9b58a" : "#77736b", fontSize: "9px", letterSpacing: "1.5px", cursor: "pointer" }}
                 >
                   {chatPhotoConfirmationEnabled ? "ATIVADO" : "DESATIVADO"}
                 </button>
@@ -11876,6 +12067,7 @@ const filteredConversations = conversations
                   style={{
                     minWidth: "112px",
                     height: "38px",
+                    borderRadius: "10px",
                     border: isProfileHidden ? "1px solid #c9b58a" : "1px solid #292929",
                     background: isProfileHidden ? "#15130f" : "transparent",
                     color: isProfileHidden ? "#c9b58a" : "#77736b",
@@ -11911,6 +12103,7 @@ const filteredConversations = conversations
                 style={{
                   minWidth: "112px",
                   height: "38px",
+                  borderRadius: "10px",
                   border: notificationSoundEnabled ? "1px solid #c9b58a" : "1px solid #292929",
                   background: notificationSoundEnabled ? "#15130f" : "transparent",
                   color: notificationSoundEnabled ? "#c9b58a" : "#77736b",
@@ -11921,6 +12114,14 @@ const filteredConversations = conversations
               >
                 {notificationSoundEnabled ? "ATIVADO" : "DESATIVADO"}
               </button>
+            </div>
+
+            <div style={{ minHeight: "68px", padding: "12px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", borderBottom: "1px solid #242424", boxSizing: "border-box" }}>
+              <div style={{ minWidth: 0, flex: 1, textAlign: "left", alignSelf: "center" }}>
+                <div style={{ color: "#f4ead7", fontSize: "10px", letterSpacing: "1.5px", marginBottom: "5px", textAlign: "left" }}>NOTIFICAÇÕES DO SITE</div>
+                <div style={{ color: "#77736b", fontSize: "9px", lineHeight: "1.5", textAlign: "left" }}>Avisos de curtidas, mensagens e novidades. A permissão do navegador é necessária.</div>
+              </div>
+              <button type="button" onClick={toggleSiteNotifications} style={{ flexShrink: 0, minWidth: "112px", height: "38px", border: siteNotificationsEnabled ? "1px solid #c9b58a" : "1px solid #292929", borderRadius: "10px", background: siteNotificationsEnabled ? "#15130f" : "transparent", color: siteNotificationsEnabled ? "#c9b58a" : "#77736b", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>{siteNotificationsEnabled ? "ATIVADAS" : "ATIVAR"}</button>
             </div>
 
             <button
@@ -12424,9 +12625,13 @@ const filteredConversations = conversations
                       <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1px", marginBottom: "8px" }}>
                         {selectedMapProfile.distance_km != null ? `${Number(selectedMapProfile.distance_km).toFixed(1).replace(".", ",")} KM` : "PERFIL PRÓXIMO"}
                       </div>
-                      <button type="button" onClick={(event) => { event.stopPropagation(); handleViewMapProfile(selectedMapProfile); }} style={{ height: "30px", padding: "0 12px", border: "1px solid #c9b58a", background: "transparent", color: "#c9b58a", fontSize: "8px", letterSpacing: "1.3px", cursor: "pointer" }}>
-                        {selectedMapProfileLoading ? "CARREGANDO..." : "VER PERFIL"}
-                      </button>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); handleLike(selectedMapProfile.id, selectedMapProfile); }} style={{ minHeight: "30px", padding: "0 10px", border: "1px solid #c9b58a", borderRadius: "9px", background: "rgba(201,181,138,.12)", color: "#f4ead7", fontSize: "8px", letterSpacing: "1px", cursor: "pointer" }}>♡ CURTIR</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); handleChat(selectedMapProfile, "map"); }} style={{ minHeight: "30px", padding: "0 10px", border: "1px solid #c9b58a", borderRadius: "9px", background: "#c9b58a", color: "#090909", fontSize: "8px", letterSpacing: "1px", cursor: "pointer" }}>✉ MENSAGEM</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); handleViewMapProfile(selectedMapProfile); }} style={{ minHeight: "30px", padding: "0 10px", border: "1px solid #292929", borderRadius: "9px", background: "transparent", color: "#c9b58a", fontSize: "8px", letterSpacing: "1px", cursor: "pointer" }}>
+                          {selectedMapProfileLoading ? "CARREGANDO..." : "VER PERFIL"}
+                        </button>
+                      </div>
                     </div>
                     <button type="button" onClick={() => setSelectedMapProfile(null)} aria-label="Fechar" style={{ alignSelf: "flex-start", width: "24px", height: "24px", padding: 0, border: "1px solid #292929", background: "transparent", color: "#77736b", fontSize: "12px", cursor: "pointer" }}>×</button>
                   </div>
@@ -12993,7 +13198,7 @@ const filteredConversations = conversations
               <div className="photo-section" style={{ marginTop: "10px", marginBottom: "25px" }}>
                 <p className="photo-counter">LOCALIZAÇÃO</p>
                 <p className="form-subtitle" style={{ marginTop: "0", marginBottom: "15px" }}>A MOON usa sua localização para encontrar pessoas próximas. Sua cidade não precisa ser informada.</p>
-                <button type="button" onClick={handleUseLocation} disabled={locationLoading}>
+                <button type="button" onClick={handleUseLocation} disabled={locationLoading} style={{ borderRadius: "10px" }}>
                   {locationLoading ? "LOCALIZANDO..." : locationSaved ? "ATUALIZAR LOCALIZAÇÃO" : "USAR MINHA LOCALIZAÇÃO"}
                 </button>
                 {locationSaved && <p className="form-subtitle" style={{ marginTop: "12px", marginBottom: "0", color: "#c9b58a" }}>✓ Localização salva</p>}
@@ -14325,8 +14530,24 @@ const filteredConversations = conversations
                   <div
                   key={chatMessage.id}
                   id={`moon-chat-message-${chatMessage.id}`}
-                  onClick={() => selectChatMessageForReply(chatMessage)}
-                  title={chatMessage.deleted_for_everyone ? undefined : "Responder mensagem"}
+                  onClick={() => {
+                    if (chatMessageClickTimerRef.current) {
+                      window.clearTimeout(chatMessageClickTimerRef.current);
+                      chatMessageClickTimerRef.current = null;
+                      return;
+                    }
+                    chatMessageClickTimerRef.current = window.setTimeout(() => {
+                      selectChatMessageForReply(chatMessage);
+                      chatMessageClickTimerRef.current = null;
+                    }, 230);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    if (chatMessageClickTimerRef.current) window.clearTimeout(chatMessageClickTimerRef.current);
+                    chatMessageClickTimerRef.current = null;
+                    toggleMoonMessageReaction(chatMessage);
+                  }}
+                  title={chatMessage.deleted_for_everyone ? undefined : "Toque duas vezes para reagir com 🌙 · clique para responder"}
                   style={{
                     alignSelf:
                       chatMessage.sender_id === currentUserId
@@ -14756,6 +14977,16 @@ const filteredConversations = conversations
                     </div>
                   )}
 
+                  {(() => {
+                    const messageReactions = chatMessageReactions.filter((reaction) => reaction.message_id === chatMessage.id && reaction.reaction === "moon");
+                    if (!messageReactions.length) return null;
+                    const reactedByMe = messageReactions.some((reaction) => reaction.user_id === currentUserId);
+                    return (
+                      <button type="button" onClick={(event) => { event.stopPropagation(); toggleMoonMessageReaction(chatMessage); }} title="Remover sua reação" style={{ display: "inline-flex", alignItems: "center", gap: "5px", marginTop: "7px", padding: "3px 8px", border: reactedByMe ? "1px solid #c9b58a" : "1px solid #39352e", borderRadius: "999px", background: reactedByMe ? "rgba(201,181,138,.18)" : "rgba(0,0,0,.24)", color: "#f4ead7", fontSize: "11px", cursor: "pointer" }}>
+                        🌙 <span style={{ fontSize: "9px" }}>{messageReactions.length}</span>
+                      </button>
+                    );
+                  })()}
                   {chatMessage.sender_id === currentUserId && (
                     <div
                       style={{
@@ -15291,6 +15522,7 @@ const filteredConversations = conversations
                   overflowY: "auto",
                   background: "#080808",
                   border: "1px solid #292929",
+                  borderRadius: "22px",
                   padding: "18px",
                 }}
               >
@@ -16094,6 +16326,7 @@ const filteredConversations = conversations
                 height: "34px",
                 padding: "0 14px",
                 border: "1px solid #292929",
+                borderRadius: "10px",
                 background: "#0b0b0b",
                 color: "#c9b58a",
                 fontSize: "10px",
@@ -16169,6 +16402,7 @@ const filteredConversations = conversations
                 height: "38px",
                 padding: "0 18px",
                 border: "1px solid #c9b58a",
+                borderRadius: "10px",
                 background:
                   identityFilter ||
                   sexualityFilter ||
@@ -16211,6 +16445,7 @@ const filteredConversations = conversations
               scroll-snap-stop: always;
               background: rgba(8,8,8,0.92);
               border: 1px solid rgba(201,181,138,0.16);
+              border-radius: 22px;
               overflow: hidden;
               box-shadow: 0 24px 70px rgba(0,0,0,0.34);
             }
@@ -17075,6 +17310,9 @@ const filteredConversations = conversations
                                     if (target === "inside") {
                                       setSelectedProfile(null);
                                       setScreen("inside");
+                                      window.scrollTo({ top: 0, behavior: "smooth" });
+                                      window.requestAnimationFrame(() => { window.scrollTo({ top: 0, behavior: "smooth" }); });
+                                      refreshDiscoveryFromTab();
                                     } else if (target === "profile") {
                                       setSelectedProfile(null);
                                       setProfileEditMode(false);
@@ -17178,6 +17416,30 @@ const filteredConversations = conversations
 
         </section>
       )}
+
+      {installGuidePlatform && (
+            <div onClick={() => setInstallGuidePlatform(null)} style={{ position: "fixed", inset: 0, zIndex: 5000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", background: "rgba(0,0,0,.82)", backdropFilter: "blur(8px)" }}>
+              <div onClick={(event) => event.stopPropagation()} style={{ width: "100%", maxWidth: "420px", padding: "24px", border: "1px solid rgba(201,181,138,.35)", borderRadius: "22px", background: "#090909", color: "#f4ead7", boxSizing: "border-box" }}>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "2px", marginBottom: "10px" }}>MOON · TELA INICIAL</div>
+                <h2 style={{ margin: "0 0 8px", fontSize: "22px", fontWeight: 400 }}>Leve a MOON com você</h2>
+                <p style={{ margin: "0 0 18px", color: "#99938a", fontSize: "11px", lineHeight: 1.6 }}>Escolha seu celular para ver como adicionar a MOON à tela inicial.</p>
+                {installGuidePlatform === "choose" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <button type="button" onClick={() => setInstallGuidePlatform("iphone")} style={{ minHeight: "48px", border: "1px solid #c9b58a", borderRadius: "12px", background: "#15130f", color: "#f4ead7", cursor: "pointer" }}> iPhone</button>
+                    <button type="button" onClick={() => setInstallGuidePlatform("android")} style={{ minHeight: "48px", border: "1px solid #c9b58a", borderRadius: "12px", background: "#15130f", color: "#f4ead7", cursor: "pointer" }}>🤖 Android</button>
+                  </div>
+                ) : installGuidePlatform === "iphone" ? (
+                  <ol style={{ paddingLeft: "20px", color: "#c9b58a", fontSize: "11px", lineHeight: 1.9 }}><li>Abra a MOON no Safari.</li><li>Toque em Compartilhar (quadrado com seta para cima).</li><li>Escolha “Adicionar à Tela de Início”.</li><li>Toque em “Adicionar”. O ícone da MOON aparecerá na tela inicial.</li></ol>
+                ) : (
+                  <ol style={{ paddingLeft: "20px", color: "#c9b58a", fontSize: "11px", lineHeight: 1.9 }}><li>Abra a MOON no Chrome.</li><li>Toque no menu ⋮ no canto superior.</li><li>Escolha “Instalar app” ou “Adicionar à tela inicial”.</li><li>Confirme a instalação.</li></ol>
+                )}
+                <div style={{ display: "flex", gap: "8px", marginTop: "18px" }}>
+                  {installGuidePlatform !== "choose" && <button type="button" onClick={() => setInstallGuidePlatform("choose")} style={{ flex: 1, minHeight: "40px", border: "1px solid #292929", borderRadius: "10px", background: "transparent", color: "#99938a", cursor: "pointer" }}>VOLTAR</button>}
+                  <button type="button" onClick={() => { setInstallGuidePlatform(null); if (pwaInstallAvailable || pwaIosInstallAvailable) handleInstallMoon(); }} style={{ flex: 1, minHeight: "40px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", cursor: "pointer", fontWeight: 700 }}>ENTENDI</button>
+                </div>
+              </div>
+            </div>
+          )}
 
     </main>
     </>
