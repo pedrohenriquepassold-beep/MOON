@@ -600,6 +600,8 @@ function App() {
   const [moonStoryResponse, setMoonStoryResponse] = useState('');
   const [moonStoryChoice, setMoonStoryChoice] = useState('');
   const [moonStoryInteractionSending, setMoonStoryInteractionSending] = useState(false);
+  const [moonStoryInteractionActive, setMoonStoryInteractionActive] = useState(false);
+  const [moonStoryProgress, setMoonStoryProgress] = useState(0);
   const [moonStoryFeedback, setMoonStoryFeedback] = useState('');
   const [moonStoryExperiencePosition, setMoonStoryExperiencePosition] = useState({ x: 50, y: 50 });
   const [moonStoryExperienceDragging, setMoonStoryExperienceDragging] = useState(false);
@@ -3516,6 +3518,8 @@ function App() {
     setMoonStoryMenuOpen(false);
     setMoonStoryResponse('');
     setMoonStoryChoice('');
+    setMoonStoryInteractionActive(false);
+    setMoonStoryProgress(0);
     setMoonStoryFeedback('');
     recordMoonStoryView(story);
     if (currentUserId && story.user_id !== currentUserId) {
@@ -3545,7 +3549,7 @@ function App() {
       next = previousGroup?.stories[previousGroup.stories.length - 1];
     }
     if (!next) {
-      if (direction > 0) { setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryMenuOpen(false); }
+      if (direction > 0) { setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryInteractionActive(false); setMoonStoryProgress(0); setMoonStoryMenuOpen(false); }
       return;
     }
     setMoonStoryViewer(next);
@@ -3553,6 +3557,8 @@ function App() {
     setMoonStoryMenuOpen(false);
     setMoonStoryResponse('');
     setMoonStoryChoice('');
+    setMoonStoryInteractionActive(false);
+    setMoonStoryProgress(0);
     setMoonStoryFeedback('');
     recordMoonStoryView(next);
   }
@@ -3572,6 +3578,8 @@ function App() {
       setMoonStorySeenIds((current) => current.filter((id) => id !== story.id));
       setMoonStoryViewer(null);
       setMoonStoryViewerPaused(false);
+      setMoonStoryInteractionActive(false);
+      setMoonStoryProgress(0);
       setMoonStoryMenuOpen(false);
       setMoonStoryFeedback('');
       showToast({ title: 'STORY APAGADO', body: 'A publicação foi removida com sucesso.' });
@@ -3600,13 +3608,18 @@ function App() {
   }
 
   useEffect(() => {
-    if (!moonStoryViewer || moonStoryViewerPaused) return undefined;
-    const duration = moonStoryViewer.media_type === 'video'
-      ? Math.max(1, Number(moonStoryViewer.duration_seconds) || 15) * 1000
-      : 5000;
-    const timer = window.setTimeout(() => moveMoonStory(1), duration);
-    return () => window.clearTimeout(timer);
-  }, [moonStoryViewer, moonStoryViewerPaused, moonStories]);
+    if (!moonStoryViewer || moonStoryViewerPaused || moonStoryInteractionActive || moonStoryViewer.media_type === 'video') return undefined;
+    const startedAt = performance.now() - (Math.max(0, Math.min(100, moonStoryProgress)) / 100) * 5000;
+    let frameId;
+    const tick = (now) => {
+      const progress = Math.min(100, ((now - startedAt) / 5000) * 100);
+      setMoonStoryProgress(progress);
+      if (progress >= 100) moveMoonStory(1);
+      else frameId = requestAnimationFrame(tick);
+    };
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [moonStoryViewer, moonStoryViewerPaused, moonStoryInteractionActive, moonStories]);
 
   async function submitMoonStoryInteraction() {
     const story = moonStoryViewer;
@@ -3643,17 +3656,27 @@ function App() {
         if (createError) throw createError;
         conversation = data;
       }
-      const { error: messageError } = await supabase.from('messages').insert({
+      const { data: insertedMessage, error: messageError } = await supabase.from('messages').insert({
         conversation_id: conversation.id,
         sender_id: currentUserId,
         content: answer,
         message_type: 'text',
-      });
+        source_story_id: story.id,
+        source_context: 'connection_reply',
+      }).select('*').single();
       if (messageError) throw messageError;
+      if (insertedMessage?.id) await triggerMoonPush('message', insertedMessage.id);
+      if (chatTarget?.id === story.user_id && chatConversation?.id === conversation.id && insertedMessage?.id) {
+        setChatMessages((current) => current.some((item) => item.id === insertedMessage.id) ? current : [...current, insertedMessage]);
+      }
+      await loadConversations();
       setMoonStoryFeedback('');
-      showToast({ title: 'RESPOSTA ENVIADA', body: 'Sua resposta foi enviada para a conversa.' });
+      setMoonStoryInteractionActive(false);
+      setMoonStoryViewerPaused(false);
+      if (moonStoryVideoRef.current) moonStoryVideoRef.current.play().catch(() => {});
       setMoonStoryResponse('');
       setMoonStoryChoice('');
+      showToast({ title: 'RESPOSTA ENVIADA', body: 'Sua resposta foi enviada para a conversa.' });
     } catch (error) {
       console.error('ERRO AO ENVIAR INTERAÇÃO DO STORY:', error);
       setMoonStoryFeedback(error?.message || 'Não foi possível enviar sua resposta. Confira a configuração das interações no Supabase.');
@@ -13988,18 +14011,18 @@ const filteredConversations = conversations
       )}
 
       {screen === 'inside' && moonStoryViewer && (
-        <div role="dialog" aria-modal="true" aria-label="Visualizador de Story" onClick={(event) => { if (event.target === event.currentTarget) { setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryMenuOpen(false); setMoonStoryFeedback(''); } }} style={{ position: 'fixed', inset: 0, zIndex: 10060, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'rgba(0,0,0,.94)' }}>
+        <div role="dialog" aria-modal="true" aria-label="Visualizador de Story" onClick={(event) => { if (event.target === event.currentTarget) { setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryInteractionActive(false); setMoonStoryProgress(0); setMoonStoryMenuOpen(false); setMoonStoryFeedback(''); } }} style={{ position: 'fixed', inset: 0, zIndex: 10060, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'rgba(0,0,0,.94)' }}>
           <div onClick={() => toggleMoonStoryPlayback()} style={{ position: 'relative', width: 'min(440px, 100%)', height: 'min(88vh, 820px)', overflow: 'hidden', border: '1px solid rgba(201,181,138,.32)', borderRadius: '18px', background: '#080808', boxShadow: '0 0 60px rgba(201,181,138,.07)', cursor: 'pointer' }}>
-            {moonStoryViewer.media_type === 'video' ? <video ref={moonStoryVideoRef} src={moonStoryViewer.media_url} autoPlay={!moonStoryViewerPaused} playsInline onLoadedMetadata={(event) => { const video = event.currentTarget; video.currentTime = Number(moonStoryViewer.trim_start || 0); if (moonStoryViewerPaused) video.pause(); else video.play().catch(() => {}); }} onTimeUpdate={(event) => { if (Number(moonStoryViewer.trim_end) > Number(moonStoryViewer.trim_start) && event.currentTarget.currentTime >= Number(moonStoryViewer.trim_end)) { event.currentTarget.pause(); moveMoonStory(1); } }} onClick={(event) => toggleMoonStoryPlayback(event)} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#050505' }} /> : <img src={moonStoryViewer.media_url} alt="Conexão" {...protectedMediaProps} onClick={(event) => toggleMoonStoryPlayback(event)} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#050505' }} />}
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '13px 12px 18px', background: 'linear-gradient(rgba(0,0,0,.72), transparent)', pointerEvents: 'none' }}><div style={{ height: '2px', borderRadius: '99px', background: 'rgba(255,255,255,.28)', marginBottom: '12px' }}><div style={{ width: moonStoryViewerPaused ? '40%' : '65%', height: '100%', borderRadius: '99px', background: '#e6d3a7', transition: 'width .2s' }} /></div><div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}><span style={{ width: '34px', height: '34px', borderRadius: '50%', overflow: 'hidden', display: 'grid', placeItems: 'center', background: '#211e18', color: '#c9b58a' }}>{moonStoryViewer.authorPhoto ? <img src={moonStoryViewer.authorPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (moonStoryViewer.author?.name || 'M').slice(0, 1)}</span><div style={{ flex: 1 }}><strong style={{ display: 'block', color: '#fff', fontSize: '12px' }}>{moonStoryViewer.author?.name || 'Perfil MOON'}</strong><span style={{ color: '#d0c8ba', fontSize: '9px' }}>Expira em 24 horas</span></div>{moonStoryViewer.user_id === currentUserId ? <div style={{ position: 'relative', pointerEvents: 'auto' }}><button type="button" aria-label="Opções da Conexão" onClick={(event) => { event.stopPropagation(); setMoonStoryMenuOpen((open) => !open); }} style={{ border: '1px solid rgba(255,255,255,.28)', borderRadius: '50%', width: '31px', height: '31px', background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>•••</button>{moonStoryMenuOpen ? <div onClick={(event) => event.stopPropagation()} style={{ position: 'absolute', top: '38px', right: 0, minWidth: '150px', padding: '5px', borderRadius: '12px', background: '#171511', border: '1px solid rgba(201,181,138,.25)', boxShadow: '0 10px 30px rgba(0,0,0,.4)' }}><button type="button" onClick={() => deleteMoonStory(moonStoryViewer)} style={{ width: '100%', border: 0, borderRadius: '8px', padding: '11px 12px', background: 'transparent', color: '#f0b4a8', textAlign: 'left', fontSize: '12px', cursor: 'pointer' }}>Apagar Conexão</button></div> : null}</div> : null}<button type="button" aria-label="Fechar Conexão" onClick={(event) => { event.stopPropagation(); setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryMenuOpen(false); setMoonStoryFeedback(''); }} style={{ pointerEvents: 'auto', border: '1px solid rgba(255,255,255,.28)', borderRadius: '50%', width: '31px', height: '31px', background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>×</button></div></div>
+            {moonStoryViewer.media_type === 'video' ? <video ref={moonStoryVideoRef} src={moonStoryViewer.media_url} autoPlay={!moonStoryViewerPaused} playsInline onLoadedMetadata={(event) => { const video = event.currentTarget; video.currentTime = Number(moonStoryViewer.trim_start || 0); if (moonStoryViewerPaused) video.pause(); else video.play().catch(() => {}); }} onTimeUpdate={(event) => { const video = event.currentTarget; const start = Number(moonStoryViewer.trim_start || 0); const end = Number(moonStoryViewer.trim_end || moonStoryViewer.duration_seconds || video.duration || 15); const duration = Math.max(1, end - start); setMoonStoryProgress(Math.min(100, Math.max(0, ((video.currentTime - start) / duration) * 100))); if (end > start && video.currentTime >= end) { video.pause(); moveMoonStory(1); } }} onClick={(event) => toggleMoonStoryPlayback(event)} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#050505' }} /> : <img src={moonStoryViewer.media_url} alt="Conexão" {...protectedMediaProps} onClick={(event) => toggleMoonStoryPlayback(event)} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#050505' }} />}
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '13px 12px 18px', background: 'linear-gradient(rgba(0,0,0,.72), transparent)', pointerEvents: 'none' }}><div style={{ height: '2px', borderRadius: '99px', background: 'rgba(255,255,255,.28)', marginBottom: '12px', overflow: 'hidden' }}><div style={{ width: `${moonStoryViewer.media_type === 'video' ? (Number(moonStoryViewer.duration_seconds) > 0 ? Math.min(100, Math.max(0, (((moonStoryVideoRef.current?.currentTime || Number(moonStoryViewer.trim_start) || 0) - Number(moonStoryViewer.trim_start || 0)) / Math.max(1, Number(moonStoryViewer.trim_end || moonStoryViewer.duration_seconds) - Number(moonStoryViewer.trim_start || 0))) * 100)) : 0) : moonStoryProgress}%`, height: '100%', borderRadius: '99px', background: '#e6d3a7', transition: 'width .08s linear' }} /></div><div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}><span style={{ width: '34px', height: '34px', borderRadius: '50%', overflow: 'hidden', display: 'grid', placeItems: 'center', background: '#211e18', color: '#c9b58a' }}>{moonStoryViewer.authorPhoto ? <img src={moonStoryViewer.authorPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (moonStoryViewer.author?.name || 'M').slice(0, 1)}</span><div style={{ flex: 1 }}><strong style={{ display: 'block', color: '#fff', fontSize: '12px' }}>{moonStoryViewer.author?.name || 'Perfil MOON'}</strong><span style={{ color: '#d0c8ba', fontSize: '9px' }}>Expira em 24 horas</span></div>{moonStoryViewer.user_id === currentUserId ? <div style={{ position: 'relative', pointerEvents: 'auto' }}><button type="button" aria-label="Opções da Conexão" onClick={(event) => { event.stopPropagation(); setMoonStoryMenuOpen((open) => !open); }} style={{ border: '1px solid rgba(255,255,255,.28)', borderRadius: '50%', width: '31px', height: '31px', background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>•••</button>{moonStoryMenuOpen ? <div onClick={(event) => event.stopPropagation()} style={{ position: 'absolute', top: '38px', right: 0, minWidth: '150px', padding: '5px', borderRadius: '12px', background: '#171511', border: '1px solid rgba(201,181,138,.25)', boxShadow: '0 10px 30px rgba(0,0,0,.4)' }}><button type="button" onClick={() => deleteMoonStory(moonStoryViewer)} style={{ width: '100%', border: 0, borderRadius: '8px', padding: '11px 12px', background: 'transparent', color: '#f0b4a8', textAlign: 'left', fontSize: '12px', cursor: 'pointer' }}>Apagar Conexão</button></div> : null}</div> : null}<button type="button" aria-label="Fechar Conexão" onClick={(event) => { event.stopPropagation(); setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryMenuOpen(false); setMoonStoryFeedback(''); }} style={{ pointerEvents: 'auto', border: '1px solid rgba(255,255,255,.28)', borderRadius: '50%', width: '31px', height: '31px', background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>×</button></div></div>
             <button type="button" aria-label="Story anterior" onClick={(event) => { event.stopPropagation(); moveMoonStory(-1); }} style={{ position: 'absolute', top: '42%', left: '5px', zIndex: 2, width: '30px', height: '48px', border: 0, borderRadius: '8px', background: 'rgba(0,0,0,.25)', color: 'rgba(255,255,255,.72)', fontSize: '24px', cursor: 'pointer' }}>‹</button>
             <button type="button" aria-label="Próximo Story" onClick={(event) => { event.stopPropagation(); moveMoonStory(1); }} style={{ position: 'absolute', top: '42%', right: '5px', zIndex: 2, width: '30px', height: '48px', border: 0, borderRadius: '8px', background: 'rgba(0,0,0,.25)', color: 'rgba(255,255,255,.72)', fontSize: '24px', cursor: 'pointer' }}>›</button>
             {moonStoryViewerPaused ? <div style={{ position: 'absolute', top: '44%', left: '0', right: '0', textAlign: 'center', pointerEvents: 'none', color: '#fff', textShadow: '0 2px 12px #000' }}><span style={{ fontSize: '38px' }}>Ⅱ</span><div style={{ fontSize: '9px', letterSpacing: '2px', marginTop: '5px' }}>PAUSADO · TOQUE PARA CONTINUAR</div></div> : null}
             {moonStoryViewer.caption ? <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '190px', color: '#fff', fontSize: '13px', textShadow: '0 2px 10px #000', pointerEvents: 'none' }}>{moonStoryViewer.caption}</div> : null}
-            {moonStoryViewer.interaction_type && moonStoryViewer.interaction_type !== 'none' && moonStoryViewer.user_id !== currentUserId ? <div onClick={(event) => event.stopPropagation()} style={{ position: 'absolute', left: `${Math.max(12, Math.min(88, Number(moonStoryViewer.interaction_config?.position?.x ?? 50)))}%`, top: `${Math.max(12, Math.min(76, Number(moonStoryViewer.interaction_config?.position?.y ?? 50)))}%`, transform: 'translate(-50%, -50%)', width: 'min(82%, 310px)', padding: '13px', borderRadius: '15px', border: '1px solid rgba(214,189,128,.75)', background: 'rgba(8,8,8,.91)', color: '#f4ead7', textAlign: 'center', boxShadow: '0 8px 28px rgba(0,0,0,.35)', zIndex: 3 }}>
+            {moonStoryViewer.interaction_type && moonStoryViewer.interaction_type !== 'none' && moonStoryViewer.user_id !== currentUserId ? <div onClick={(event) => { event.stopPropagation(); if (!moonStoryInteractionActive) { setMoonStoryInteractionActive(true); const video = moonStoryVideoRef.current; if (video) video.pause(); } }} onFocusCapture={() => { setMoonStoryInteractionActive(true); const video = moonStoryVideoRef.current; if (video) video.pause(); }} style={{ position: 'absolute', left: `${Math.max(12, Math.min(88, Number(moonStoryViewer.interaction_config?.position?.x ?? 50)))}%`, top: `${Math.max(12, Math.min(76, Number(moonStoryViewer.interaction_config?.position?.y ?? 50)))}%`, transform: 'translate(-50%, -50%)', width: 'min(82%, 310px)', padding: '13px', borderRadius: '15px', border: '1px solid rgba(214,189,128,.75)', background: 'rgba(8,8,8,.91)', color: '#f4ead7', textAlign: 'center', boxShadow: '0 8px 28px rgba(0,0,0,.35)', zIndex: 3 }}>
               <div style={{ color: '#d6bd80', fontSize: '8px', letterSpacing: '1.4px', marginBottom: '6px' }}>{MOON_STORY_EXPERIENCES[moonStoryViewer.interaction_type]?.label?.toUpperCase()}</div>
               <div style={{ fontSize: '12px', lineHeight: 1.4, marginBottom: '9px' }}>{moonStoryViewer.interaction_config?.prompt}</div>
-              {moonStoryViewer.interaction_type === 'desafio' ? <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>{(moonStoryViewer.interaction_config?.options || []).map((option, index) => <button key={index} type="button" onClick={() => setMoonStoryChoice(option)} style={{ border: moonStoryChoice === option ? '1px solid #d6bd80' : '1px solid #5c513b', borderRadius: '999px', padding: '7px 10px', background: moonStoryChoice === option ? 'rgba(214,189,128,.2)' : 'transparent', color: '#f4ead7', fontSize: '10px' }}>{option}</button>)}</div> : null}
+              {moonStoryViewer.interaction_type === 'desafio' ? <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>{(moonStoryViewer.interaction_config?.options || []).map((option, index) => <button key={index} type="button" onClick={() => { setMoonStoryChoice(option); setMoonStoryInteractionActive(true); const video = moonStoryVideoRef.current; if (video) video.pause(); }} style={{ border: moonStoryChoice === option ? '1px solid #d6bd80' : '1px solid #5c513b', borderRadius: '999px', padding: '7px 10px', background: moonStoryChoice === option ? 'rgba(214,189,128,.2)' : 'transparent', color: '#f4ead7', fontSize: '10px' }}>{option}</button>)}</div> : null}
               {moonStoryViewer.interaction_type === 'bilhete' || moonStoryViewer.interaction_type === 'sintonia' ? <input value={moonStoryResponse} onChange={(event) => setMoonStoryResponse(event.target.value)} maxLength={300} placeholder={moonStoryViewer.interaction_type === 'bilhete' ? 'Escreva seu bilhete' : 'Sua resposta'} style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #51452f', borderRadius: '9px', padding: '9px 10px', background: '#111', color: '#f4ead7', outline: 'none', fontSize: '11px', marginBottom: '8px' }} /> : null}
               <button type="button" disabled={moonStoryInteractionSending} onClick={submitMoonStoryInteraction} style={{ width: '100%', border: 0, borderRadius: '999px', padding: '9px 12px', background: '#d6bd80', color: '#111', fontSize: '10px', fontWeight: 700, cursor: moonStoryInteractionSending ? 'wait' : 'pointer', opacity: moonStoryInteractionSending ? .6 : 1 }}>{moonStoryInteractionSending ? 'ENVIANDO...' : 'RESPONDER'}</button>
             </div> : null}
@@ -15602,6 +15625,21 @@ const filteredConversations = conversations
                         : "translateY(0)",
                   }}
                 >
+                  {chatMessage.source_context === 'connection_reply' && chatMessage.source_story_id ? (
+                    <div
+                      style={{
+                        marginBottom: '9px',
+                        padding: '7px 9px',
+                        borderLeft: '2px solid #c9b58a',
+                        background: chatMessage.sender_id === currentUserId ? 'rgba(5,5,5,0.12)' : 'rgba(201,181,138,0.07)',
+                      }}
+                    >
+                      <div style={{ fontSize: '8px', letterSpacing: '1px', color: chatMessage.sender_id === currentUserId ? '#3b3427' : '#c9b58a', marginBottom: '3px' }}>
+                        RESPONDEU AO SEU STORY
+                      </div>
+                      <div style={{ fontSize: '9px', lineHeight: '1.35', opacity: 0.78 }}>Story da MOON</div>
+                    </div>
+                  ) : null}
                   {chatMessage.reply_to_message_id && (() => {
                     const repliedMessage = chatMessages.find(
                       (message) => message.id === chatMessage.reply_to_message_id
