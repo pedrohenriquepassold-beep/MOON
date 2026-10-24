@@ -601,6 +601,8 @@ function App() {
   const [moonStoryChoice, setMoonStoryChoice] = useState('');
   const [moonStoryInteractionSending, setMoonStoryInteractionSending] = useState(false);
   const [moonStoryFeedback, setMoonStoryFeedback] = useState('');
+  const [moonStoryExperiencePosition, setMoonStoryExperiencePosition] = useState({ x: 50, y: 50 });
+  const [moonStoryExperienceDragging, setMoonStoryExperienceDragging] = useState(false);
   const [moonStoryConnections, setMoonStoryConnections] = useState([]);
   const moonStoryVideoRef = useRef(null);
 
@@ -3307,29 +3309,6 @@ function App() {
     return () => { cancelled = true; };
   }, [currentUserId, nearbyProfiles]);
 
-  async function deleteOwnProfilePost(post) {
-    if (!post?.id || !currentUserId) return;
-    const confirmed = window.confirm("Tem certeza de que deseja excluir esta publicação? Essa ação não pode ser desfeita.");
-    if (!confirmed) return;
-
-    try {
-      const { error } = await supabase
-        .from("moon_posts")
-        .delete()
-        .eq("id", post.id)
-        .eq("user_id", currentUserId);
-      if (error) throw error;
-
-      setOwnProfilePosts((current) => current.filter((item) => item.id !== post.id));
-      setMoonFeedPosts((current) => current.filter((item) => item.id !== post.id));
-      setOwnProfilePostSelected(null);
-      showToast({ title: "PUBLICAÇÃO EXCLUÍDA", body: "Sua publicação foi removida da MOON." });
-    } catch (error) {
-      console.error("ERRO AO EXCLUIR PUBLICAÇÃO:", error);
-      showToast({ title: "NÃO FOI POSSÍVEL EXCLUIR", body: error?.message || "Verifique sua conexão e tente novamente." });
-    }
-  }
-
   async function loadOwnProfilePosts() {
     if (!currentUserId) return;
     setOwnProfilePostsLoading(true);
@@ -3437,6 +3416,8 @@ function App() {
     setMoonStoryInteractionType('none');
     setMoonStoryInteractionPrompt('');
     setMoonStoryInteractionOptions(['', '']);
+    setMoonStoryExperiencePosition({ x: 50, y: 50 });
+    setMoonStoryExperienceDragging(false);
     setMoonStoryTrimStart(0);
     setMoonStoryTrimEnd(15);
     setMoonStoryVideoDuration(15);
@@ -3490,6 +3471,7 @@ function App() {
       const interactionConfig = moonStoryInteractionType === 'none' ? null : {
         prompt: moonStoryInteractionPrompt.trim(),
         options: moonStoryInteractionType === 'desafio' ? moonStoryInteractionOptions.map((value) => value.trim()).filter(Boolean) : [],
+        position: moonStoryExperiencePosition,
       };
       const { error: insertError } = await supabase.from('moon_stories').insert({
         user_id: currentUserId,
@@ -3591,10 +3573,12 @@ function App() {
       setMoonStoryViewer(null);
       setMoonStoryViewerPaused(false);
       setMoonStoryMenuOpen(false);
-      setMoonStoryFeedback('Story apagado.');
+      setMoonStoryFeedback('');
+      showToast({ title: 'STORY APAGADO', body: 'A publicação foi removida com sucesso.' });
     } catch (error) {
       console.error('ERRO AO APAGAR STORY MOON:', error);
-      setMoonStoryFeedback(error?.message || 'Não foi possível apagar o Story. Confira as permissões do Supabase.');
+      setMoonStoryFeedback('');
+      showToast({ title: 'NÃO FOI POSSÍVEL APAGAR', body: error?.message || 'Confira as permissões do Supabase e tente novamente.' });
       setMoonStoryMenuOpen(false);
     }
   }
@@ -3662,11 +3646,12 @@ function App() {
       const { error: messageError } = await supabase.from('messages').insert({
         conversation_id: conversation.id,
         sender_id: currentUserId,
-        content: `${experienceName} · ${story.interaction_config?.prompt || 'Resposta à sua experiência'}\n${answer}`,
+        content: answer,
         message_type: 'text',
       });
       if (messageError) throw messageError;
-      setMoonStoryFeedback(type === 'bilhete' ? 'Bilhete enviado. A mensagem chegou à conversa normal.' : 'Resposta enviada à conversa normal.');
+      setMoonStoryFeedback('');
+      showToast({ title: 'RESPOSTA ENVIADA', body: 'Sua resposta foi enviada para a conversa.' });
       setMoonStoryResponse('');
       setMoonStoryChoice('');
     } catch (error) {
@@ -9699,6 +9684,8 @@ const filteredConversations = conversations
       )}
 
       {toast && (
+        <>
+        <style>{`@keyframes moonToastIn { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
         <div
           role="status"
           aria-live="polite"
@@ -9713,11 +9700,15 @@ const filteredConversations = conversations
             display: "flex",
             alignItems: "center",
             gap: "12px",
-            background: "rgba(11, 11, 11, 0.97)",
-            border: "1px solid #2a2a2a",
-            boxShadow: "0 14px 40px rgba(0,0,0,0.45)",
-            backdropFilter: "blur(12px)",
+            background: "linear-gradient(135deg, rgba(22,20,16,.98), rgba(9,9,9,.97))",
+            border: "1px solid rgba(201,181,138,.42)",
+            borderLeft: "3px solid #c9b58a",
+            borderRadius: "15px",
+            boxShadow: "0 16px 44px rgba(0,0,0,.48)",
+            backdropFilter: "blur(16px)",
             color: "#f4ead7",
+            animation: "moonToastIn 220ms ease-out",
+            overflow: "hidden",
           }}
         >
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -9745,6 +9736,7 @@ const filteredConversations = conversations
             )}
           </div>
         </div>
+        </>
       )}
 
       {/* CONFIRMAÇÃO 18+ */}
@@ -13957,6 +13949,16 @@ const filteredConversations = conversations
                 <div style={{ color: '#f4ead7', fontSize: '20px', fontWeight: 400, letterSpacing: '.2px' }}>Seu momento, do seu jeito.</div>
                 <div style={{ color: '#938b7d', fontSize: '11px', lineHeight: 1.7, maxWidth: '250px' }}>Abra a câmera para capturar agora ou escolha algo que já está na sua galeria.</div>
               </div>}
+              {moonStoryFile && moonStoryInteractionType !== 'none' ? <div
+                onPointerDown={(event) => { if (event.target.closest('button,input,textarea')) return; event.currentTarget.setPointerCapture?.(event.pointerId); setMoonStoryExperienceDragging(true); }}
+                onPointerMove={(event) => { if (!moonStoryExperienceDragging) return; const rect = event.currentTarget.parentElement.getBoundingClientRect(); setMoonStoryExperiencePosition({ x: Math.max(12, Math.min(88, ((event.clientX - rect.left) / rect.width) * 100)), y: Math.max(12, Math.min(88, ((event.clientY - rect.top) / rect.height) * 100)) }); }}
+                onPointerUp={() => setMoonStoryExperienceDragging(false)} onPointerCancel={() => setMoonStoryExperienceDragging(false)}
+                style={{ position: 'absolute', zIndex: 4, left: `${moonStoryExperiencePosition.x}%`, top: `${moonStoryExperiencePosition.y}%`, transform: 'translate(-50%, -50%)', width: 'min(82%, 300px)', padding: '12px 14px', borderRadius: '15px', border: '1px solid rgba(214,189,128,.8)', background: 'rgba(8,8,8,.88)', color: '#f4ead7', textAlign: 'center', boxShadow: '0 8px 28px rgba(0,0,0,.35)', cursor: moonStoryExperienceDragging ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}>
+                <div style={{ fontSize: '8px', letterSpacing: '1.5px', color: '#d6bd80', marginBottom: '5px' }}>{MOON_STORY_EXPERIENCES[moonStoryInteractionType]?.label?.toUpperCase()}</div>
+                <div style={{ fontSize: '12px', lineHeight: 1.4 }}>{moonStoryInteractionPrompt || 'Sua pergunta aparecerá aqui'}</div>
+                {moonStoryInteractionType === 'desafio' && <div style={{ display: 'flex', gap: '6px', marginTop: '9px', justifyContent: 'center', flexWrap: 'wrap' }}>{moonStoryInteractionOptions.filter(Boolean).map((option, index) => <span key={index} style={{ border: '1px solid rgba(214,189,128,.5)', borderRadius: '999px', padding: '5px 9px', fontSize: '10px' }}>{option}</span>)}</div>}
+                <div style={{ marginTop: '7px', color: '#b9ad97', fontSize: '8px' }}>Arraste para posicionar</div>
+              </div> : null}
               {moonStoryFile ? <button type="button" aria-label="Trocar mídia" onClick={() => { if (moonStoryPreviewUrl) URL.revokeObjectURL(moonStoryPreviewUrl); setMoonStoryFile(null); setMoonStoryPreviewUrl(''); }} style={{ position: 'absolute', top: '12px', right: '12px', border: '1px solid rgba(255,255,255,.2)', borderRadius: '50%', width: '34px', height: '34px', background: 'rgba(0,0,0,.65)', color: '#fff', fontSize: '19px', cursor: 'pointer' }}>↺</button> : null}
             </div>
 
@@ -13994,8 +13996,15 @@ const filteredConversations = conversations
             <button type="button" aria-label="Próximo Story" onClick={(event) => { event.stopPropagation(); moveMoonStory(1); }} style={{ position: 'absolute', top: '42%', right: '5px', zIndex: 2, width: '30px', height: '48px', border: 0, borderRadius: '8px', background: 'rgba(0,0,0,.25)', color: 'rgba(255,255,255,.72)', fontSize: '24px', cursor: 'pointer' }}>›</button>
             {moonStoryViewerPaused ? <div style={{ position: 'absolute', top: '44%', left: '0', right: '0', textAlign: 'center', pointerEvents: 'none', color: '#fff', textShadow: '0 2px 12px #000' }}><span style={{ fontSize: '38px' }}>Ⅱ</span><div style={{ fontSize: '9px', letterSpacing: '2px', marginTop: '5px' }}>PAUSADO · TOQUE PARA CONTINUAR</div></div> : null}
             {moonStoryViewer.caption ? <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '190px', color: '#fff', fontSize: '13px', textShadow: '0 2px 10px #000', pointerEvents: 'none' }}>{moonStoryViewer.caption}</div> : null}
-            {moonStoryViewer.user_id !== currentUserId ? <div onClick={(event) => event.stopPropagation()} style={{ position: 'absolute', left: '10px', right: '10px', bottom: '10px', display: 'flex', alignItems: 'center', gap: '8px', padding: '9px', border: '1px solid rgba(201,181,138,.34)', borderRadius: '18px', background: 'rgba(8,8,8,.92)', backdropFilter: 'blur(8px)' }}>
-              <button type="button" aria-label="Responder" onClick={async () => { const story = moonStoryViewer; const author = story.author || { id: story.user_id, name: 'Perfil MOON' }; const caption = story.caption ? `“${story.caption.slice(0, 90)}”` : 'a uma publicação'; setChatSourceStoryId(story.id); await handleChat(author, 'inside'); setChatText(`↪ Em resposta à publicação ${caption}: `); setMoonStoryViewer(null); }} style={{ flex: 1, minWidth: 0, textAlign: 'left', border: '1px solid #393126', borderRadius: '999px', padding: '11px 14px', background: '#111', color: '#c9c1b5', fontSize: '12px', cursor: 'pointer' }}>Responder</button>
+            {moonStoryViewer.interaction_type && moonStoryViewer.interaction_type !== 'none' && moonStoryViewer.user_id !== currentUserId ? <div onClick={(event) => event.stopPropagation()} style={{ position: 'absolute', left: `${Math.max(12, Math.min(88, Number(moonStoryViewer.interaction_config?.position?.x ?? 50)))}%`, top: `${Math.max(12, Math.min(76, Number(moonStoryViewer.interaction_config?.position?.y ?? 50)))}%`, transform: 'translate(-50%, -50%)', width: 'min(82%, 310px)', padding: '13px', borderRadius: '15px', border: '1px solid rgba(214,189,128,.75)', background: 'rgba(8,8,8,.91)', color: '#f4ead7', textAlign: 'center', boxShadow: '0 8px 28px rgba(0,0,0,.35)', zIndex: 3 }}>
+              <div style={{ color: '#d6bd80', fontSize: '8px', letterSpacing: '1.4px', marginBottom: '6px' }}>{MOON_STORY_EXPERIENCES[moonStoryViewer.interaction_type]?.label?.toUpperCase()}</div>
+              <div style={{ fontSize: '12px', lineHeight: 1.4, marginBottom: '9px' }}>{moonStoryViewer.interaction_config?.prompt}</div>
+              {moonStoryViewer.interaction_type === 'desafio' ? <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>{(moonStoryViewer.interaction_config?.options || []).map((option, index) => <button key={index} type="button" onClick={() => setMoonStoryChoice(option)} style={{ border: moonStoryChoice === option ? '1px solid #d6bd80' : '1px solid #5c513b', borderRadius: '999px', padding: '7px 10px', background: moonStoryChoice === option ? 'rgba(214,189,128,.2)' : 'transparent', color: '#f4ead7', fontSize: '10px' }}>{option}</button>)}</div> : null}
+              {moonStoryViewer.interaction_type === 'bilhete' || moonStoryViewer.interaction_type === 'sintonia' ? <input value={moonStoryResponse} onChange={(event) => setMoonStoryResponse(event.target.value)} maxLength={300} placeholder={moonStoryViewer.interaction_type === 'bilhete' ? 'Escreva seu bilhete' : 'Sua resposta'} style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #51452f', borderRadius: '9px', padding: '9px 10px', background: '#111', color: '#f4ead7', outline: 'none', fontSize: '11px', marginBottom: '8px' }} /> : null}
+              <button type="button" disabled={moonStoryInteractionSending} onClick={submitMoonStoryInteraction} style={{ width: '100%', border: 0, borderRadius: '999px', padding: '9px 12px', background: '#d6bd80', color: '#111', fontSize: '10px', fontWeight: 700, cursor: moonStoryInteractionSending ? 'wait' : 'pointer', opacity: moonStoryInteractionSending ? .6 : 1 }}>{moonStoryInteractionSending ? 'ENVIANDO...' : 'RESPONDER'}</button>
+            </div> : null}
+            {moonStoryViewer.user_id !== currentUserId ? <div onClick={(event) => event.stopPropagation()} style={{ position: 'absolute', left: '10px', right: '10px', bottom: '10px' , display: 'flex', alignItems: 'center', gap: '8px', padding: '9px', border: '1px solid rgba(201,181,138,.34)', borderRadius: '18px', background: 'rgba(8,8,8,.92)', backdropFilter: 'blur(8px)' }}>
+              <button type="button" aria-label="Responder" onClick={async () => { const story = moonStoryViewer; const author = story.author || { id: story.user_id, name: 'Perfil MOON' }; const caption = story.caption ? `“${story.caption.slice(0, 90)}”` : 'a uma publicação'; setChatSourceStoryId(story.id); await handleChat(author, 'inside'); setChatText(''); setMoonStoryViewer(null); }} style={{ flex: 1, minWidth: 0, textAlign: 'left', border: '1px solid #393126', borderRadius: '999px', padding: '11px 14px', background: '#111', color: '#c9c1b5', fontSize: '12px', cursor: 'pointer' }}>Responder</button>
               <button type="button" aria-label={moonStoryLikedIds.includes(moonStoryViewer.id) ? 'Descurtir publicação' : 'Curtir publicação'} disabled={moonStoryLikeBusy} onClick={async () => { const story = moonStoryViewer; if (!story?.id || !currentUserId || moonStoryLikeBusy) return; setMoonStoryLikeBusy(true); try { if (moonStoryLikedIds.includes(story.id)) { const { error } = await supabase.from('moon_story_likes').delete().eq('story_id', story.id).eq('user_id', currentUserId); if (error) throw error; setMoonStoryLikedIds(ids => ids.filter(id => id !== story.id)); } else { const { error } = await supabase.from('moon_story_likes').insert({ story_id: story.id, user_id: currentUserId }); if (error && !String(error.code || '').includes('23505')) throw error; setMoonStoryLikedIds(ids => ids.includes(story.id) ? ids : [...ids, story.id]); } } catch (error) { setMoonStoryFeedback(error?.message || 'Não foi possível registrar a curtida.'); } finally { setMoonStoryLikeBusy(false); } }} style={{ flex: '0 0 42px', width: '42px', height: '42px', border: '1px solid rgba(230,166,188,.38)', borderRadius: '50%', background: moonStoryLikedIds.includes(moonStoryViewer.id) ? 'rgba(230,166,188,.24)' : 'rgba(230,166,188,.10)', color: '#e6a6bc', fontSize: '21px', cursor: moonStoryLikeBusy ? 'wait' : 'pointer' }}>{moonStoryLikedIds.includes(moonStoryViewer.id) ? '♥' : '♡'}</button>
             </div> : <div style={{ position: 'absolute', left: '12px', right: '12px', bottom: '14px', borderRadius: '10px', padding: '10px', background: 'rgba(0,0,0,.65)', color: '#d8d0c3', fontSize: '10px', textAlign: 'center' }}>Sua Conexão está no ar.</div>}
           </div>
@@ -14108,7 +14117,7 @@ const filteredConversations = conversations
                     : ownProfilePostsError ? <div style={{ padding: "30px 12px", textAlign: "center", color: "#b99b8b", fontSize: "11px", lineHeight: 1.6 }}>{ownProfilePostsError}</div>
                     : ownProfilePosts.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "3px", marginTop: "3px" }}>
                       {ownProfilePosts.map((post) => <button key={post.id} type="button" onClick={() => setOwnProfilePostSelected(post)} aria-label="Abrir publicação" style={{ position: "relative", padding: 0, aspectRatio: "1", border: 0, background: "#15130f", overflow: "hidden", cursor: "pointer" }}>
-                        {post.image_url ? <img src={post.image_url} alt="" style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }} /> : <div aria-hidden="true" style={{ width: "100%", height: "100%", padding: "12px", boxSizing: "border-box", display: "grid", placeItems: "center", background: "radial-gradient(circle at 50% 35%, rgba(201,181,138,.13), transparent 48%), linear-gradient(145deg,#191711,#080808)", color: "#c9b58a" }}><span style={{ width: "42px", height: "42px", display: "grid", placeItems: "center", border: "1px solid rgba(201,181,138,.42)", borderRadius: "50%", fontSize: "20px" }}>☾</span></div>}
+                        {post.image_url ? <img src={post.image_url} alt="" style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", padding: "12px", boxSizing: "border-box", display: "grid", placeItems: "center", background: "linear-gradient(145deg,#191711,#080808)", color: "#d8c69e", fontSize: "11px", lineHeight: 1.5, overflow: "hidden" }}>{post.content || "Publicação MOON"}</div>}
                         {post.image_url && post.content && <span style={{ position: "absolute", right: "8px", top: "8px", color: "#fff", textShadow: "0 1px 6px #000", fontSize: "16px" }}>▤</span>}
                       </button>)}
                     </div>
@@ -14117,18 +14126,6 @@ const filteredConversations = conversations
                       <div style={{ color: "#f4ead7", fontSize: "15px", fontWeight: 650 }}>Compartilhe seu primeiro momento</div>
                       <p style={{ color: "#8f897f", fontSize: "12px", lineHeight: 1.7, maxWidth: "280px", margin: "8px auto 16px" }}>Suas publicações aparecerão aqui em uma grade, para quem visitar seu perfil.</p>
                       <button type="button" onClick={() => { setScreen("inside"); setDiscoveryTab("feed"); setMessage(""); }} style={{ border: "1px solid #c9b58a", borderRadius: "10px", padding: "11px 17px", background: "#c9b58a", color: "#111", fontSize: "10px", fontWeight: 750, cursor: "pointer" }}>CRIAR PUBLICAÇÃO</button>
-                    </div>}
-
-                    {ownProfilePostSelected && <div role="dialog" aria-modal="true" aria-label="Publicação ampliada" onClick={() => setOwnProfilePostSelected(null)} style={{ position: "fixed", inset: 0, zIndex: 7000, display: "flex", alignItems: "center", justifyContent: "center", padding: "18px", background: "rgba(0,0,0,.88)", backdropFilter: "blur(12px)" }}>
-                      <div onClick={(event) => event.stopPropagation()} style={{ position: "relative", width: "min(100%, 620px)", maxHeight: "90vh", overflowY: "auto", border: "1px solid rgba(201,181,138,.28)", borderRadius: "18px", background: "#0b0b0b", boxShadow: "0 24px 80px rgba(0,0,0,.55)" }}>
-                        <button type="button" onClick={() => setOwnProfilePostSelected(null)} aria-label="Fechar publicação" style={{ position: "absolute", top: "12px", right: "12px", zIndex: 2, width: "38px", height: "38px", border: "1px solid rgba(201,181,138,.55)", borderRadius: "50%", background: "rgba(0,0,0,.72)", color: "#f4ead7", fontSize: "23px", cursor: "pointer" }}>×</button>
-                        {ownProfilePostSelected.image_url ? <img src={ownProfilePostSelected.image_url} alt="Imagem da publicação" style={{ display: "block", width: "100%", maxHeight: "62vh", objectFit: "contain", background: "#050505" }} /> : <div style={{ minHeight: "190px", display: "grid", placeItems: "center", padding: "28px", background: "radial-gradient(circle at 50% 35%, rgba(201,181,138,.13), transparent 48%), linear-gradient(145deg,#191711,#080808)", color: "#c9b58a" }}><span style={{ width: "58px", height: "58px", display: "grid", placeItems: "center", border: "1px solid rgba(201,181,138,.42)", borderRadius: "50%", fontSize: "27px" }}>☾</span></div>}
-                        <div style={{ padding: "18px" }}>
-                          <div style={{ color: "#77736b", fontSize: "10px", letterSpacing: "1px", marginBottom: "12px" }}>{ownProfilePostSelected.created_at ? new Date(ownProfilePostSelected.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Publicação MOON"}</div>
-                          <div style={{ color: "#f4ead7", fontSize: "14px", lineHeight: 1.8, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{ownProfilePostSelected.content || "Publicação sem legenda."}</div>
-                          <button type="button" onClick={() => deleteOwnProfilePost(ownProfilePostSelected)} style={{ marginTop: "20px", width: "100%", minHeight: "44px", border: "1px solid rgba(205,104,104,.55)", borderRadius: "10px", background: "rgba(150,40,40,.12)", color: "#e6a0a0", fontSize: "10px", fontWeight: 700, letterSpacing: "1.2px", cursor: "pointer" }}>EXCLUIR PUBLICAÇÃO</button>
-                        </div>
-                      </div>
                     </div>}
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", marginTop: "24px" }}>
