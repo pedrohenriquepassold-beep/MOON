@@ -2,16 +2,40 @@
   box-sizing: border-box;
 }
 
+:root {
+  color-scheme: dark;
+  --moon-bg: #050505;
+  --moon-bg-soft: #0b0a08;
+  --moon-panel: rgba(17, 15, 12, 0.88);
+  --moon-cream: #f3ead9;
+  --moon-gold: #d6bf96;
+  --moon-gold-soft: #c9b58a;
+  --moon-muted: #a69d8e;
+  --moon-border: rgba(214, 191, 150, 0.24);
+  --moon-border-strong: rgba(214, 191, 150, 0.52);
+  --moon-shadow: 0 22px 70px rgba(0, 0, 0, 0.42);
+  --moon-glow: 0 0 32px rgba(214, 191, 150, 0.09);
+}
+
+html {
+  min-height: 100%;
+  background: var(--moon-bg);
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
+  min-height: 100vh;
   margin: 0;
   background-color: #050505;
   background-image:
-    radial-gradient(circle at 50% 15%, rgba(214, 191, 150, 0.18) 0%, rgba(201, 181, 138, 0.08) 22%, rgba(0, 0, 0, 0) 58%),
-    radial-gradient(circle at 10% 70%, rgba(201, 181, 138, 0.07) 0%, rgba(0, 0, 0, 0) 42%),
-    radial-gradient(circle at 90% 75%, rgba(201, 181, 138, 0.06) 0%, rgba(0, 0, 0, 0) 44%);
+    radial-gradient(ellipse at 50% 10%, rgba(214, 191, 150, 0.17) 0%, rgba(201, 181, 138, 0.07) 25%, rgba(0, 0, 0, 0) 60%),
+    radial-gradient(ellipse at 0% 55%, rgba(201, 181, 138, 0.065) 0%, rgba(0, 0, 0, 0) 43%),
+    radial-gradient(ellipse at 100% 75%, rgba(201, 181, 138, 0.055) 0%, rgba(0, 0, 0, 0) 45%);
   background-attachment: fixed;
   color: #efe5d2;
   font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button,
@@ -19,8 +43,24 @@ input {
   font: inherit;
 }
 
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--moon-gold);
+  outline-offset: 3px;
+}
+
+::selection {
+  color: #0b0a08;
+  background: #d6bf96;
+}
+
 .moon-app {
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   background: transparent;
   display: flex;
@@ -44,6 +84,12 @@ input {
   margin-left: 14px;
   line-height: 1;
   text-shadow: 0 0 35px rgba(214, 191, 150, 0.18);
+  transition: text-shadow 0.3s ease, color 0.3s ease;
+}
+
+.moon-logo:hover {
+  color: #fff8eb;
+  text-shadow: 0 0 42px rgba(214, 191, 150, 0.27);
 }
 
 .moon-tagline {
@@ -52,6 +98,7 @@ input {
   letter-spacing: 5px;
   color: #d6bf96;
   font-weight: 400;
+  line-height: 1.7;
 }
 
 .home-buttons {
@@ -67,21 +114,35 @@ input {
 .form-screen form button,
 .photo-section > button {
   width: 100%;
+  min-height: 48px;
   height: 48px;
   border: 1px solid #d6bf96;
-  background: #eee3cf;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #f3ead9 0%, #e7d8bd 100%);
   color: #0b0a08;
   letter-spacing: 3px;
   font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.12);
 }
 
 .home-buttons button:hover,
 .form-screen form button:hover,
 .photo-section > button:hover {
-  background: #d6bf96;
+  background: linear-gradient(135deg, #e5d2ad 0%, #d6bf96 100%);
+  border-color: #f0d9a9;
   color: #0b0a08;
+  box-shadow: 0 7px 24px rgba(214, 191, 150, 0.14);
+  transform: translateY(-1px);
+}
+
+.home-buttons button:active,
+.form-screen form button:active,
+.photo-section > button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
 
 .form-screen {
@@ -99,6 +160,7 @@ input {
   font-weight: 400;
   letter-spacing: 5px;
   color: #f3ead9;
+  line-height: 1.4;
 }
 
 .form-subtitle {
@@ -106,6 +168,7 @@ input {
   color: #a69d8e;
   font-size: 13px;
   letter-spacing: 1px;
+  line-height: 1.7;
 }
 
 .form-screen form {
@@ -120,22 +183,34 @@ input {
 .form-screen input[type="email"],
 .form-screen input[type="password"] {
   width: 100%;
+  min-width: 0;
   height: 48px;
   padding: 0 16px;
   border: 1px solid #3a352d;
-  background: #eee3cf;
+  background: linear-gradient(145deg, #f2e7d4 0%, #e8dcc7 100%);
   color: #171411;
   outline: none;
-  border-radius: 0;
+  border-radius: 2px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  color-scheme: light;
+}
+
+.form-screen input[type="text"]:hover,
+.form-screen input[type="date"]:hover,
+.form-screen input[type="email"]:hover,
+.form-screen input[type="password"]:hover {
+  border-color: #8f7c5d;
 }
 
 .form-screen input::placeholder {
   color: #817969;
+  opacity: 1;
 }
 
 .form-screen input:focus {
   border-color: #d6bf96;
-  box-shadow: 0 0 0 1px rgba(214, 191, 150, 0.25);
+  box-shadow: 0 0 0 2px rgba(214, 191, 150, 0.18), 0 0 20px rgba(214, 191, 150, 0.06);
+  background: #f6ecdc;
 }
 
 .terms {
@@ -146,10 +221,11 @@ input {
   margin: 4px 0 8px;
   color: #a69d8e;
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .terms input {
+  flex: 0 0 auto;
   margin-top: 2px;
   accent-color: #d6bf96;
 }
@@ -160,16 +236,21 @@ input {
 
 .back-button {
   margin-top: 22px;
-  border: none;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 2px;
   background: transparent;
   color: #a69d8e;
   font-size: 11px;
   letter-spacing: 3px;
   cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
 .back-button:hover {
   color: #d6bf96;
+  border-color: rgba(214, 191, 150, 0.18);
+  background: rgba(214, 191, 150, 0.035);
 }
 
 /* FOTOS */
@@ -184,11 +265,12 @@ input {
   font-size: 11px;
   letter-spacing: 2px;
   margin: 0 0 15px;
+  line-height: 1.6;
 }
 
 .photo-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 15px;
 }
@@ -196,7 +278,12 @@ input {
 .photo-card {
   position: relative;
   aspect-ratio: 1;
+  min-width: 0;
   overflow: hidden;
+  border-radius: 4px;
+  background: linear-gradient(145deg, #17130e, #090807);
+  border: 1px solid rgba(214, 191, 150, 0.15);
+  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.2);
 }
 
 .photo-card img {
@@ -204,8 +291,14 @@ input {
   height: 100%;
   object-fit: cover;
   display: block;
-  border-radius: 4px;
+  border-radius: 3px;
   border: 1px solid #3a352d;
+  transition: transform 0.35s ease, filter 0.35s ease;
+}
+
+.photo-card:hover img {
+  transform: scale(1.035);
+  filter: saturate(1.04);
 }
 
 .photo-card img[src] {
@@ -216,25 +309,31 @@ input {
   position: absolute;
   left: 5px;
   bottom: 5px;
+  max-width: calc(100% - 10px);
   background: #d6bf96;
   color: #0b0a08;
   font-size: 8px;
   padding: 4px 6px;
   letter-spacing: 1px;
+  border-radius: 1px;
 }
 
 .photo-star,
 .photo-delete {
   position: absolute;
   top: 5px;
-  width: 25px;
-  height: 25px;
+  width: 27px;
+  height: 27px;
   padding: 0;
-  border: none;
-  background: rgba(11, 10, 8, 0.82);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(214, 191, 150, 0.24);
+  border-radius: 3px;
+  background: rgba(11, 10, 8, 0.86);
   color: #f3ead9;
   font-size: 12px;
   cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 .photo-star {
@@ -248,6 +347,7 @@ input {
 .photo-star:hover,
 .photo-delete:hover {
   background: #d6bf96;
+  border-color: #d6bf96;
   color: #0b0a08;
 }
 
@@ -257,20 +357,26 @@ input {
   width: 100%;
   min-height: 110px;
   border: 1px dashed #625b4e;
-  background: #eee3cf;
+  border-radius: 3px;
+  background: linear-gradient(145deg, #f1e5d1 0%, #e7dac4 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
   padding: 18px;
   margin-bottom: 12px;
 }
 
 .moon-upload:hover {
   border-color: #d6bf96;
-  background: #e5d9c4;
+  background: linear-gradient(145deg, #f6ead6 0%, #e5d4b6 100%);
+  box-shadow: 0 8px 24px rgba(214, 191, 150, 0.08);
+}
+
+.moon-upload:active {
+  transform: scale(0.995);
 }
 
 .moon-upload input {
@@ -292,6 +398,7 @@ input {
   white-space: nowrap;
   color: #171411;
   font-size: 11px;
+  font-weight: 600;
   letter-spacing: 3px;
 }
 
@@ -300,6 +407,7 @@ input {
   font-size: 9px;
   letter-spacing: 1px;
   margin-top: 7px;
+  line-height: 1.5;
 }
 
 .photo-section > button {
@@ -315,9 +423,27 @@ input {
   border-radius: 50%;
   border: 1px solid #d6bf96;
   margin-bottom: 20px;
+  box-shadow: 0 0 0 5px rgba(214, 191, 150, 0.045), 0 10px 30px rgba(0, 0, 0, 0.32);
+}
+
+/* ACABAMENTO VISUAL RESPONSIVO */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 @media (max-width: 600px) {
+  .moon-app {
+    padding: 24px 18px;
+  }
+
   .moon-logo {
     font-size: 58px;
     letter-spacing: 10px;
@@ -337,5 +463,44 @@ input {
 
   .form-screen .moon-logo {
     font-size: 42px;
+  }
+
+  .form-screen h1 {
+    font-size: 20px;
+    letter-spacing: 4px;
+  }
+}
+
+@media (max-width: 360px) {
+  .moon-app {
+    padding: 20px 14px;
+  }
+
+  .moon-logo {
+    font-size: 49px;
+    letter-spacing: 8px;
+    margin-left: 8px;
+  }
+
+  .moon-tagline {
+    font-size: 10px;
+    letter-spacing: 3px;
+  }
+
+  .home-buttons {
+    max-width: 100%;
+  }
+
+  .form-screen .moon-logo {
+    font-size: 38px;
+  }
+
+  .form-screen h1 {
+    font-size: 18px;
+    letter-spacing: 3px;
+  }
+
+  .photo-grid {
+    gap: 6px;
   }
 }

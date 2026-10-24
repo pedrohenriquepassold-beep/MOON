@@ -1,3 +1,4 @@
+/* MOON: Perfil premium integrado sobre App-MOON-Feed-social-completo.jsx. */
 import React, { useEffect, useRef, useState } from "react";
 import { Circle, CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -50,6 +51,11 @@ import "./App.css";
 
 function App() {
   const [screen, setScreen] = useState("home");
+  const [signupAccountType, setSignupAccountType] = useState("personal");
+  const [organizerProfile, setOrganizerProfile] = useState(null);
+  const [organizerSetupForm, setOrganizerSetupForm] = useState({ display_name: "", organization_type: "promoter", description: "", city: "" });
+  const [organizerActionLoading, setOrganizerActionLoading] = useState(false);
+  const [organizerActionStatus, setOrganizerActionStatus] = useState("");
   const [mapRadius, setMapRadius] = useState(50);
   const [selectedMapPoint, setSelectedMapPoint] = useState(null);
   const [mapCenterRequest, setMapCenterRequest] = useState(null);
@@ -77,6 +83,7 @@ function App() {
     boost: 0,
   });
   const [notifications, setNotifications] = useState([]);
+  const [notificationFilter, setNotificationFilter] = useState("all");
   const toastTimeoutRef = useRef(null);
   const processedNotificationIdsRef = useRef(new Set());
 
@@ -187,6 +194,9 @@ function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatUnreadDividerMessageId, setChatUnreadDividerMessageId] = useState(null);
   const [chatText, setChatText] = useState("");
+  const [chatSourceStoryId, setChatSourceStoryId] = useState(null);
+  const [moonStoryLikedIds, setMoonStoryLikedIds] = useState([]);
+  const [moonStoryLikeBusy, setMoonStoryLikeBusy] = useState(false);
   const [chatReplyToMessage, setChatReplyToMessage] = useState(null);
   const [chatTyping, setChatTyping] = useState(false);
   const chatTypingTimeoutRef = useRef(null);
@@ -535,6 +545,64 @@ function App() {
   const [selectedProfilePhotos, setSelectedProfilePhotos] = useState([]);
   const [selectedProfileLoading, setSelectedProfileLoading] = useState(false);
   const [matchTarget, setMatchTarget] = useState(null);
+
+  // BLOCO 3: seguidores e seguindo, persistidos no Supabase.
+  const [followCounts, setFollowCounts] = useState({});
+  const [followStates, setFollowStates] = useState({});
+  const [followsMeStates, setFollowsMeStates] = useState({});
+  const [followActionLoading, setFollowActionLoading] = useState(false);
+  const [followListOpen, setFollowListOpen] = useState(null);
+  const [followListUsers, setFollowListUsers] = useState([]);
+  const [followListLoading, setFollowListLoading] = useState(false);
+  const [followListError, setFollowListError] = useState("");
+
+  // BLOCO SOCIAL: abas Perto e Feed.
+  const [discoveryTab, setDiscoveryTab] = useState("perto");
+  const [moonFeedPosts, setMoonFeedPosts] = useState([]);
+  const [moonFeedLoading, setMoonFeedLoading] = useState(false);
+  const [moonFeedError, setMoonFeedError] = useState("");
+  const [moonPostLikeLoading, setMoonPostLikeLoading] = useState({});
+  const [moonPostCommentDrafts, setMoonPostCommentDrafts] = useState({});
+  const [moonPostCommentLoading, setMoonPostCommentLoading] = useState({});
+  const [moonPostCommentsOpen, setMoonPostCommentsOpen] = useState({});
+  const [newMoonPost, setNewMoonPost] = useState("");
+  const [newMoonPostImage, setNewMoonPostImage] = useState(null);
+  const [newMoonPostImagePreview, setNewMoonPostImagePreview] = useState("");
+  const [moonPostSubmitting, setMoonPostSubmitting] = useState(false);
+  const [ownProfilePosts, setOwnProfilePosts] = useState([]);
+  const [ownProfilePostsLoading, setOwnProfilePostsLoading] = useState(false);
+  const [ownProfilePostsError, setOwnProfilePostsError] = useState("");
+  const [ownProfilePostSelected, setOwnProfilePostSelected] = useState(null);
+  const [ownProfileGridTab, setOwnProfileGridTab] = useState("posts");
+  const [ownProfileAvatarExpanded, setOwnProfileAvatarExpanded] = useState(false);
+
+  // BLOCO 5: Stories MOON de 24 horas e experiências de conexão.
+  const [moonStories, setMoonStories] = useState([]);
+  const [moonStoriesLoading, setMoonStoriesLoading] = useState(false);
+  const [moonStoryComposerOpen, setMoonStoryComposerOpen] = useState(false);
+  const [moonStoryFile, setMoonStoryFile] = useState(null);
+  const [moonStoryPreviewUrl, setMoonStoryPreviewUrl] = useState('');
+  const [moonStoryCaption, setMoonStoryCaption] = useState('');
+  const [moonStoryCaptionOpen, setMoonStoryCaptionOpen] = useState(false);
+  const [moonStoryAudience, setMoonStoryAudience] = useState('all');
+  const [moonStoryPrivateIds, setMoonStoryPrivateIds] = useState([]);
+  const [moonStoryInteractionType, setMoonStoryInteractionType] = useState('none');
+  const [moonStoryInteractionPrompt, setMoonStoryInteractionPrompt] = useState('');
+  const [moonStoryInteractionOptions, setMoonStoryInteractionOptions] = useState(['', '']);
+  const [moonStoryTrimStart, setMoonStoryTrimStart] = useState(0);
+  const [moonStoryTrimEnd, setMoonStoryTrimEnd] = useState(15);
+  const [moonStoryVideoDuration, setMoonStoryVideoDuration] = useState(15);
+  const [moonStoryPublishing, setMoonStoryPublishing] = useState(false);
+  const [moonStoryViewer, setMoonStoryViewer] = useState(null);
+  const [moonStoryViewerPaused, setMoonStoryViewerPaused] = useState(false);
+  const [moonStorySeenIds, setMoonStorySeenIds] = useState([]);
+  const [moonStoryMenuOpen, setMoonStoryMenuOpen] = useState(false);
+  const [moonStoryResponse, setMoonStoryResponse] = useState('');
+  const [moonStoryChoice, setMoonStoryChoice] = useState('');
+  const [moonStoryInteractionSending, setMoonStoryInteractionSending] = useState(false);
+  const [moonStoryFeedback, setMoonStoryFeedback] = useState('');
+  const [moonStoryConnections, setMoonStoryConnections] = useState([]);
+  const moonStoryVideoRef = useRef(null);
 
   const notificationAudioContextRef = useRef(null);
 
@@ -1116,7 +1184,7 @@ function App() {
       try {
         const { data, error } = await supabase
           .from("notifications")
-          .select("id, user_id, actor_id, type, like_id, message_id, read_at, created_at, is_read")
+          .select("*")
           .eq("user_id", currentUserId)
           .order("created_at", { ascending: false })
           .limit(100);
@@ -1131,12 +1199,12 @@ function App() {
 
         const unreadCounts = rows.reduce(
           (accumulator, item) => {
-            if (!item.is_read && (item.type === "like" || item.type === "message" || item.type === "boost")) {
+            if (!item.is_read && (item.type === "like" || item.type === "message" || item.type === "match" || item.type === "boost")) {
               accumulator[item.type] += 1;
             }
             return accumulator;
           },
-          { like: 0, message: 0 }
+          { like: 0, message: 0, match: 0, boost: 0 }
         );
 
         setNotificationCount(unreadCounts);
@@ -2029,6 +2097,86 @@ function App() {
     }
   }
 
+  async function startOrganizerSubscriptionCheckout() {
+    setOrganizerActionLoading(true);
+    setOrganizerActionStatus("Preparando a assinatura MOON EVENTOS...");
+    try {
+      const { data, error } = await supabase.functions.invoke("create-mp-organizer-checkout", { body: { price: 19.90, currency: "BRL" } });
+      if (error) throw error;
+      const checkoutUrl = data?.checkout_url || data?.init_point;
+      if (!checkoutUrl) throw new Error("O Mercado Pago não retornou o link de pagamento.");
+      try { window.localStorage.setItem("moon_organizer_checkout_started", "true"); } catch {}
+      window.location.href = checkoutUrl;
+    } catch (error) {
+      console.error("ERRO AO ABRIR ASSINATURA MOON EVENTOS:", error);
+      setOrganizerActionStatus(error?.message || "Não foi possível abrir o pagamento da assinatura.");
+    } finally { setOrganizerActionLoading(false); }
+  }
+
+  async function saveOrganizerProfile(event) {
+    event.preventDefault();
+    const displayName = organizerSetupForm.display_name.trim();
+    if (!displayName) { setOrganizerActionStatus("Informe o nome público do promoter ou estabelecimento."); return; }
+    setOrganizerActionLoading(true);
+    setOrganizerActionStatus("Salvando perfil profissional...");
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) throw new Error("Entre na sua conta para concluir o perfil profissional.");
+      const { data: subscription, error: subscriptionError } = await supabase.from("moon_organizer_subscriptions").select("id,status").eq("user_id", userData.user.id).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (subscriptionError) throw subscriptionError;
+      if (!subscription) throw new Error("Ative primeiro sua assinatura MOON EVENTOS de R$ 19,90 por mês.");
+      const payload = { user_id: userData.user.id, subscription_id: subscription.id, display_name: displayName, organization_type: organizerSetupForm.organization_type, description: organizerSetupForm.description.trim() || null, city: organizerSetupForm.city.trim() || null, is_active: true, updated_at: new Date().toISOString() };
+      const { data, error } = await supabase.from("moon_organizer_profiles").upsert(payload, { onConflict: "user_id" }).select("*").single();
+      if (error) throw error;
+      setOrganizerProfile(data);
+      try { window.localStorage.removeItem("moon_organizer_onboarding_pending"); } catch {}
+      setOrganizerActionStatus("Perfil profissional criado. Você já pode publicar eventos ilimitados.");
+      setScreen("events");
+    } catch (error) {
+      console.error("ERRO AO SALVAR PERFIL PROFISSIONAL:", error);
+      setOrganizerActionStatus(error?.message || "Não foi possível salvar o perfil profissional.");
+    } finally { setOrganizerActionLoading(false); }
+  }
+
+  async function loadOrganizerProfile() {
+    if (!currentUserId) { setOrganizerProfile(null); return; }
+    try {
+      const { data, error } = await supabase.from("moon_organizer_profiles").select("*").eq("user_id", currentUserId).eq("is_active", true).maybeSingle();
+      if (error) throw error;
+      if (!data) { setOrganizerProfile(null); return; }
+      const { data: subscription, error: subscriptionError } = await supabase.from("moon_organizer_subscriptions").select("status,current_period_end").eq("id", data.subscription_id).eq("user_id", currentUserId).maybeSingle();
+      if (subscriptionError) throw subscriptionError;
+      setOrganizerProfile(subscription?.status === "active" ? data : null);
+    } catch (error) {
+      console.warn("PERFIL DE ORGANIZADOR AINDA NÃO DISPONÍVEL:", error?.message || error);
+      setOrganizerProfile(null);
+    }
+  }
+
+  useEffect(() => {
+    loadOrganizerProfile();
+    if (!currentUserId) return;
+    let returned = false;
+    try { returned = window.localStorage.getItem("moon_organizer_payment_returned") === "true"; } catch {}
+    if (!returned) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("moon_organizer_subscriptions").select("id,status").eq("user_id", currentUserId).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (error) throw error;
+        if (data) { setScreen("organizerSetup"); setOrganizerActionStatus("Pagamento confirmado. Agora complete seu perfil profissional."); }
+        else { setScreen("organizerSubscription"); setOrganizerActionStatus("Estamos aguardando a confirmação do pagamento pelo Mercado Pago. Se você acabou de pagar, aguarde um instante e entre novamente."); }
+      } catch (error) { console.warn("NÃO FOI POSSÍVEL CONFERIR A ASSINATURA:", error); setScreen("organizerSubscription"); }
+      finally { try { window.localStorage.removeItem("moon_organizer_payment_returned"); window.localStorage.removeItem("moon_organizer_checkout_started"); } catch {} }
+    })();
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("organizer_payment")) return;
+    try { window.localStorage.setItem("moon_organizer_payment_returned", "true"); } catch {}
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, []);
+
   function resetUserEventForm() {
     setEventPublishForm({
       title: "",
@@ -2112,6 +2260,40 @@ function App() {
     } finally {
       setEventPublishLoading(false);
     }
+  }
+
+  async function submitOrganizerEventUnlimited() {
+    if (!organizerProfile || !currentUserId) { setEventPublishStatus("É necessário ter uma assinatura MOON EVENTOS ativa para publicar."); return; }
+    const title = eventPublishForm.title.trim();
+    const description = eventPublishForm.description.trim();
+    const location = eventPublishForm.location.trim();
+    const destinationUrl = eventPublishForm.destination_url.trim();
+    if (!title) { setEventPublishStatus("Informe o nome do evento."); return; }
+    if (!eventPublishForm.starts_at) { setEventPublishStatus("Informe a data e hora do evento."); return; }
+    if (eventPublishForm.ends_at && new Date(eventPublishForm.ends_at).getTime() < new Date(eventPublishForm.starts_at).getTime()) { setEventPublishStatus("O término não pode ser antes do início."); return; }
+    if (destinationUrl) { try { const url = new URL(destinationUrl); if (!["http:", "https:"].includes(url.protocol)) throw new Error(); } catch { setEventPublishStatus("Informe um link válido começando com https:// ou http://."); return; } }
+    if (eventPublishImageFile && (!eventPublishImageFile.type.startsWith("image/") || eventPublishImageFile.size > 8 * 1024 * 1024)) { setEventPublishStatus("Selecione uma imagem de até 8 MB."); return; }
+    setEventPublishLoading(true); setEventPublishStatus("Enviando seu evento para análise...");
+    try {
+      const { data: eventId, error } = await supabase.rpc("create_organizer_event", { p_title: title, p_description: description || null, p_location: location || null, p_starts_at: new Date(eventPublishForm.starts_at).toISOString(), p_ends_at: eventPublishForm.ends_at ? new Date(eventPublishForm.ends_at).toISOString() : null, p_destination_url: destinationUrl || null });
+      if (error) throw error;
+      const id = Array.isArray(eventId) ? eventId[0] : eventId;
+      if (!id) throw new Error("Não foi possível identificar o evento criado.");
+      if (eventPublishImageFile) {
+        const extension = eventPublishImageFile.name.split(".").pop()?.toLowerCase() || "jpg";
+        const filePath = `user/${id}/${crypto.randomUUID()}.${extension}`;
+        setEventPublishStatus("Enviando a foto do evento...");
+        const { error: uploadError } = await supabase.storage.from("event-images").upload(filePath, eventPublishImageFile, { cacheControl: "3600", upsert: false });
+        if (uploadError) throw uploadError;
+        const { data: publicData } = supabase.storage.from("event-images").getPublicUrl(filePath);
+        const { error: imageError } = await supabase.rpc("user_set_event_image", { p_event_id: id, p_image_url: publicData.publicUrl });
+        if (imageError) throw imageError;
+      }
+      setEventPublishStatus("EVENTO ENVIADO PARA ANÁLISE. Recebemos os dados do seu evento. Nossa equipe irá analisar as informações enviadas. A publicação poderá ocorrer em até 24 horas.");
+      setEventPublishForm({ title: "", description: "", location: "", starts_at: "", ends_at: "", destination_url: "" });
+      setEventPublishImageFile(null);
+    } catch (error) { console.error("ERRO AO ENVIAR EVENTO DO ORGANIZADOR:", error); setEventPublishStatus(error?.message || "Não foi possível enviar o evento para análise."); }
+    finally { setEventPublishLoading(false); }
   }
 
   async function submitUserEvent() {
@@ -2985,6 +3167,711 @@ function App() {
     return photosWithUrl;
   }
 
+  useEffect(() => {
+    if (currentUserId && screen === "profile") loadFollowData(currentUserId);
+  }, [currentUserId, screen]);
+
+  useEffect(() => {
+    if (currentUserId && screen === "profile" && !profileEditMode) loadOwnProfilePosts();
+  }, [currentUserId, screen, profileEditMode]);
+
+  async function loadFollowData(profileId) {
+    if (!profileId) return;
+    try {
+      const { data, error } = await supabase
+        .from("moon_follows")
+        .select("follower_id, following_id")
+        .or(`follower_id.eq.${profileId},following_id.eq.${profileId}`);
+      if (error) throw error;
+      const rows = data || [];
+      setFollowCounts((current) => ({
+        ...current,
+        [profileId]: {
+          followers: rows.filter((row) => row.following_id === profileId).length,
+          following: rows.filter((row) => row.follower_id === profileId).length,
+        },
+      }));
+      if (currentUserId && currentUserId !== profileId) {
+        setFollowStates((current) => ({
+          ...current,
+          [profileId]: rows.some((row) => row.follower_id === currentUserId && row.following_id === profileId),
+        }));
+        setFollowsMeStates((current) => ({
+          ...current,
+          [profileId]: rows.some((row) => row.follower_id === profileId && row.following_id === currentUserId),
+        }));
+      }
+    } catch (error) {
+      console.error("ERRO AO CARREGAR SEGUIDORES DA MOON:", error);
+    }
+  }
+
+  async function toggleFollowProfile(profile) {
+    if (!currentUserId || !profile?.id || profile.id === currentUserId || followActionLoading) return;
+    setFollowActionLoading(true);
+    const wasFollowing = Boolean(followStates[profile.id]);
+    setFollowStates((current) => ({ ...current, [profile.id]: !wasFollowing }));
+    setFollowCounts((current) => {
+      const existing = current[profile.id] || { followers: 0, following: 0 };
+      return { ...current, [profile.id]: { ...existing, followers: Math.max(0, existing.followers + (wasFollowing ? -1 : 1)) } };
+    });
+    try {
+      if (wasFollowing) {
+        const { error } = await supabase.from("moon_follows").delete()
+          .eq("follower_id", currentUserId).eq("following_id", profile.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("moon_follows").insert({
+          follower_id: currentUserId, following_id: profile.id,
+        });
+        if (error && error.code !== "23505") throw error;
+      }
+      await loadFollowData(profile.id);
+      await loadFollowData(currentUserId);
+      showToast({
+        title: wasFollowing ? "VOCÊ DEIXOU DE SEGUIR" : "VOCÊ ESTÁ SEGUINDO",
+        body: wasFollowing ? `Você deixou de seguir ${profile.name || "este perfil"}.` : `Agora você acompanha as novidades de ${profile.name || "este perfil"}.`,
+      });
+    } catch (error) {
+      console.error("ERRO AO ATUALIZAR SEGUIDOR:", error);
+      setFollowStates((current) => ({ ...current, [profile.id]: wasFollowing }));
+      setMessage(error?.message || "Não foi possível atualizar o seguimento. Confira se a migração SQL do Bloco 3 foi aplicada.");
+      await loadFollowData(profile.id);
+    } finally {
+      setFollowActionLoading(false);
+    }
+  }
+
+  async function openFollowList(profile, listType) {
+    if (!profile?.id || !["followers", "following"].includes(listType)) return;
+    setFollowListOpen({ profile, listType });
+    setFollowListUsers([]);
+    setFollowListError("");
+    setFollowListLoading(true);
+    try {
+      const column = listType === "followers" ? "following_id" : "follower_id";
+      const otherColumn = listType === "followers" ? "follower_id" : "following_id";
+      const { data, error } = await supabase.from("moon_follows")
+        .select("follower_id, following_id, created_at")
+        .eq(column, profile.id).order("created_at", { ascending: false }).limit(200);
+      if (error) throw error;
+      const ids = [...new Set((data || []).map((row) => row[otherColumn]).filter(Boolean))];
+      if (!ids.length) return;
+      const { data: profiles, error: profilesError } = await supabase.from("profiles")
+        .select("id, name, city, bio").in("id", ids);
+      if (profilesError) throw profilesError;
+      const byId = new Map((profiles || []).map((item) => [item.id, item]));
+      setFollowListUsers(ids.map((id) => byId.get(id)).filter(Boolean));
+    } catch (error) {
+      console.error("ERRO AO CARREGAR LISTA DE SEGUIDORES:", error);
+      setFollowListError(error?.message || "Não foi possível carregar esta lista.");
+    } finally {
+      setFollowListLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!currentUserId || !Array.isArray(nearbyProfiles) || nearbyProfiles.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("moon_follows")
+          .select("follower_id, following_id")
+          .or(`follower_id.eq.${currentUserId},following_id.eq.${currentUserId}`);
+        if (error) throw error;
+        if (cancelled) return;
+        const rows = data || [];
+        const ids = nearbyProfiles.map((profile) => profile.id).filter(Boolean);
+        setFollowStates((current) => {
+          const next = { ...current };
+          ids.forEach((id) => { next[id] = rows.some((row) => row.follower_id === currentUserId && row.following_id === id); });
+          return next;
+        });
+        setFollowsMeStates((current) => {
+          const next = { ...current };
+          ids.forEach((id) => { next[id] = rows.some((row) => row.follower_id === id && row.following_id === currentUserId); });
+          return next;
+        });
+        setFollowCounts((current) => {
+          const next = { ...current };
+          ids.forEach((id) => {
+            const existing = next[id] || { followers: 0, following: 0 };
+            next[id] = { ...existing, followers: Math.max(existing.followers || 0, rows.filter((row) => row.following_id === id).length) };
+          });
+          return next;
+        });
+      } catch (error) {
+        console.error("ERRO AO SINCRONIZAR SEGUIDORES DO DISCOVERY:", error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUserId, nearbyProfiles]);
+
+  async function deleteOwnProfilePost(post) {
+    if (!post?.id || !currentUserId) return;
+    const confirmed = window.confirm("Tem certeza de que deseja excluir esta publicação? Essa ação não pode ser desfeita.");
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from("moon_posts")
+        .delete()
+        .eq("id", post.id)
+        .eq("user_id", currentUserId);
+      if (error) throw error;
+
+      setOwnProfilePosts((current) => current.filter((item) => item.id !== post.id));
+      setMoonFeedPosts((current) => current.filter((item) => item.id !== post.id));
+      setOwnProfilePostSelected(null);
+      showToast({ title: "PUBLICAÇÃO EXCLUÍDA", body: "Sua publicação foi removida da MOON." });
+    } catch (error) {
+      console.error("ERRO AO EXCLUIR PUBLICAÇÃO:", error);
+      showToast({ title: "NÃO FOI POSSÍVEL EXCLUIR", body: error?.message || "Verifique sua conexão e tente novamente." });
+    }
+  }
+
+  async function loadOwnProfilePosts() {
+    if (!currentUserId) return;
+    setOwnProfilePostsLoading(true);
+    setOwnProfilePostsError("");
+    try {
+      const { data, error } = await supabase
+        .from("moon_posts")
+        .select("id, user_id, content, image_url, created_at")
+        .eq("user_id", currentUserId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      setOwnProfilePosts(data || []);
+    } catch (error) {
+      console.error("ERRO AO CARREGAR PUBLICAÇÕES DO PERFIL:", error);
+      setOwnProfilePostsError(error?.message || "Não foi possível carregar suas publicações.");
+      setOwnProfilePosts([]);
+    } finally {
+      setOwnProfilePostsLoading(false);
+    }
+  }
+
+  const MOON_STORY_EXPERIENCES = {
+    none: { label: 'Story comum', description: 'Compartilhe um momento sem interação adicional.' },
+    sintonia: { label: 'Sintonia', description: 'Responda e descubra afinidades em comum.' },
+    desafio: { label: 'Desafio a Dois', description: 'Lance uma escolha, pergunta ou desafio para quem assistir.' },
+    bilhete: { label: 'Bilhete Secreto', description: 'Receba mensagens curtas de forma reservada.' },
+  };
+
+  async function loadMoonStories() {
+    if (!currentUserId) return;
+    setMoonStoriesLoading(true);
+    try {
+      const { data: storyRows, error } = await supabase
+        .from('moon_stories')
+        .select('id, user_id, media_url, media_type, caption, audience, allowed_user_ids, created_at, expires_at, duration_seconds, trim_start, trim_end, interaction_type, interaction_config')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(250);
+      if (error) throw error;
+      const rows = storyRows || [];
+      if (!rows.length) { setMoonStories([]); setMoonStorySeenIds([]); return; }
+      const { data: seenRows, error: seenError } = await supabase.from('moon_story_views').select('story_id').eq('viewer_id', currentUserId);
+      if (seenError) console.warn('Não foi possível carregar os Stories já vistos:', seenError);
+      setMoonStorySeenIds((seenRows || []).map((row) => row.story_id));
+      const authorIds = [...new Set(rows.map((row) => row.user_id).filter(Boolean))];
+      const [{ data: profileRows, error: profileError }, { data: photoRows, error: photoError }] = await Promise.all([
+        supabase.from('profiles').select('id, name').in('id', authorIds),
+        supabase.from('profile_photos').select('user_id, storage_path, is_primary, created_at').in('user_id', authorIds).order('is_primary', { ascending: false }).order('created_at', { ascending: true }),
+      ]);
+      if (profileError) throw profileError;
+      if (photoError) throw photoError;
+      const photoMap = new Map();
+      (photoRows || []).forEach((photo) => {
+        if (photoMap.has(photo.user_id)) return;
+        const { data } = supabase.storage.from('profile-photos').getPublicUrl(photo.storage_path);
+        photoMap.set(photo.user_id, data?.publicUrl || '');
+      });
+      const profileMap = new Map((profileRows || []).map((profile) => [profile.id, profile]));
+      const storiesWithMedia = await Promise.all(rows.map(async (story) => {
+        const signedLifetime = Math.min(60 * 60 * 24, Math.max(60, Math.floor((new Date(story.expires_at).getTime() - Date.now()) / 1000)));
+        const { data: signedData, error: signedError } = await supabase.storage.from('moon-story-media').createSignedUrl(story.media_url, signedLifetime);
+        if (signedError) console.warn('Não foi possível assinar a mídia de um Story:', signedError);
+        return {
+          ...story,
+          media_storage_path: story.media_url,
+          media_url: signedData?.signedUrl || '',
+          author: profileMap.get(story.user_id) || { id: story.user_id, name: 'Perfil MOON' },
+          authorPhoto: photoMap.get(story.user_id) || '',
+        };
+      }));
+      setMoonStories(storiesWithMedia.filter((story) => story.media_url).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    } catch (error) {
+      console.error('ERRO AO CARREGAR CONEXÕES MOON:', error);
+      setMoonStoryFeedback(error?.message || 'Não foi possível carregar os Stories. Confira a configuração do Bloco 5 no Supabase.');
+    } finally {
+      setMoonStoriesLoading(false);
+    }
+  }
+
+  async function loadMoonStoryConnections() {
+    if (!currentUserId) return;
+    try {
+      const { data, error } = await supabase.from('moon_follows').select('following_id').eq('follower_id', currentUserId);
+      if (error) throw error;
+      const ids = [...new Set((data || []).map((row) => row.following_id).filter((id) => id && id !== currentUserId))];
+      if (!ids.length) { setMoonStoryConnections([]); return; }
+      const { data: profilesData, error: profilesError } = await supabase.from('profiles').select('id, name').in('id', ids);
+      if (profilesError) throw profilesError;
+      setMoonStoryConnections(profilesData || []);
+    } catch (error) {
+      console.error('ERRO AO CARREGAR CONEXÕES PARA STORIES:', error);
+      setMoonStoryConnections([]);
+    }
+  }
+
+  function resetMoonStoryComposer() {
+    if (moonStoryPreviewUrl) URL.revokeObjectURL(moonStoryPreviewUrl);
+    setMoonStoryFile(null);
+    setMoonStoryPreviewUrl('');
+    setMoonStoryCaption('');
+    setMoonStoryCaptionOpen(false);
+    setMoonStoryAudience('all');
+    setMoonStoryPrivateIds([]);
+    setMoonStoryInteractionType('none');
+    setMoonStoryInteractionPrompt('');
+    setMoonStoryInteractionOptions(['', '']);
+    setMoonStoryTrimStart(0);
+    setMoonStoryTrimEnd(15);
+    setMoonStoryVideoDuration(15);
+    setMoonStoryFeedback('');
+  }
+
+  function handleMoonStoryFile(file) {
+    if (!file) return;
+    if (!file.type?.startsWith('image/') && !file.type?.startsWith('video/')) {
+      setMoonStoryFeedback('Escolha uma foto ou um vídeo.');
+      return;
+    }
+    if (file.size > 80 * 1024 * 1024) {
+      setMoonStoryFeedback('O arquivo deve ter no máximo 80 MB.');
+      return;
+    }
+    if (moonStoryPreviewUrl) URL.revokeObjectURL(moonStoryPreviewUrl);
+    const url = URL.createObjectURL(file);
+    setMoonStoryFile(file);
+    setMoonStoryPreviewUrl(url);
+    setMoonStoryTrimStart(0);
+    setMoonStoryTrimEnd(15);
+    setMoonStoryVideoDuration(15);
+    setMoonStoryFeedback('');
+  }
+
+  async function publishMoonStory() {
+    if (!currentUserId || !moonStoryFile || moonStoryPublishing) return;
+    if (moonStoryAudience === 'private' && !moonStoryPrivateIds.length) {
+      setMoonStoryFeedback('Escolha pelo menos uma pessoa para o Círculo Privado.');
+      return;
+    }
+    if (moonStoryInteractionType !== 'none' && !moonStoryInteractionPrompt.trim()) {
+      setMoonStoryFeedback('Escreva a pergunta ou o desafio desta experiência.');
+      return;
+    }
+    if (moonStoryInteractionType === 'desafio' && moonStoryInteractionOptions.filter((value) => value.trim()).length < 2) {
+      setMoonStoryFeedback('Adicione pelo menos duas opções para o Desafio a Dois.');
+      return;
+    }
+    setMoonStoryPublishing(true);
+    setMoonStoryFeedback('');
+    try {
+      const extension = (moonStoryFile.name.split('.').pop() || (moonStoryFile.type.startsWith('video/') ? 'mp4' : 'jpg')).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const storagePath = `${currentUserId}/${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extension}`;
+      const { error: uploadError } = await supabase.storage.from('moon-story-media').upload(storagePath, moonStoryFile, { contentType: moonStoryFile.type, upsert: false, cacheControl: '3600' });
+      if (uploadError) throw uploadError;
+      const mediaUrl = storagePath;
+      const isVideo = moonStoryFile.type.startsWith('video/');
+      const duration = isVideo ? Math.max(1, Math.min(15, moonStoryTrimEnd - moonStoryTrimStart)) : 0;
+      const interactionConfig = moonStoryInteractionType === 'none' ? null : {
+        prompt: moonStoryInteractionPrompt.trim(),
+        options: moonStoryInteractionType === 'desafio' ? moonStoryInteractionOptions.map((value) => value.trim()).filter(Boolean) : [],
+      };
+      const { error: insertError } = await supabase.from('moon_stories').insert({
+        user_id: currentUserId,
+        media_url: mediaUrl,
+        media_type: isVideo ? 'video' : 'image',
+        caption: moonStoryCaption.trim() || null,
+        audience: moonStoryAudience,
+        allowed_user_ids: moonStoryAudience === 'private' ? moonStoryPrivateIds : [],
+        duration_seconds: duration,
+        trim_start: isVideo ? moonStoryTrimStart : 0,
+        trim_end: isVideo ? moonStoryTrimEnd : 0,
+        interaction_type: moonStoryInteractionType,
+        interaction_config: interactionConfig,
+      });
+      if (insertError) throw insertError;
+      setMoonStoryComposerOpen(false);
+      resetMoonStoryComposer();
+      await loadMoonStories();
+      setMessage('Seu Story foi publicado e ficará disponível por 24 horas.');
+    } catch (error) {
+      console.error('ERRO AO PUBLICAR STORY EM CONEXÕES MOON:', error);
+      setMoonStoryFeedback(error?.message || 'Não foi possível publicar o Story. Confira a tabela e o bucket de Stories no Supabase.');
+    } finally {
+      setMoonStoryPublishing(false);
+    }
+  }
+
+  async function recordMoonStoryView(story) {
+    if (!story?.id || !currentUserId) return;
+    setMoonStorySeenIds((current) => current.includes(story.id) ? current : [...current, story.id]);
+    try {
+      await supabase.from('moon_story_views').upsert({ story_id: story.id, viewer_id: currentUserId }, { onConflict: 'story_id,viewer_id', ignoreDuplicates: true });
+    } catch (error) {
+      console.warn('Não foi possível registrar a visualização do Story:', error);
+    }
+  }
+
+  async function openMoonStory(story) {
+    if (!story?.id) return;
+    setMoonStoryViewer(story);
+    setMoonStoryViewerPaused(false);
+    setMoonStoryMenuOpen(false);
+    setMoonStoryResponse('');
+    setMoonStoryChoice('');
+    setMoonStoryFeedback('');
+    recordMoonStoryView(story);
+    if (currentUserId && story.user_id !== currentUserId) {
+      const { data, error } = await supabase.from('moon_story_likes').select('id').eq('story_id', story.id).eq('user_id', currentUserId).maybeSingle();
+      if (!error) setMoonStoryLikedIds(ids => data ? (ids.includes(story.id) ? ids : [...ids, story.id]) : ids.filter(id => id !== story.id));
+    }
+  }
+
+  function moveMoonStory(direction) {
+    if (!moonStoryViewer) return;
+    const groups = [];
+    [...moonStories].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).forEach((story) => {
+      let group = groups.find((item) => item.user_id === story.user_id);
+      if (!group) { group = { user_id: story.user_id, stories: [] }; groups.push(group); }
+      group.stories.push(story);
+    });
+    groups.forEach((group) => group.stories.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+    const groupIndex = groups.findIndex((group) => group.user_id === moonStoryViewer.user_id);
+    const currentGroup = groups[groupIndex];
+    const storyIndex = currentGroup?.stories.findIndex((story) => story.id === moonStoryViewer.id) ?? -1;
+    let next = currentGroup?.stories[storyIndex + direction];
+    if (!next && direction > 0) {
+      const nextGroup = groups[groupIndex + 1];
+      next = nextGroup?.stories.find((story) => !moonStorySeenIds.includes(story.id)) || nextGroup?.stories[0];
+    } else if (!next && direction < 0) {
+      const previousGroup = groups[groupIndex - 1];
+      next = previousGroup?.stories[previousGroup.stories.length - 1];
+    }
+    if (!next) {
+      if (direction > 0) { setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryMenuOpen(false); }
+      return;
+    }
+    setMoonStoryViewer(next);
+    setMoonStoryViewerPaused(false);
+    setMoonStoryMenuOpen(false);
+    setMoonStoryResponse('');
+    setMoonStoryChoice('');
+    setMoonStoryFeedback('');
+    recordMoonStoryView(next);
+  }
+
+  async function deleteMoonStory(story) {
+    if (!story?.id || story.user_id !== currentUserId) return;
+    const confirmed = window.confirm('Apagar este Story? Ele será removido para todos e não poderá ser recuperado.');
+    if (!confirmed) return;
+    try {
+      const { error } = await supabase.from('moon_stories').delete().eq('id', story.id).eq('user_id', currentUserId);
+      if (error) throw error;
+      if (story.media_storage_path) {
+        const { error: storageError } = await supabase.storage.from('moon-story-media').remove([story.media_storage_path]);
+        if (storageError) console.warn('O Story foi removido do banco, mas a mídia não pôde ser removida:', storageError);
+      }
+      setMoonStories((current) => current.filter((item) => item.id !== story.id));
+      setMoonStorySeenIds((current) => current.filter((id) => id !== story.id));
+      setMoonStoryViewer(null);
+      setMoonStoryViewerPaused(false);
+      setMoonStoryMenuOpen(false);
+      setMoonStoryFeedback('Story apagado.');
+    } catch (error) {
+      console.error('ERRO AO APAGAR STORY MOON:', error);
+      setMoonStoryFeedback(error?.message || 'Não foi possível apagar o Story. Confira as permissões do Supabase.');
+      setMoonStoryMenuOpen(false);
+    }
+  }
+
+  function toggleMoonStoryPlayback(event) {
+    if (event) event.stopPropagation();
+    const nextPaused = !moonStoryViewerPaused;
+    const video = moonStoryVideoRef.current;
+    if (video) {
+      if (nextPaused) video.pause();
+      else {
+        if (Number(moonStoryViewer?.trim_end) > Number(moonStoryViewer?.trim_start) && video.currentTime >= Number(moonStoryViewer.trim_end)) {
+          video.currentTime = Number(moonStoryViewer.trim_start || 0);
+        }
+        video.play().catch(() => {});
+      }
+    }
+    setMoonStoryViewerPaused(nextPaused);
+  }
+
+  useEffect(() => {
+    if (!moonStoryViewer || moonStoryViewerPaused) return undefined;
+    const duration = moonStoryViewer.media_type === 'video'
+      ? Math.max(1, Number(moonStoryViewer.duration_seconds) || 15) * 1000
+      : 5000;
+    const timer = window.setTimeout(() => moveMoonStory(1), duration);
+    return () => window.clearTimeout(timer);
+  }, [moonStoryViewer, moonStoryViewerPaused, moonStories]);
+
+  async function submitMoonStoryInteraction() {
+    const story = moonStoryViewer;
+    if (!story?.id || !currentUserId || story.user_id === currentUserId || moonStoryInteractionSending) return;
+    const type = story.interaction_type;
+    if (!type || type === 'none') return;
+    if (type === 'bilhete' && !moonStoryResponse.trim()) { setMoonStoryFeedback('Escreva seu bilhete antes de enviar.'); return; }
+    if ((type === 'sintonia' || type === 'desafio') && !moonStoryChoice && !moonStoryResponse.trim()) { setMoonStoryFeedback('Escolha uma resposta para continuar.'); return; }
+    setMoonStoryInteractionSending(true);
+    setMoonStoryFeedback('');
+    try {
+      const { error } = await supabase.from('moon_story_interactions').insert({
+        story_id: story.id,
+        sender_id: currentUserId,
+        interaction_type: type,
+        response: type === 'bilhete' ? moonStoryResponse.trim() : (moonStoryResponse.trim() || moonStoryChoice),
+        payload: { choice: moonStoryChoice || null, prompt: story.interaction_config?.prompt || null },
+      });
+      if (error) throw error;
+      const author = story.author || { id: story.user_id, name: 'Perfil MOON' };
+      const answer = type === 'bilhete' ? moonStoryResponse.trim() : (moonStoryResponse.trim() || moonStoryChoice);
+      const experienceName = type === 'sintonia' ? 'Sintonia' : type === 'desafio' ? 'Desafio a Dois' : 'Bilhete Secreto';
+      const { data: existingConversation, error: conversationError } = await supabase
+        .from('conversations').select('*')
+        .or(`and(user_one_id.eq.${currentUserId},user_two_id.eq.${story.user_id}),and(user_one_id.eq.${story.user_id},user_two_id.eq.${currentUserId})`)
+        .maybeSingle();
+      if (conversationError) throw conversationError;
+      let conversation = existingConversation;
+      if (!conversation) {
+        const firstUserId = currentUserId < story.user_id ? currentUserId : story.user_id;
+        const secondUserId = currentUserId < story.user_id ? story.user_id : currentUserId;
+        const { data, error: createError } = await supabase.from('conversations')
+          .insert({ user_one_id: firstUserId, user_two_id: secondUserId }).select().single();
+        if (createError) throw createError;
+        conversation = data;
+      }
+      const { error: messageError } = await supabase.from('messages').insert({
+        conversation_id: conversation.id,
+        sender_id: currentUserId,
+        content: `${experienceName} · ${story.interaction_config?.prompt || 'Resposta à sua experiência'}\n${answer}`,
+        message_type: 'text',
+      });
+      if (messageError) throw messageError;
+      setMoonStoryFeedback(type === 'bilhete' ? 'Bilhete enviado. A mensagem chegou à conversa normal.' : 'Resposta enviada à conversa normal.');
+      setMoonStoryResponse('');
+      setMoonStoryChoice('');
+    } catch (error) {
+      console.error('ERRO AO ENVIAR INTERAÇÃO DO STORY:', error);
+      setMoonStoryFeedback(error?.message || 'Não foi possível enviar sua resposta. Confira a configuração das interações no Supabase.');
+    } finally {
+      setMoonStoryInteractionSending(false);
+    }
+  }
+
+  useEffect(() => {
+    if (screen === 'inside' && currentUserId) {
+      loadMoonStories();
+      loadMoonStoryConnections();
+    }
+  }, [screen, currentUserId]);
+
+  async function loadMoonFeed() {
+    if (!currentUserId) return;
+    setMoonFeedLoading(true);
+    setMoonFeedError("");
+    try {
+      const { data: follows, error: followsError } = await supabase
+        .from("moon_follows")
+        .select("following_id")
+        .eq("follower_id", currentUserId);
+      if (followsError) throw followsError;
+      const followedIds = [...new Set((follows || []).map((row) => row.following_id).filter(Boolean))];
+      if (!followedIds.length) {
+        setMoonFeedPosts([]);
+        return;
+      }
+
+      const { data: posts, error: postsError } = await supabase
+        .from("moon_posts")
+        .select("id, user_id, content, image_url, created_at")
+        .in("user_id", followedIds)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (postsError) throw postsError;
+
+      const authorIds = [...new Set((posts || []).map((post) => post.user_id).filter(Boolean))];
+      let authors = [];
+      let photos = [];
+      let likes = [];
+      let comments = [];
+      const postIds = (posts || []).map((post) => post.id);
+
+      if (authorIds.length) {
+        const { data: profileRows, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, name, city, bio, last_active_at")
+          .in("id", authorIds);
+        if (profileError) throw profileError;
+        authors = profileRows || [];
+
+        const { data: photoRows, error: photosError } = await supabase
+          .from("profile_photos")
+          .select("user_id, storage_path, is_primary, created_at")
+          .in("user_id", authorIds)
+          .order("is_primary", { ascending: false })
+          .order("created_at", { ascending: true });
+        if (photosError) throw photosError;
+        photos = (photoRows || []).map((photo) => {
+          const { data: publicData } = supabase.storage.from("profile-photos").getPublicUrl(photo.storage_path);
+          return { ...photo, publicUrl: publicData?.publicUrl || "" };
+        });
+      }
+
+      if (postIds.length) {
+        const [{ data: likeRows, error: likesError }, { data: commentRows, error: commentsError }] = await Promise.all([
+          supabase.from("moon_post_likes").select("post_id, user_id").in("post_id", postIds),
+          supabase.from("moon_post_comments").select("id, post_id, user_id, content, created_at").in("post_id", postIds).order("created_at", { ascending: true }),
+        ]);
+        if (likesError) throw likesError;
+        if (commentsError) throw commentsError;
+        likes = likeRows || [];
+        comments = commentRows || [];
+      }
+
+      const authorMap = new Map(authors.map((profile) => {
+        const authorPhotos = photos.filter((photo) => photo.user_id === profile.id);
+        return [profile.id, { ...profile, photoUrl: authorPhotos[0]?.publicUrl || "" }];
+      }));
+      const commentAuthorIds = [...new Set(comments.map((comment) => comment.user_id).filter(Boolean))];
+      let commentAuthors = [];
+      if (commentAuthorIds.length) {
+        const { data: commentProfiles, error: commentProfilesError } = await supabase
+          .from("profiles")
+          .select("id, name")
+          .in("id", commentAuthorIds);
+        if (commentProfilesError) throw commentProfilesError;
+        commentAuthors = commentProfiles || [];
+      }
+      const commentAuthorMap = new Map(commentAuthors.map((profile) => [profile.id, profile]));
+      const commentsByPost = new Map();
+      comments.forEach((comment) => {
+        const entry = { ...comment, author: commentAuthorMap.get(comment.user_id) || { id: comment.user_id, name: "Perfil MOON" } };
+        commentsByPost.set(comment.post_id, [...(commentsByPost.get(comment.post_id) || []), entry]);
+      });
+      const likesByPost = new Map();
+      likes.forEach((like) => likesByPost.set(like.post_id, [...(likesByPost.get(like.post_id) || []), like]));
+      setMoonFeedPosts((posts || []).map((post) => {
+        const postLikes = likesByPost.get(post.id) || [];
+        return {
+          ...post,
+          author: authorMap.get(post.user_id) || { id: post.user_id, name: "Perfil MOON", photoUrl: "" },
+          likesCount: postLikes.length,
+          likedByMe: postLikes.some((like) => like.user_id === currentUserId),
+          comments: commentsByPost.get(post.id) || [],
+        };
+      }));
+    } catch (error) {
+      console.error("ERRO AO CARREGAR FEED MOON:", error);
+      setMoonFeedError(error?.message || "Não foi possível carregar o feed. Confira se as tabelas sociais foram criadas no Supabase.");
+      setMoonFeedPosts([]);
+    } finally {
+      setMoonFeedLoading(false);
+    }
+  }
+
+  async function toggleMoonPostLike(post) {
+    if (!currentUserId || !post?.id || moonPostLikeLoading[post.id]) return;
+    const wasLiked = Boolean(post.likedByMe);
+    setMoonPostLikeLoading((current) => ({ ...current, [post.id]: true }));
+    setMoonFeedPosts((current) => current.map((item) => item.id === post.id
+      ? { ...item, likedByMe: !wasLiked, likesCount: Math.max(0, (item.likesCount || 0) + (wasLiked ? -1 : 1)) }
+      : item));
+    try {
+      if (wasLiked) {
+        const { error } = await supabase.from("moon_post_likes").delete().eq("post_id", post.id).eq("user_id", currentUserId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("moon_post_likes").insert({ post_id: post.id, user_id: currentUserId });
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error("ERRO AO CURTIR PUBLICAÇÃO:", error);
+      setMessage(error?.message || "Não foi possível registrar a curtida. Confira a configuração do Supabase.");
+      await loadMoonFeed();
+    } finally {
+      setMoonPostLikeLoading((current) => ({ ...current, [post.id]: false }));
+    }
+  }
+
+  async function submitMoonPostComment(post) {
+    const content = (moonPostCommentDrafts[post.id] || "").trim();
+    if (!currentUserId || !post?.id || !content || moonPostCommentLoading[post.id]) return;
+    setMoonPostCommentLoading((current) => ({ ...current, [post.id]: true }));
+    try {
+      const { error } = await supabase.from("moon_post_comments").insert({
+        post_id: post.id,
+        user_id: currentUserId,
+        content,
+      });
+      if (error) throw error;
+      setMoonPostCommentDrafts((current) => ({ ...current, [post.id]: "" }));
+      setMoonPostCommentsOpen((current) => ({ ...current, [post.id]: true }));
+      await loadMoonFeed();
+    } catch (error) {
+      console.error("ERRO AO COMENTAR PUBLICAÇÃO:", error);
+      setMessage(error?.message || "Não foi possível enviar o comentário. Confira a configuração do Supabase.");
+    } finally {
+      setMoonPostCommentLoading((current) => ({ ...current, [post.id]: false }));
+    }
+  }
+
+  async function publishMoonPost() {
+    const content = newMoonPost.trim();
+    if (!currentUserId || (!content && !newMoonPostImage) || moonPostSubmitting) return;
+    setMoonPostSubmitting(true);
+    try {
+      let imageUrl = null;
+      if (newMoonPostImage) {
+        if (!newMoonPostImage.type?.startsWith("image/")) throw new Error("Escolha um arquivo de imagem válido.");
+        if (newMoonPostImage.size > 8 * 1024 * 1024) throw new Error("A foto deve ter no máximo 8 MB.");
+        const extension = (newMoonPostImage.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+        const filePath = `${currentUserId}/${crypto.randomUUID()}.${extension}`;
+        const { error: uploadError } = await supabase.storage.from("moon-post-images").upload(filePath, newMoonPostImage, {
+          cacheControl: "3600", contentType: newMoonPostImage.type, upsert: false,
+        });
+        if (uploadError) throw uploadError;
+        const { data: publicData } = supabase.storage.from("moon-post-images").getPublicUrl(filePath);
+        imageUrl = publicData?.publicUrl || null;
+        if (!imageUrl) throw new Error("Não foi possível obter o endereço da foto.");
+      }
+      const { error } = await supabase.from("moon_posts").insert({ user_id: currentUserId, content, image_url: imageUrl });
+      if (error) throw error;
+      setNewMoonPost("");
+      setNewMoonPostImage(null);
+      setNewMoonPostImagePreview("");
+      showToast({ title: "PUBLICAÇÃO CRIADA", body: "Sua publicação já está na MOON." });
+      await loadMoonFeed();
+    } catch (error) {
+      console.error("ERRO AO PUBLICAR NO FEED MOON:", error);
+      setMessage(error?.message || "Não foi possível publicar. Confira a configuração das publicações e das fotos no Supabase.");
+    } finally {
+      setMoonPostSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (screen === "home" && discoveryTab === "feed" && currentUserId) loadMoonFeed();
+  }, [screen, discoveryTab, currentUserId]);
+
   async function openChatProfile(profile) {
     if (!profile?.id) {
       setMessage("Não foi possível abrir o perfil desta conversa.");
@@ -3003,6 +3890,7 @@ function App() {
     setShowSelectedProfileMenu(false);
     setSelectedProfileLoading(true);
     setSelectedProfilePhotos([]);
+    loadFollowData(profile.id);
 
     try {
       const { data: profileData, error: profileError } = await supabase
@@ -3321,6 +4209,7 @@ function App() {
     setShowSelectedProfileMenu(false);
     setSelectedProfilePhotos([]);
     setSelectedProfileLoading(false);
+    loadFollowData(profile.id);
 
       const { data: { user: viewer } } = await supabase.auth.getUser();
 
@@ -6210,6 +7099,66 @@ function App() {
     }));
   }
 
+  async function markOneNotificationAsRead(notificationId) {
+    if (!currentUserId || !notificationId) return;
+    const readAt = new Date().toISOString();
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true, read_at: readAt })
+      .eq("id", notificationId)
+      .eq("user_id", currentUserId)
+      .eq("is_read", false);
+    if (error) {
+      console.error("ERRO AO MARCAR NOTIFICACAO COMO LIDA:", error);
+      return;
+    }
+    setNotifications((current) => current.map((item) => item.id === notificationId ? { ...item, is_read: true, read_at: readAt } : item));
+    setNotificationCount((current) => {
+      const item = notifications.find((entry) => entry.id === notificationId);
+      if (!item || item.is_read || !Object.prototype.hasOwnProperty.call(current, item.type)) return current;
+      return { ...current, [item.type]: Math.max(0, (current[item.type] || 0) - 1) };
+    });
+  }
+
+  async function markAllNotificationsAsRead() {
+    if (!currentUserId) return;
+    const readAt = new Date().toISOString();
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true, read_at: readAt })
+      .eq("user_id", currentUserId)
+      .eq("is_read", false);
+    if (error) {
+      console.error("ERRO AO MARCAR TODAS AS NOTIFICACOES COMO LIDAS:", error);
+      setMessage("Não foi possível marcar as notificações como lidas. Tente novamente.");
+      return;
+    }
+    setNotifications((current) => current.map((item) => item.is_read ? item : { ...item, is_read: true, read_at: readAt }));
+    setNotificationCount({ like: 0, message: 0, match: 0, boost: 0 });
+  }
+
+  function openNotificationCenter() {
+    setMessage("");
+    setNotificationFilter("all");
+    setScreen("notifications");
+  }
+
+  async function activateNotification(notification) {
+    if (!notification) return;
+    if (!notification.is_read) await markOneNotificationAsRead(notification.id);
+    if (notification.type === "like") {
+      await handleOpenLikes();
+    } else if (notification.type === "message") {
+      await handleOpenConversations();
+    } else if (notification.type === "match") {
+      setLikesTab("conexoes");
+      setScreen("likes");
+      await loadMatchedProfiles();
+    } else {
+      setScreen("inside");
+    }
+  }
+
   useEffect(() => {
     if (screen !== "likes" || likesTab !== "quemviu" || viewedProfiles.length === 0) return;
     const interval = window.setInterval(() => setStatusClock(Date.now()), 30000);
@@ -6823,6 +7772,8 @@ function App() {
           content,
           message_type: "text",
           reply_to_message_id: chatReplyToMessage?.id || null,
+          source_story_id: chatSourceStoryId || null,
+          source_context: chatSourceStoryId ? "connection_reply" : null,
         })
         .select("*")
         .single();
@@ -6832,6 +7783,7 @@ function App() {
       }
 
       if (insertedMessage?.id) await triggerMoonPush("message", insertedMessage.id);
+      setChatSourceStoryId(null);
 
       setChatMessages((currentMessages) => {
         if (!insertedMessage || currentMessages.some((message) => message.id === insertedMessage.id)) {
@@ -7130,6 +8082,7 @@ function App() {
       }
 
       if (insertedMessage?.id) await triggerMoonPush("message", insertedMessage.id);
+      setChatSourceStoryId(null);
 
       const [hydratedMessage] = await hydrateChatMessages([insertedMessage]);
 
@@ -7201,6 +8154,7 @@ function App() {
       if (error) throw error;
 
       if (insertedMessage?.id) await triggerMoonPush("message", insertedMessage.id);
+      setChatSourceStoryId(null);
 
       setChatMessages((currentMessages) => {
         if (!insertedMessage || currentMessages.some((item) => item.id === insertedMessage.id)) {
@@ -7714,6 +8668,10 @@ function App() {
         throw profileError;
       }
 
+      if (signupAccountType === "organizer") {
+        try { window.localStorage.setItem("moon_organizer_onboarding_pending", "true"); } catch {}
+      }
+
       setMessage("");
       setScreen("verification");
       setSignupLocation(null);
@@ -7849,6 +8807,13 @@ function App() {
       await loadProfile(
         data.user.id
       );
+
+      let organizerOnboardingPending = false;
+      try { organizerOnboardingPending = window.localStorage.getItem("moon_organizer_onboarding_pending") === "true"; } catch {}
+      if (organizerOnboardingPending) {
+        setScreen("organizerSubscription");
+        setOrganizerActionStatus("");
+      }
 
       setLoginForm({
         email: "",
@@ -9033,7 +9998,7 @@ const filteredConversations = conversations
 
           <div className="home-buttons">
             <button onClick={() => setScreen("login")}>ENTER</button>
-            <button onClick={() => { setMessage(""); setScreen("registerLocation"); }}>CREATE ACCOUNT</button>
+            <button onClick={() => { setMessage(""); setSignupAccountType("personal"); setScreen("accountType"); }}>CREATE ACCOUNT</button>
           </div>
           <div style={{ margin: "18px auto 0", textAlign: "center" }}>
             <button type="button" onClick={() => setInstallGuidePlatform("choose")} style={{ padding: "10px 14px", border: "1px solid rgba(201,181,138,.35)", borderRadius: "12px", background: "rgba(201,181,138,.06)", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.2px", cursor: "pointer" }}>＋ ADICIONAR MOON À TELA INICIAL</button>
@@ -9239,6 +10204,24 @@ const filteredConversations = conversations
             }}
           >
             VOLTAR
+          </button>
+        </section>
+      )}
+
+      {screen === "accountType" && (
+        <section className="form-screen">
+          <button className="back-button" onClick={() => { setMessage(""); setScreen("home"); }}>VOLTAR</button>
+          <div className="moon-logo">MOON</div>
+          <h1>Como você quer usar a MOON?</h1>
+          <p className="form-subtitle">Escolha sua modalidade para continuar.</p>
+          <button type="button" onClick={() => { setSignupAccountType("personal"); setMessage(""); setScreen("registerLocation"); }} style={{ width: "100%", textAlign: "left", marginTop: "16px", padding: "20px", border: "1px solid #292929", borderRadius: "14px", background: "#0b0b0b", color: "#f4ead7", cursor: "pointer" }}>
+            <strong style={{ display: "block", fontSize: "13px", letterSpacing: "1px" }}>QUERO CONHECER PESSOAS</strong>
+            <span style={{ display: "block", marginTop: "8px", color: "#8f8a82", fontSize: "11px", lineHeight: 1.6 }}>Crie seu perfil pessoal e aproveite as conexões da MOON.</span>
+          </button>
+          <button type="button" onClick={() => { setSignupAccountType("organizer"); setMessage(""); setScreen("registerLocation"); }} style={{ width: "100%", textAlign: "left", marginTop: "12px", padding: "20px", border: "1px solid rgba(201,181,138,.5)", borderRadius: "14px", background: "linear-gradient(145deg, rgba(201,181,138,.10), #0b0b0b)", color: "#f4ead7", cursor: "pointer" }}>
+            <strong style={{ display: "block", color: "#c9b58a", fontSize: "13px", letterSpacing: "1px" }}>SOU ORGANIZADOR DE EVENTOS</strong>
+            <span style={{ display: "block", marginTop: "8px", color: "#8f8a82", fontSize: "11px", lineHeight: 1.6 }}>Para promoters, produtores, baladas, casas noturnas e estabelecimentos.</span>
+            <span style={{ display: "block", marginTop: "12px", color: "#c9b58a", fontSize: "11px", fontWeight: 700 }}>R$ 19,90/mês · eventos ilimitados</span>
           </button>
         </section>
       )}
@@ -12766,6 +13749,41 @@ const filteredConversations = conversations
         }
       `}</style>
 
+      {screen === "organizerSubscription" && (
+        <section className="form-screen">
+          <button className="back-button" onClick={() => { setScreen("inside"); setMessage(""); }}>VOLTAR</button>
+          <div className="moon-logo">MOON</div>
+          <h1>MOON EVENTOS</h1>
+          <p className="form-subtitle">Ative sua modalidade profissional para divulgar seus eventos.</p>
+          <div style={{ marginTop: "20px", padding: "22px", border: "1px solid rgba(201,181,138,.4)", borderRadius: "14px", background: "linear-gradient(145deg, rgba(201,181,138,.10), #0b0b0b)", textAlign: "left" }}>
+            <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "2px" }}>ASSINATURA MENSAL</div>
+            <div style={{ color: "#f4ead7", fontSize: "30px", marginTop: "10px" }}>R$ 19,90<span style={{ color: "#77736b", fontSize: "11px" }}>/mês</span></div>
+            <p style={{ color: "#aaa39a", fontSize: "11px", lineHeight: 1.7 }}>Perfil profissional para promoters, produtores, baladas e estabelecimentos. Publique quantos eventos quiser, sujeitos à análise da equipe MOON.</p>
+            <button type="button" disabled={organizerActionLoading} onClick={startOrganizerSubscriptionCheckout} style={{ width: "100%", minHeight: "48px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontWeight: 700, letterSpacing: "1px", cursor: organizerActionLoading ? "wait" : "pointer" }}>{organizerActionLoading ? "PREPARANDO..." : "ASSINAR E CONTINUAR"}</button>
+          </div>
+          {organizerActionStatus && <p role="status" className="form-subtitle">{organizerActionStatus}</p>}
+        </section>
+      )}
+
+      {screen === "organizerSetup" && (
+        <section className="form-screen">
+          <button className="back-button" onClick={() => setScreen("inside")}>VOLTAR</button>
+          <div className="moon-logo">MOON</div>
+          <h1>Seu perfil profissional</h1>
+          <p className="form-subtitle">Conte às pessoas qual estabelecimento, festa ou projeto você representa.</p>
+          <form onSubmit={saveOrganizerProfile}>
+            <input value={organizerSetupForm.display_name} onChange={(e) => setOrganizerSetupForm((v) => ({ ...v, display_name: e.target.value }))} placeholder="Nome público do perfil" maxLength={80} required />
+            <select value={organizerSetupForm.organization_type} onChange={(e) => setOrganizerSetupForm((v) => ({ ...v, organization_type: e.target.value }))} style={{ width: "100%", marginTop: "12px", padding: "13px", borderRadius: "10px", background: "#0b0b0b", border: "1px solid #292929", color: "#f4ead7" }}>
+              <option value="promoter">Promoter</option><option value="nightclub">Balada / casa noturna</option><option value="producer">Produtora de eventos</option><option value="venue">Estabelecimento / espaço</option><option value="party">Festa / marca de eventos</option><option value="other">Outro</option>
+            </select>
+            <input value={organizerSetupForm.city} onChange={(e) => setOrganizerSetupForm((v) => ({ ...v, city: e.target.value }))} placeholder="Cidade" maxLength={100} style={{ marginTop: "12px" }} />
+            <textarea value={organizerSetupForm.description} onChange={(e) => setOrganizerSetupForm((v) => ({ ...v, description: e.target.value }))} placeholder="Descrição do perfil (opcional)" maxLength={1200} rows={5} style={{ width: "100%", boxSizing: "border-box", marginTop: "12px", padding: "13px", borderRadius: "10px", background: "#0b0b0b", border: "1px solid #292929", color: "#f4ead7" }} />
+            {organizerActionStatus && <p className="form-subtitle">{organizerActionStatus}</p>}
+            <button type="submit" disabled={organizerActionLoading} style={{ width: "100%", minHeight: "48px", marginTop: "14px" }}>{organizerActionLoading ? "SALVANDO..." : "CRIAR PERFIL PROFISSIONAL"}</button>
+          </form>
+        </section>
+      )}
+
       {/* EVENTOS */}
 
       {screen === "events" && (
@@ -12791,7 +13809,7 @@ const filteredConversations = conversations
             <p style={{ color: "#77736b", fontSize: "11px", letterSpacing: "2px", marginTop: "20px" }}>EVENTOS</p>
           </div>
 
-          <button type="button" onClick={openEventPublisher} style={{ width: "100%", minHeight: "52px", marginBottom: "18px", border: "1px solid #c9b58a", borderRadius: "12px", background: "linear-gradient(135deg, rgba(201,181,138,.16), rgba(201,181,138,.04))", color: "#f4ead7", fontSize: "10px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer", boxShadow: "0 12px 30px rgba(0,0,0,.24)" }}>＋ PUBLICAR EVENTO</button>
+          {organizerProfile && <button type="button" onClick={openEventPublisher} style={{ width: "100%", minHeight: "52px", marginBottom: "18px", border: "1px solid #c9b58a", borderRadius: "12px", background: "linear-gradient(135deg, rgba(201,181,138,.16), rgba(201,181,138,.04))", color: "#f4ead7", fontSize: "10px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer", boxShadow: "0 12px 30px rgba(0,0,0,.24)" }}>＋ PUBLICAR EVENTO</button>}
 
           <div style={{ marginTop: "-6px", marginBottom: "18px", padding: "12px 14px", border: "1px solid #242424", borderRadius: "10px", background: "#0b0b0b", color: "#77736b", fontSize: "9px", lineHeight: "1.65", textAlign: "center" }}>
             Os eventos passam por análise antes da publicação. A publicação pode ocorrer em até <strong style={{ color: "#c9b58a", fontWeight: 500 }}>24 horas</strong>. Caso seja necessário algum ajuste ou esclarecimento, a equipe MOON entrará em contato.
@@ -12888,74 +13906,101 @@ const filteredConversations = conversations
 
           <div style={{ marginBottom: "25px" }}>
             <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "2px" }}>MOON EVENTOS</div>
-            <h1 style={{ color: "#f4ead7", fontSize: "28px", fontWeight: 500, margin: "8px 0 6px" }}>{eventPaymentReturned ? "Envie seu evento." : "Divulgue seu evento."}</h1>
-            <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: 0 }}>{eventPaymentReturned ? "Pagamento recebido. Agora envie os dados para análise da equipe MOON." : "Escolha uma opção de divulgação. Após o pagamento, você enviará os dados do evento."}</p>
+            <h1 style={{ color: "#f4ead7", fontSize: "28px", fontWeight: 500, margin: "8px 0 6px" }}>Divulgue seu evento.</h1>
+            <p style={{ color: "#77736b", fontSize: "11px", lineHeight: "1.7", margin: 0 }}>Sua assinatura permite publicar eventos ilimitados. Cada publicação passa pela análise da equipe MOON.</p>
           </div>
 
-          {!eventPaymentReturned ? (
-            <>
-              <div style={{ display: "grid", gap: "10px", marginBottom: "16px" }}>
-                {eventPlans.filter((plan) => plan.slug !== "moon-eventos-pro").map((plan) => {
-                  const selected = eventPublishPlan?.id === plan.id;
-                  const isPackage = plan.slug === "pacote-8-divulgacoes";
-                  return (
-                    <button key={plan.id} type="button" onClick={() => { setEventPublishPlan(plan); setEventPublishStatus(""); }} style={{ textAlign: "left", padding: "18px", borderRadius: "14px", border: selected ? "1px solid #c9b58a" : "1px solid #292929", background: selected ? "linear-gradient(145deg, rgba(201,181,138,.12), rgba(11,11,11,.96))" : "#0b0b0b", color: "#f4ead7", cursor: "pointer" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
-                        <div>
-                          <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "1.6px", fontWeight: 700 }}>{isPackage ? "PACOTE" : "AVULSO"}</div>
-                          <div style={{ fontSize: "17px", marginTop: "7px" }}>{isPackage ? "PACOTE MOON EVENTOS" : "DIVULGAÇÃO AVULSA"}</div>
-                          <div style={{ color: "#77736b", fontSize: "10px", lineHeight: "1.6", marginTop: "7px" }}>{isPackage ? "8 divulgações · R$25 por evento · economize R$39,20" : "1 divulgação de evento · pagamento único"}</div>
-                        </div>
-                        <div style={{ color: "#f4ead7", fontSize: "17px", whiteSpace: "nowrap" }}>R$ {Number(plan.price).toFixed(2).replace(".", ",")}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {eventPublishPlan && (
-                <button type="button" onClick={() => startEventCheckout(eventPublishPlan)} disabled={eventPublishLoading} style={{ width: "100%", height: "50px", marginTop: "8px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventPublishLoading ? "default" : "pointer", opacity: eventPublishLoading ? .6 : 1 }}>{eventPublishLoading ? "ABRINDO PAGAMENTO..." : `PAGAR E CONTINUAR · R$ ${Number(eventPublishPlan.price).toFixed(2).replace(".", ",")}`}</button>
-              )}
-
-              {eventPublishStatus && <div style={{ marginTop: "14px", padding: "12px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{eventPublishStatus}</div>}
-            </>
-          ) : (
-            <form onSubmit={(event) => { event.preventDefault(); submitUserEvent(); }} style={{ border: "1px solid #292929", borderRadius: "14px", padding: "20px", background: "#0b0b0b" }}>
-              <div style={{ padding: "12px", marginBottom: "16px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.6" }}>PAGAMENTO RECEBIDO · Agora envie os dados. Seu evento ficará como <strong>EVENTO EM ANÁLISE</strong> até a conferência da equipe MOON.</div>
-              {[
-                ["title", "NOME DO EVENTO", "Ex.: Sunset MOON", "text"],
-                ["location", "LOCAL", "Ex.: Centro, Florianópolis", "text"],
-                ["starts_at", "INÍCIO", "", "datetime-local"],
-                ["ends_at", "TÉRMINO", "", "datetime-local"],
-                ["destination_url", "LINK DO EVENTO (OPCIONAL)", "https://...", "url"],
-              ].map(([field, label, placeholder, type]) => (
-                <label key={field} style={{ display: "block", marginTop: field === "title" ? 0 : "13px" }}>
-                  <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>{label}</div>
-                  <input type={type} value={eventPublishForm[field]} placeholder={placeholder} onChange={(event) => setEventPublishForm((current) => ({ ...current, [field]: event.target.value }))} style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }} />
-                </label>
-              ))}
-
-              <label style={{ display: "block", marginTop: "13px" }}>
-                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>DESCRIÇÃO</div>
-                <textarea value={eventPublishForm.description} onChange={(event) => setEventPublishForm((current) => ({ ...current, description: event.target.value }))} rows={7} maxLength={5000} placeholder="Descreva o evento..." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "11px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px", lineHeight: "1.6" }} />
+          <form onSubmit={(event) => { event.preventDefault(); submitOrganizerEventUnlimited(); }} style={{ border: "1px solid #292929", borderRadius: "14px", padding: "20px", background: "#0b0b0b" }}>
+            <div style={{ padding: "12px", marginBottom: "16px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.6" }}>ASSINATURA ATIVA · Publique quantos eventos quiser. Cada evento será enviado para análise da equipe MOON.</div>
+            {[
+              ["title", "NOME DO EVENTO", "Ex.: Sunset MOON", "text"],
+              ["location", "LOCAL", "Ex.: Centro, Florianópolis", "text"],
+              ["starts_at", "INÍCIO", "", "datetime-local"],
+              ["ends_at", "TÉRMINO", "", "datetime-local"],
+              ["destination_url", "LINK DO EVENTO (OPCIONAL)", "https://...", "url"],
+            ].map(([field, label, placeholder, type]) => (
+              <label key={field} style={{ display: "block", marginTop: field === "title" ? 0 : "13px" }}>
+                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>{label}</div>
+                <input type={type} value={eventPublishForm[field]} placeholder={placeholder} onChange={(event) => setEventPublishForm((current) => ({ ...current, [field]: event.target.value }))} style={{ width: "100%", boxSizing: "border-box", minHeight: "44px", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px" }} />
               </label>
-
-              <label style={{ display: "block", marginTop: "13px" }}>
-                <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>FOTO DO EVENTO</div>
-                <input type="file" accept="image/*" onChange={(event) => setEventPublishImageFile(event.target.files?.[0] || null)} style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#aaa39a", fontSize: "10px" }} />
-                {eventPublishImageFile && <div style={{ color: "#77736b", fontSize: "9px", marginTop: "6px" }}>Selecionada: {eventPublishImageFile.name}</div>}
-              </label>
-
-              {eventPublishStatus && <div style={{ marginTop: "15px", padding: "12px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{eventPublishStatus}</div>}
-
-              <button type="submit" disabled={eventPublishLoading} style={{ width: "100%", height: "50px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventPublishLoading ? "default" : "pointer", opacity: eventPublishLoading ? .6 : 1 }}>{eventPublishLoading ? "ENVIANDO..." : "ENVIAR PARA ANÁLISE"}</button>
-              <div style={{ color: "#55514a", fontSize: "9px", lineHeight: "1.6", marginTop: "10px", textAlign: "center" }}>A equipe MOON confere o pagamento e os dados enviados. A publicação ocorre em até 24 horas após a análise.</div>
-            </form>
-          )}
+            ))}
+            <label style={{ display: "block", marginTop: "13px" }}>
+              <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>DESCRIÇÃO</div>
+              <textarea value={eventPublishForm.description} onChange={(event) => setEventPublishForm((current) => ({ ...current, description: event.target.value }))} rows={7} maxLength={5000} placeholder="Descreva o evento..." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "11px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#f4ead7", outline: "none", fontFamily: "inherit", fontSize: "11px", lineHeight: "1.6" }} />
+            </label>
+            <label style={{ display: "block", marginTop: "13px" }}>
+              <div style={{ color: "#77736b", fontSize: "9px", letterSpacing: ".14em", marginBottom: "7px" }}>FOTO DO EVENTO</div>
+              <input type="file" accept="image/*" onChange={(event) => setEventPublishImageFile(event.target.files?.[0] || null)} style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #292929", borderRadius: "10px", background: "#080808", color: "#aaa39a", fontSize: "10px" }} />
+              {eventPublishImageFile && <div style={{ color: "#77736b", fontSize: "9px", marginTop: "6px" }}>Selecionada: {eventPublishImageFile.name}</div>}
+            </label>
+            {eventPublishStatus && <div style={{ marginTop: "15px", padding: "12px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "9px", background: "rgba(201,181,138,.05)", color: "#c9b58a", fontSize: "10px", lineHeight: "1.5" }}>{eventPublishStatus}</div>}
+            <button type="submit" disabled={eventPublishLoading} style={{ width: "100%", height: "50px", marginTop: "16px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", fontSize: "9px", fontWeight: 700, letterSpacing: "1.6px", cursor: eventPublishLoading ? "default" : "pointer", opacity: eventPublishLoading ? .6 : 1 }}>{eventPublishLoading ? "ENVIANDO..." : "ENVIAR PARA ANÁLISE"}</button>
+            <div style={{ color: "#55514a", fontSize: "9px", lineHeight: "1.6", marginTop: "10px", textAlign: "center" }}>A equipe MOON confere os dados. A publicação ocorre após a aprovação.</div>
+          </form>
         </section>
       )}
 
       {/* PERFIL */}
+
+      {screen === 'inside' && moonStoryComposerOpen && (
+        <div role="dialog" aria-modal="true" aria-label="Criar Story MOON" onClick={(event) => { if (event.target === event.currentTarget) { setMoonStoryComposerOpen(false); resetMoonStoryComposer(); } }} style={{ position: 'fixed', inset: 0, zIndex: 10050, display: 'flex', justifyContent: 'center', background: '#050505', color: '#f4ead7' }}>
+          <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '560px', height: '100dvh', overflowY: 'auto', background: 'radial-gradient(ellipse at 50% 5%, rgba(201,181,138,.12), transparent 42%), #050505' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 12px', flexShrink: 0 }}>
+              <button type="button" aria-label="Fechar" onClick={() => { setMoonStoryComposerOpen(false); resetMoonStoryComposer(); }} style={{ width: '38px', height: '38px', border: 0, borderRadius: '50%', background: 'rgba(255,255,255,.07)', color: '#f4ead7', fontSize: '23px', cursor: 'pointer' }}>×</button>
+              <div style={{ textAlign: 'center' }}><div style={{ color: '#d6bd80', fontSize: '10px', letterSpacing: '3px' }}>MOON</div><div style={{ color: '#aaa294', fontSize: '9px', marginTop: '3px', letterSpacing: '1px' }}>NOVO STORY</div></div>
+              <div style={{ width: '38px' }} />
+            </div>
+
+            <div style={{ position: 'relative', flex: '1 0 auto', minHeight: '280px', margin: '0 12px', borderRadius: '25px', overflow: 'hidden', background: moonStoryFile ? '#000' : 'radial-gradient(ellipse at 50% 42%, rgba(201,181,138,.14), transparent 48%), linear-gradient(160deg,#17150f,#080808 55%,#12100c)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {moonStoryFile ? (moonStoryFile.type.startsWith('video/') ? <video ref={moonStoryVideoRef} src={moonStoryPreviewUrl} controls playsInline onLoadedMetadata={(event) => { const duration = Number(event.currentTarget.duration) || 15; setMoonStoryVideoDuration(duration); setMoonStoryTrimStart(0); setMoonStoryTrimEnd(Math.min(15, duration)); }} style={{ width: '100%', height: '100%', maxHeight: '58dvh', objectFit: 'contain', background: '#000' }} /> : <img src={moonStoryPreviewUrl} alt="Prévia do Story" style={{ width: '100%', height: '100%', maxHeight: '58dvh', objectFit: 'contain', background: '#000' }} />) : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '30px 22px', gap: '12px' }}>
+                <div style={{ position: 'relative', width: '86px', height: '86px', display: 'grid', placeItems: 'center' }}><span style={{ fontSize: '76px', lineHeight: 1, color: '#d8bf83', filter: 'drop-shadow(0 0 24px rgba(201,181,138,.24))' }}>☾</span><span style={{ position: 'absolute', right: '1px', bottom: '5px', fontSize: '21px', color: '#f4ead7' }}>✦</span></div>
+                <div style={{ color: '#f4ead7', fontSize: '20px', fontWeight: 400, letterSpacing: '.2px' }}>Seu momento, do seu jeito.</div>
+                <div style={{ color: '#938b7d', fontSize: '11px', lineHeight: 1.7, maxWidth: '250px' }}>Abra a câmera para capturar agora ou escolha algo que já está na sua galeria.</div>
+              </div>}
+              {moonStoryFile ? <button type="button" aria-label="Trocar mídia" onClick={() => { if (moonStoryPreviewUrl) URL.revokeObjectURL(moonStoryPreviewUrl); setMoonStoryFile(null); setMoonStoryPreviewUrl(''); }} style={{ position: 'absolute', top: '12px', right: '12px', border: '1px solid rgba(255,255,255,.2)', borderRadius: '50%', width: '34px', height: '34px', background: 'rgba(0,0,0,.65)', color: '#fff', fontSize: '19px', cursor: 'pointer' }}>↺</button> : null}
+            </div>
+
+            {!moonStoryFile ? <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px', padding: '20px 16px 24px' }}>
+              <label title="Abrir galeria" style={{ width: '48px', height: '48px', display: 'grid', placeItems: 'center', borderRadius: '50%', background: '#191713', border: '1px solid #373024', color: '#d6bd80', fontSize: '21px', cursor: 'pointer' }}>▧<input type="file" accept="image/*,video/*" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; handleMoonStoryFile(file); }} style={{ display: 'none' }} /></label>
+              <label title="Abrir câmera" style={{ width: '72px', height: '72px', display: 'grid', placeItems: 'center', borderRadius: '50%', border: '2px solid #d6bd80', background: 'linear-gradient(145deg,#e9d6a2,#b99a5c)', boxShadow: '0 0 0 6px rgba(201,181,138,.09), 0 0 28px rgba(201,181,138,.12)', cursor: 'pointer' }}><span style={{ width: '54px', height: '54px', display: 'block', borderRadius: '50%', border: '2px solid #18150f', background: '#d8c28e' }} /><input type="file" accept="image/*,video/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; handleMoonStoryFile(file); }} style={{ display: 'none' }} /></label>
+              <div style={{ width: '48px', color: '#8f8779', fontSize: '10px', lineHeight: 1.5, textAlign: 'center' }}>Câmera<br />ou galeria</div>
+            </div> : <div style={{ padding: '12px 18px 28px' }}>
+              {moonStoryFile.type.startsWith('video/') ? <div style={{ padding: '13px 0 15px', borderBottom: '1px solid rgba(201,181,138,.12)', marginBottom: '14px' }}><div style={{ display: 'flex', justifyContent: 'space-between', color: '#d6bd80', fontSize: '11px', marginBottom: '9px' }}><span>AJUSTAR TRECHO</span><strong>{Math.max(1, Math.min(15, moonStoryTrimEnd - moonStoryTrimStart)).toFixed(0)}s / 15s</strong></div><label style={{ display: 'block', color: '#aaa294', fontSize: '10px' }}>Início · {moonStoryTrimStart.toFixed(1)}s<input type="range" min="0" max={Math.max(0, moonStoryVideoDuration - 1)} step="0.1" value={moonStoryTrimStart} onChange={(event) => { const value = Number(event.target.value); setMoonStoryTrimStart(Math.min(value, Math.max(0, moonStoryTrimEnd - 1))); if (moonStoryVideoRef.current) moonStoryVideoRef.current.currentTime = value; }} style={{ display: 'block', width: '100%', accentColor: '#d6bd80', margin: '8px 0 12px' }} /></label><label style={{ display: 'block', color: '#aaa294', fontSize: '10px' }}>Fim · {moonStoryTrimEnd.toFixed(1)}s<input type="range" min={Math.min(moonStoryVideoDuration, moonStoryTrimStart + 1)} max={Math.max(1, moonStoryVideoDuration)} step="0.1" value={moonStoryTrimEnd} onChange={(event) => setMoonStoryTrimEnd(Math.min(Number(event.target.value), moonStoryTrimStart + 15, moonStoryVideoDuration))} style={{ display: 'block', width: '100%', accentColor: '#d6bd80', marginTop: '8px' }} /></label></div> : null}
+
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '5px', marginBottom: '14px' }}>
+                {[['all','Todos'],['connections','Conexões'],['private','Círculo privado']].map(([value,label]) => <button type="button" key={value} onClick={() => setMoonStoryAudience(value)} style={{ flex: '0 0 auto', border: moonStoryAudience === value ? '1px solid #d6bd80' : '1px solid #302b22', borderRadius: '999px', padding: '10px 14px', background: moonStoryAudience === value ? 'rgba(201,181,138,.13)' : 'rgba(255,255,255,.025)', color: moonStoryAudience === value ? '#e7d3a0' : '#a49b8d', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{moonStoryAudience === value ? '✓ ' : ''}{label}</button>)}
+              </div>
+              {moonStoryAudience === 'private' ? <div style={{ padding: '13px', borderRadius: '15px', background: '#11100d', marginBottom: '14px' }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '9px' }}><strong style={{ fontSize: '12px', fontWeight: 500 }}>Seu Círculo Privado</strong><span style={{ color: '#bda56e', fontSize: '10px' }}>{moonStoryPrivateIds.length} selecionados</span></div><div style={{ maxHeight: '125px', overflowY: 'auto' }}>{moonStoryConnections.length ? moonStoryConnections.map((person) => <label key={person.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 2px', color: '#c7c0b4', fontSize: '12px' }}><input type="checkbox" checked={moonStoryPrivateIds.includes(person.id)} onChange={(event) => setMoonStoryPrivateIds((current) => event.target.checked ? [...current, person.id] : current.filter((id) => id !== person.id))} style={{ accentColor: '#c9b58a' }} />{person.name || 'Perfil MOON'}</label>) : <div style={{ color: '#8e877b', fontSize: '11px', padding: '8px 0' }}>Nenhuma conexão encontrada para adicionar.</div>}</div></div> : null}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}><span style={{ color: '#b9ad97', fontSize: '10px', letterSpacing: '1.2px' }}>EXPERIÊNCIA MOON</span><span style={{ color: '#6e665a', fontSize: '10px' }}>Opcional</span></div>
+              <div style={{ display: 'flex', gap: '9px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '9px' }}>{Object.entries(MOON_STORY_EXPERIENCES).map(([key, item]) => <button type="button" key={key} onClick={() => { setMoonStoryInteractionType(key); setMoonStoryInteractionPrompt(''); setMoonStoryInteractionOptions(['', '']); }} style={{ flex: '0 0 132px', textAlign: 'left', border: moonStoryInteractionType === key ? '1px solid #c9b58a' : '1px solid #2a261f', borderRadius: '14px', padding: '12px', background: moonStoryInteractionType === key ? 'linear-gradient(145deg,rgba(201,181,138,.14),rgba(201,181,138,.035))' : '#0d0d0c', color: moonStoryInteractionType === key ? '#e7d3a0' : '#aaa294', cursor: 'pointer' }}><div style={{ fontSize: '19px', marginBottom: '7px' }}>{key === 'none' ? '☾' : key === 'sintonia' ? '✧' : key === 'desafio' ? '◇' : '✉'}</div><strong style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '5px' }}>{item.label}</strong><span style={{ display: 'block', fontSize: '9px', lineHeight: 1.5, color: '#8c8375' }}>{item.description}</span></button>)}</div>
+              {moonStoryInteractionType !== 'none' ? <div style={{ padding: '12px 0 13px' }}><label style={{ display: 'block', color: '#b9ad97', fontSize: '10px', marginBottom: '7px' }}>{moonStoryInteractionType === 'bilhete' ? 'MENSAGEM-GUIA' : moonStoryInteractionType === 'sintonia' ? 'PERGUNTA DE SINTONIA' : 'DESAFIO PARA QUEM ASSISTIR'}</label><input value={moonStoryInteractionPrompt} onChange={(event) => setMoonStoryInteractionPrompt(event.target.value)} maxLength={180} placeholder={moonStoryInteractionType === 'bilhete' ? 'Que tipo de mensagem você quer receber?' : moonStoryInteractionType === 'sintonia' ? 'Ex.: Como seria um encontro perfeito?' : 'Ex.: Escolha uma ideia para nosso primeiro encontro'} style={{ width: '100%', boxSizing: 'border-box', border: 0, borderBottom: '1px solid #3a3327', padding: '10px 0', background: 'transparent', color: '#f4ead7', outline: 'none', font: 'inherit', fontSize: '12px' }} />{moonStoryInteractionType === 'desafio' ? <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>{moonStoryInteractionOptions.map((option, index) => <input key={index} value={option} onChange={(event) => setMoonStoryInteractionOptions((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} maxLength={70} placeholder={`Opção ${index + 1}`} style={{ minWidth: 0, boxSizing: 'border-box', border: 0, borderBottom: '1px solid #3a3327', padding: '9px 0', background: 'transparent', color: '#f4ead7', outline: 'none', font: 'inherit', fontSize: '11px' }} />)}</div> : null}</div> : null}
+
+              <button type="button" onClick={() => setMoonStoryCaptionOpen((open) => !open)} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', border: 0, padding: '11px 0', background: 'transparent', color: '#aaa294', textAlign: 'left', fontSize: '11px', cursor: 'pointer' }}><span style={{ color: '#d6bd80', fontSize: '16px' }}>Aa</span>{moonStoryCaptionOpen ? 'Ocultar texto' : (moonStoryCaption ? 'Editar texto do Story' : 'Adicionar texto ao Story')}<span style={{ marginLeft: 'auto' }}>{moonStoryCaptionOpen ? '⌃' : '⌄'}</span></button>
+              {moonStoryCaptionOpen ? <textarea value={moonStoryCaption} onChange={(event) => setMoonStoryCaption(event.target.value)} maxLength={500} rows={2} placeholder="Escreva algo para acompanhar seu momento..." style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', border: 0, borderBottom: '1px solid #3a3327', padding: '10px 0', background: 'transparent', color: '#f4ead7', outline: 'none', font: 'inherit', fontSize: '12px', marginBottom: '12px' }} /> : null}
+              {moonStoryFeedback ? <div role="status" style={{ color: '#e2b7a8', fontSize: '11px', lineHeight: 1.5, margin: '7px 0 10px' }}>{moonStoryFeedback}</div> : null}
+              <button type="button" disabled={!moonStoryFile || moonStoryPublishing} onClick={publishMoonStory} style={{ position: 'sticky', bottom: 0, width: '100%', border: 0, borderRadius: '999px', padding: '15px', marginTop: '5px', background: '#d6bd80', color: '#111', fontSize: '11px', fontWeight: 700, letterSpacing: '.7px', cursor: moonStoryPublishing ? 'wait' : 'pointer', opacity: moonStoryPublishing ? .65 : 1, boxShadow: '0 8px 30px rgba(0,0,0,.45)' }}>{moonStoryPublishing ? 'PUBLICANDO...' : 'Compartilhar Story  ↗'}</button>
+            </div>}
+          </div>
+        </div>
+      )}
+
+      {screen === 'inside' && moonStoryViewer && (
+        <div role="dialog" aria-modal="true" aria-label="Visualizador de Story" onClick={(event) => { if (event.target === event.currentTarget) { setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryMenuOpen(false); setMoonStoryFeedback(''); } }} style={{ position: 'fixed', inset: 0, zIndex: 10060, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'rgba(0,0,0,.94)' }}>
+          <div onClick={() => toggleMoonStoryPlayback()} style={{ position: 'relative', width: 'min(440px, 100%)', height: 'min(88vh, 820px)', overflow: 'hidden', border: '1px solid rgba(201,181,138,.32)', borderRadius: '18px', background: '#080808', boxShadow: '0 0 60px rgba(201,181,138,.07)', cursor: 'pointer' }}>
+            {moonStoryViewer.media_type === 'video' ? <video ref={moonStoryVideoRef} src={moonStoryViewer.media_url} autoPlay={!moonStoryViewerPaused} playsInline onLoadedMetadata={(event) => { const video = event.currentTarget; video.currentTime = Number(moonStoryViewer.trim_start || 0); if (moonStoryViewerPaused) video.pause(); else video.play().catch(() => {}); }} onTimeUpdate={(event) => { if (Number(moonStoryViewer.trim_end) > Number(moonStoryViewer.trim_start) && event.currentTarget.currentTime >= Number(moonStoryViewer.trim_end)) { event.currentTarget.pause(); moveMoonStory(1); } }} onClick={(event) => toggleMoonStoryPlayback(event)} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#050505' }} /> : <img src={moonStoryViewer.media_url} alt="Conexão" {...protectedMediaProps} onClick={(event) => toggleMoonStoryPlayback(event)} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#050505' }} />}
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '13px 12px 18px', background: 'linear-gradient(rgba(0,0,0,.72), transparent)', pointerEvents: 'none' }}><div style={{ height: '2px', borderRadius: '99px', background: 'rgba(255,255,255,.28)', marginBottom: '12px' }}><div style={{ width: moonStoryViewerPaused ? '40%' : '65%', height: '100%', borderRadius: '99px', background: '#e6d3a7', transition: 'width .2s' }} /></div><div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}><span style={{ width: '34px', height: '34px', borderRadius: '50%', overflow: 'hidden', display: 'grid', placeItems: 'center', background: '#211e18', color: '#c9b58a' }}>{moonStoryViewer.authorPhoto ? <img src={moonStoryViewer.authorPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (moonStoryViewer.author?.name || 'M').slice(0, 1)}</span><div style={{ flex: 1 }}><strong style={{ display: 'block', color: '#fff', fontSize: '12px' }}>{moonStoryViewer.author?.name || 'Perfil MOON'}</strong><span style={{ color: '#d0c8ba', fontSize: '9px' }}>Expira em 24 horas</span></div>{moonStoryViewer.user_id === currentUserId ? <div style={{ position: 'relative', pointerEvents: 'auto' }}><button type="button" aria-label="Opções da Conexão" onClick={(event) => { event.stopPropagation(); setMoonStoryMenuOpen((open) => !open); }} style={{ border: '1px solid rgba(255,255,255,.28)', borderRadius: '50%', width: '31px', height: '31px', background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>•••</button>{moonStoryMenuOpen ? <div onClick={(event) => event.stopPropagation()} style={{ position: 'absolute', top: '38px', right: 0, minWidth: '150px', padding: '5px', borderRadius: '12px', background: '#171511', border: '1px solid rgba(201,181,138,.25)', boxShadow: '0 10px 30px rgba(0,0,0,.4)' }}><button type="button" onClick={() => deleteMoonStory(moonStoryViewer)} style={{ width: '100%', border: 0, borderRadius: '8px', padding: '11px 12px', background: 'transparent', color: '#f0b4a8', textAlign: 'left', fontSize: '12px', cursor: 'pointer' }}>Apagar Conexão</button></div> : null}</div> : null}<button type="button" aria-label="Fechar Conexão" onClick={(event) => { event.stopPropagation(); setMoonStoryViewer(null); setMoonStoryViewerPaused(false); setMoonStoryMenuOpen(false); setMoonStoryFeedback(''); }} style={{ pointerEvents: 'auto', border: '1px solid rgba(255,255,255,.28)', borderRadius: '50%', width: '31px', height: '31px', background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>×</button></div></div>
+            <button type="button" aria-label="Story anterior" onClick={(event) => { event.stopPropagation(); moveMoonStory(-1); }} style={{ position: 'absolute', top: '42%', left: '5px', zIndex: 2, width: '30px', height: '48px', border: 0, borderRadius: '8px', background: 'rgba(0,0,0,.25)', color: 'rgba(255,255,255,.72)', fontSize: '24px', cursor: 'pointer' }}>‹</button>
+            <button type="button" aria-label="Próximo Story" onClick={(event) => { event.stopPropagation(); moveMoonStory(1); }} style={{ position: 'absolute', top: '42%', right: '5px', zIndex: 2, width: '30px', height: '48px', border: 0, borderRadius: '8px', background: 'rgba(0,0,0,.25)', color: 'rgba(255,255,255,.72)', fontSize: '24px', cursor: 'pointer' }}>›</button>
+            {moonStoryViewerPaused ? <div style={{ position: 'absolute', top: '44%', left: '0', right: '0', textAlign: 'center', pointerEvents: 'none', color: '#fff', textShadow: '0 2px 12px #000' }}><span style={{ fontSize: '38px' }}>Ⅱ</span><div style={{ fontSize: '9px', letterSpacing: '2px', marginTop: '5px' }}>PAUSADO · TOQUE PARA CONTINUAR</div></div> : null}
+            {moonStoryViewer.caption ? <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '190px', color: '#fff', fontSize: '13px', textShadow: '0 2px 10px #000', pointerEvents: 'none' }}>{moonStoryViewer.caption}</div> : null}
+            {moonStoryViewer.user_id !== currentUserId ? <div onClick={(event) => event.stopPropagation()} style={{ position: 'absolute', left: '10px', right: '10px', bottom: '10px', display: 'flex', alignItems: 'center', gap: '8px', padding: '9px', border: '1px solid rgba(201,181,138,.34)', borderRadius: '18px', background: 'rgba(8,8,8,.92)', backdropFilter: 'blur(8px)' }}>
+              <button type="button" aria-label="Responder" onClick={async () => { const story = moonStoryViewer; const author = story.author || { id: story.user_id, name: 'Perfil MOON' }; const caption = story.caption ? `“${story.caption.slice(0, 90)}”` : 'a uma publicação'; setChatSourceStoryId(story.id); await handleChat(author, 'inside'); setChatText(`↪ Em resposta à publicação ${caption}: `); setMoonStoryViewer(null); }} style={{ flex: 1, minWidth: 0, textAlign: 'left', border: '1px solid #393126', borderRadius: '999px', padding: '11px 14px', background: '#111', color: '#c9c1b5', fontSize: '12px', cursor: 'pointer' }}>Responder</button>
+              <button type="button" aria-label={moonStoryLikedIds.includes(moonStoryViewer.id) ? 'Descurtir publicação' : 'Curtir publicação'} disabled={moonStoryLikeBusy} onClick={async () => { const story = moonStoryViewer; if (!story?.id || !currentUserId || moonStoryLikeBusy) return; setMoonStoryLikeBusy(true); try { if (moonStoryLikedIds.includes(story.id)) { const { error } = await supabase.from('moon_story_likes').delete().eq('story_id', story.id).eq('user_id', currentUserId); if (error) throw error; setMoonStoryLikedIds(ids => ids.filter(id => id !== story.id)); } else { const { error } = await supabase.from('moon_story_likes').insert({ story_id: story.id, user_id: currentUserId }); if (error && !String(error.code || '').includes('23505')) throw error; setMoonStoryLikedIds(ids => ids.includes(story.id) ? ids : [...ids, story.id]); } } catch (error) { setMoonStoryFeedback(error?.message || 'Não foi possível registrar a curtida.'); } finally { setMoonStoryLikeBusy(false); } }} style={{ flex: '0 0 42px', width: '42px', height: '42px', border: '1px solid rgba(230,166,188,.38)', borderRadius: '50%', background: moonStoryLikedIds.includes(moonStoryViewer.id) ? 'rgba(230,166,188,.24)' : 'rgba(230,166,188,.10)', color: '#e6a6bc', fontSize: '21px', cursor: moonStoryLikeBusy ? 'wait' : 'pointer' }}>{moonStoryLikedIds.includes(moonStoryViewer.id) ? '♥' : '♡'}</button>
+            </div> : <div style={{ position: 'absolute', left: '12px', right: '12px', bottom: '14px', borderRadius: '10px', padding: '10px', background: 'rgba(0,0,0,.65)', color: '#d8d0c3', fontSize: '10px', textAlign: 'center' }}>Sua Conexão está no ar.</div>}
+          </div>
+        </div>
+      )}
 
       {screen === "profile" && (
         <section
@@ -12975,184 +14020,125 @@ const filteredConversations = conversations
 
               {(() => {
                 const primaryPhoto = photos.find((photo) => photo.is_primary) || photos[0];
+                const displayName = profileDisplayName || "Seu nome";
+                const postCount = ownProfilePosts.length;
+                const profileStats = [
+                  { label: "publicações", value: postCount, action: null },
+                  { label: "seguidores", value: followCounts[currentUserId]?.followers ?? 0, action: () => openFollowList({ id: currentUserId, name: displayName }, "followers") },
+                  { label: "seguindo", value: followCounts[currentUserId]?.following ?? 0, action: () => openFollowList({ id: currentUserId, name: displayName }, "following") },
+                ];
                 return (
-                  <div
-                    style={{
-                      width: "100%",
-                      maxWidth: "430px",
-                      margin: "0 auto",
-                      border: "1px solid #242424",
-                      background: "#0b0b0b",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "100%",
-                        aspectRatio: "4 / 5",
-                        background: "#101010",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {primaryPhoto?.publicUrl ? (
-                        <img
-                          src={primaryPhoto.publicUrl}
-                          alt={profileDisplayName || "Meu perfil"}
-                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                        />
-                      ) : (
-                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#3b3832", letterSpacing: "3px" }}>
-                          MOON
-                        </div>
-                      )}
+                  <>
+                  {ownProfileAvatarExpanded && primaryPhoto?.publicUrl && (
+                    <div role="dialog" aria-modal="true" aria-label="Foto de perfil ampliada" onClick={() => setOwnProfileAvatarExpanded(false)} style={{ position: "fixed", inset: 0, zIndex: 5100, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", background: "rgba(0,0,0,.9)", backdropFilter: "blur(10px)" }}>
+                      <button type="button" onClick={() => setOwnProfileAvatarExpanded(false)} aria-label="Fechar foto ampliada" style={{ position: "absolute", top: "22px", right: "22px", width: "42px", height: "42px", border: "1px solid #51452f", borderRadius: "50%", background: "#111", color: "#f4ead7", fontSize: "24px", cursor: "pointer" }}>×</button>
+                      <img src={primaryPhoto.publicUrl} alt={displayName} onClick={(event) => event.stopPropagation()} style={{ width: "min(82vw, 520px)", height: "min(82vw, 520px)", maxHeight: "75vh", maxWidth: "75vh", objectFit: "cover", borderRadius: "50%", border: "2px solid #c9b58a", boxShadow: "0 0 60px rgba(201,181,138,.15)" }} />
+                    </div>
+                  )}
+                  <div style={{ width: "100%", maxWidth: "680px", margin: "0 auto", color: "#f4ead7" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "20px" }}>
+                      <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "1.8px", fontWeight: 600 }}>SEU UNIVERSO NA MOON</div>
+                      <button type="button" onClick={() => { setScreen("settings"); setMessage(""); }} aria-label="Configurações" style={{ width: "42px", height: "42px", border: "1px solid #29251f", borderRadius: "13px", background: "#11100e", color: "#c9b58a", fontSize: "20px", cursor: "pointer" }}>⚙</button>
                     </div>
 
-                    <div style={{ padding: "22px" }}>
-                      <div style={{ color: "#f4ead7", fontSize: "24px", letterSpacing: "1px" }}>
-                        {profileDisplayName || "Seu nome"}{profileBirthDate ? `, ${calculateAge(profileBirthDate)}` : ""}
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(92px, 132px) 1fr", alignItems: "center", gap: "clamp(14px, 4vw, 30px)" }}>
+                      <div style={{ width: "100%", aspectRatio: "1", padding: "3px", borderRadius: "50%", background: "linear-gradient(135deg, #f1d9a0, #8d7040 55%, #29231a)", boxSizing: "border-box" }}>
+                        <div style={{ width: "100%", height: "100%", borderRadius: "50%", padding: "3px", background: "#080808", boxSizing: "border-box" }}>
+                          <button type="button" onClick={() => primaryPhoto?.publicUrl && setOwnProfileAvatarExpanded(true)} aria-label="Ampliar foto do perfil" style={{ display: "block", width: "100%", height: "100%", padding: 0, border: 0, borderRadius: "50%", overflow: "hidden", background: "#17140f", cursor: primaryPhoto?.publicUrl ? "zoom-in" : "default" }}>
+                            {primaryPhoto?.publicUrl
+                              ? <img src={primaryPhoto.publicUrl} alt={displayName} style={{ display: "block", width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} />
+                              : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", background: "#17140f", color: "#c9b58a", fontSize: "24px", letterSpacing: "2px" }}>{displayName.slice(0, 1).toUpperCase()}</div>}
+                          </button>
+                        </div>
                       </div>
-
-                      {profileForm.bio && (
-                        <p style={{ color: "#aaa59b", fontSize: "13px", lineHeight: "1.7", margin: "20px 0 0" }}>
-                          {profileForm.bio}
-                        </p>
-                      )}
-
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", marginTop: "22px", background: "#242424", border: "1px solid #242424" }}>
-                        {profileForm.gender && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.gender}</span></div>}
-                        {profileForm.sexuality && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.sexuality}</span></div>}
-                        {profileForm.position && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.position}</span></div>}
-                        {profileForm.availability && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.availability}</span></div>}
-                        {profileForm.profession && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>PROFISSÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.profession}</span></div>}
-                        {profileForm.education && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>EDUCAÇÃO / ESTUDOS</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.education}</span></div>}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "4px" }}>
+                        {profileStats.map((stat) => <button key={stat.label} type="button" onClick={stat.action || undefined} style={{ minWidth: 0, padding: "8px 2px", border: 0, background: "transparent", color: "#f4ead7", cursor: stat.action ? "pointer" : "default" }}>
+                          <strong style={{ display: "block", fontSize: "clamp(17px, 4vw, 23px)", fontWeight: 600, lineHeight: 1.3 }}>{stat.value}</strong>
+                          <span style={{ display: "block", color: "#aaa398", fontSize: "clamp(8px, 2vw, 10px)", marginTop: "4px" }}>{stat.label}</span>
+                        </button>)}
                       </div>
+                    </div>
 
+                    <div style={{ marginTop: "10px", display: "grid", gridTemplateColumns: "minmax(92px, 132px) 1fr", alignItems: "start", gap: "clamp(14px, 4vw, 30px)" }}>
+                      <div style={{ minWidth: 0, textAlign: "center" }}>
+                        <div style={{ color: "#f4ead7", fontSize: "14px", fontWeight: 700, lineHeight: 1.45, overflowWrap: "anywhere" }}>{displayName}{profileBirthDate ? `, ${calculateAge(profileBirthDate)}` : ""}</div>
+                      </div>
+                      <div style={{ minWidth: 0, paddingTop: "1px" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 9px", color: "#d2cabe", fontSize: "11px", lineHeight: 1.6 }}>
+                          {profileForm.profession && <span style={{ color: "#c9b58a", fontWeight: 600 }}>{profileForm.profession}</span>}
+                          {profileForm.city && <><span style={{ color: "#625a4b" }}>•</span><span>{profileForm.city}</span></>}
+                          {profileForm.education && <><span style={{ color: "#625a4b" }}>•</span><span>{profileForm.education}</span></>}
+                          {!profileForm.profession && !profileForm.city && !profileForm.education && <span style={{ color: "#77736b" }}>Adicione suas principais informações ao perfil.</span>}
+                        </div>
+                        {profileForm.bio
+                          ? <p style={{ margin: "8px 0 0", color: "#d2cabe", fontSize: "13px", lineHeight: 1.65, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{profileForm.bio}</p>
+                          : <button type="button" onClick={() => { setProfileOnboarding(false); setProfileEditMode(true); setMessage(""); }} style={{ display: "block", padding: 0, marginTop: "8px", border: 0, background: "transparent", color: "#8f897f", fontSize: "12px", lineHeight: 1.6, textAlign: "left", cursor: "pointer" }}>Adicione uma bio e conte um pouco sobre você.</button>}
+                      </div>
+                    </div>
 
-                      <button
-                        type="button"
-                        onClick={() => { setScreen("inside"); setMessage(""); }}
-                        style={{
-                          marginTop: "22px",
-                          width: "100%",
-                          height: "48px",
-                          background: "#15130f",
-                          border: "1px solid #c9b58a",
-                          borderRadius: "10px",
-                          color: "#f4ead7",
-                          fontSize: "10px",
-                          letterSpacing: "2px",
-                          fontWeight: "600",
-                          cursor: "pointer",
-                        }}
-                      >
-                        IR PARA DISCOVERY
-                      </button>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "9px", marginTop: "18px" }}>
+                      <button type="button" onClick={() => { setProfileOnboarding(false); setProfileEditMode(true); setMessage(""); }} style={{ height: "42px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#0a0907", fontSize: "11px", fontWeight: 750, cursor: "pointer" }}>Editar perfil</button>
+                      <button type="button" onClick={() => { setScreen("inside"); setMessage(""); }} style={{ height: "42px", border: "1px solid #353027", borderRadius: "10px", background: "#15130f", color: "#e7d7b4", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>Descobrir pessoas</button>
+                    </div>
 
-                      <button
-                        type="button"
-                        onClick={() => { setProfileOnboarding(false); setProfileEditMode(true); setMessage(""); }}
-                        style={{
-                          marginTop: "10px",
-                          width: "100%",
-                          height: "48px",
-                          background: "rgba(201, 181, 138, 0.04)",
-                          border: "1px solid #c9b58a",
-                          borderRadius: "10px",
-                          color: "#c9b58a",
-                          fontSize: "10px",
-                          letterSpacing: "2px",
-                          fontWeight: "500",
-                          cursor: "pointer",
-                        }}
-                      >
-                        EDITAR PERFIL
-                      </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: "20px", overflowX: "auto", padding: "23px 0 19px", borderBottom: "1px solid #25221c" }}>
+                      {photos.map((photo, index) => <div key={photo.id || photo.storage_path || index} style={{ flex: "0 0 68px", textAlign: "center" }}>
+                        <div style={{ width: "62px", height: "62px", padding: "2px", borderRadius: "50%", border: "1px solid #75603a", margin: "0 auto 7px", boxSizing: "border-box" }}>
+                          <img src={photo.publicUrl} alt="Foto do perfil" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", display: "block" }} />
+                        </div>
+                        <span style={{ display: "block", color: "#9a9387", fontSize: "9px" }}>{index === 0 ? "Principal" : `Foto ${index + 1}`}</span>
+                      </div>)}
+                      {photos.length < 3 && <button type="button" onClick={() => { setProfileOnboarding(false); setProfileEditMode(true); setMessage(""); }} style={{ flex: "0 0 68px", border: 0, background: "transparent", color: "#c9b58a", cursor: "pointer", textAlign: "center" }}>
+                        <span style={{ display: "grid", placeItems: "center", width: "62px", height: "62px", margin: "0 auto 7px", border: "1px dashed #5b4b30", borderRadius: "50%", fontSize: "24px" }}>＋</span>
+                        <span style={{ fontSize: "9px", color: "#9a9387" }}>Adicionar</span>
+                      </button>}
+                    </div>
 
-                      <button
-                        type="button"
-                        onClick={() => { setScreen("myBoosts"); setMessage(""); }}
-                        style={{
-                          marginTop: "10px",
-                          width: "100%",
-                          height: "48px",
-                          background: "rgba(201, 181, 138, 0.02)",
-                          border: "1px solid #292929",
-                          borderRadius: "10px",
-                          color: "#c9b58a",
-                          fontSize: "10px",
-                          letterSpacing: "2px",
-                          fontWeight: "500",
-                          cursor: "pointer",
-                        }}
-                      >
-                        MEUS BOOSTS
-                      </button>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", borderBottom: "1px solid #25221c" }}>
+                      <button type="button" onClick={() => setOwnProfileGridTab("posts")} style={{ height: "48px", border: 0, borderBottom: ownProfileGridTab === "posts" ? "2px solid #c9b58a" : "2px solid transparent", background: "transparent", color: ownProfileGridTab === "posts" ? "#c9b58a" : "#77736b", fontSize: "11px", cursor: "pointer" }}><span style={{ fontSize: "16px" }}>▦</span><span style={{ marginLeft: "7px", letterSpacing: ".7px" }}>PUBLICAÇÕES</span></button>
+                      <button type="button" onClick={() => setOwnProfileGridTab("photos")} style={{ height: "48px", border: 0, borderBottom: ownProfileGridTab === "photos" ? "2px solid #c9b58a" : "2px solid transparent", background: "transparent", color: ownProfileGridTab === "photos" ? "#c9b58a" : "#77736b", fontSize: "11px", cursor: "pointer" }}><span style={{ fontSize: "15px" }}>▧</span></button>
+                      <button type="button" onClick={() => { setOwnProfileGridTab("tagged"); setMessage(""); }} style={{ height: "48px", border: 0, borderBottom: ownProfileGridTab === "tagged" ? "2px solid #c9b58a" : "2px solid transparent", background: "transparent", color: ownProfileGridTab === "tagged" ? "#c9b58a" : "#77736b", fontSize: "11px", cursor: "pointer" }}><span style={{ fontSize: "16px" }}>♙</span></button>
+                    </div>
 
-                      <button
-                        type="button"
-                        onClick={startBoostCheckout}
-                        disabled={boostPurchaseLoading}
-                        style={{
-                          marginTop: "10px",
-                          width: "100%",
-                          height: "48px",
-                          background: "rgba(201, 181, 138, 0.08)",
-                          border: "1px solid #c9b58a",
-                          borderRadius: "10px",
-                          color: "#c9b58a",
-                          fontSize: "10px",
-                          letterSpacing: "1.7px",
-                          fontWeight: "600",
-                          cursor: boostPurchaseLoading ? "default" : "pointer",
-                          opacity: boostPurchaseLoading ? .55 : 1,
-                        }}
-                      >
-                        {boostPurchaseLoading ? "ABRINDO PAGAMENTO..." : "BOOST • 3 HORAS • R$ 10,00"}
-                      </button>
+                    {ownProfileGridTab === "tagged" ? <div style={{ padding: "44px 16px", textAlign: "center", color: "#77736b", fontSize: "12px" }}>As publicações em que você for marcado aparecerão aqui futuramente.</div>
+                    : ownProfileGridTab === "photos" ? <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "3px", marginTop: "3px" }}>
+                      {photos.map((photo, index) => <button key={photo.id || index} type="button" onClick={() => { setProfileOnboarding(false); setProfileEditMode(true); setMessage(""); }} style={{ padding: 0, aspectRatio: "1", border: 0, background: "#15130f", cursor: "pointer" }}><img src={photo.publicUrl} alt="Foto do perfil" style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }} /></button>)}
+                    </div>
+                    : ownProfilePostsLoading ? <div style={{ padding: "48px 12px", textAlign: "center", color: "#8f897f", fontSize: "12px" }}>Carregando suas publicações...</div>
+                    : ownProfilePostsError ? <div style={{ padding: "30px 12px", textAlign: "center", color: "#b99b8b", fontSize: "11px", lineHeight: 1.6 }}>{ownProfilePostsError}</div>
+                    : ownProfilePosts.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "3px", marginTop: "3px" }}>
+                      {ownProfilePosts.map((post) => <button key={post.id} type="button" onClick={() => setOwnProfilePostSelected(post)} aria-label="Abrir publicação" style={{ position: "relative", padding: 0, aspectRatio: "1", border: 0, background: "#15130f", overflow: "hidden", cursor: "pointer" }}>
+                        {post.image_url ? <img src={post.image_url} alt="" style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }} /> : <div aria-hidden="true" style={{ width: "100%", height: "100%", padding: "12px", boxSizing: "border-box", display: "grid", placeItems: "center", background: "radial-gradient(circle at 50% 35%, rgba(201,181,138,.13), transparent 48%), linear-gradient(145deg,#191711,#080808)", color: "#c9b58a" }}><span style={{ width: "42px", height: "42px", display: "grid", placeItems: "center", border: "1px solid rgba(201,181,138,.42)", borderRadius: "50%", fontSize: "20px" }}>☾</span></div>}
+                        {post.image_url && post.content && <span style={{ position: "absolute", right: "8px", top: "8px", color: "#fff", textShadow: "0 1px 6px #000", fontSize: "16px" }}>▤</span>}
+                      </button>)}
+                    </div>
+                    : <div style={{ padding: "42px 18px", textAlign: "center" }}>
+                      <div style={{ width: "62px", height: "62px", display: "grid", placeItems: "center", margin: "0 auto 14px", border: "1px solid #51452f", borderRadius: "50%", color: "#c9b58a", fontSize: "25px" }}>▦</div>
+                      <div style={{ color: "#f4ead7", fontSize: "15px", fontWeight: 650 }}>Compartilhe seu primeiro momento</div>
+                      <p style={{ color: "#8f897f", fontSize: "12px", lineHeight: 1.7, maxWidth: "280px", margin: "8px auto 16px" }}>Suas publicações aparecerão aqui em uma grade, para quem visitar seu perfil.</p>
+                      <button type="button" onClick={() => { setScreen("inside"); setDiscoveryTab("feed"); setMessage(""); }} style={{ border: "1px solid #c9b58a", borderRadius: "10px", padding: "11px 17px", background: "#c9b58a", color: "#111", fontSize: "10px", fontWeight: 750, cursor: "pointer" }}>CRIAR PUBLICAÇÃO</button>
+                    </div>}
 
-                      <button
-                        type="button"
-                        onClick={() => { setLikesTab("quemviu"); setScreen("likes"); setMessage(""); }}
-                        style={{
-                          marginTop: "10px",
-                          width: "100%",
-                          minHeight: "48px",
-                          padding: "10px 14px",
-                          background: "rgba(201, 181, 138, 0.02)",
-                          border: "1px solid #292929",
-                          borderRadius: "10px",
-                          color: "#c9b58a",
-                          fontSize: "10px",
-                          letterSpacing: "1.7px",
-                          fontWeight: "600",
-                          cursor: "pointer",
-                        }}
-                      >
-                        👁 VIU VOCÊ • R$ 10,00
-                      </button>
+                    {ownProfilePostSelected && <div role="dialog" aria-modal="true" aria-label="Publicação ampliada" onClick={() => setOwnProfilePostSelected(null)} style={{ position: "fixed", inset: 0, zIndex: 7000, display: "flex", alignItems: "center", justifyContent: "center", padding: "18px", background: "rgba(0,0,0,.88)", backdropFilter: "blur(12px)" }}>
+                      <div onClick={(event) => event.stopPropagation()} style={{ position: "relative", width: "min(100%, 620px)", maxHeight: "90vh", overflowY: "auto", border: "1px solid rgba(201,181,138,.28)", borderRadius: "18px", background: "#0b0b0b", boxShadow: "0 24px 80px rgba(0,0,0,.55)" }}>
+                        <button type="button" onClick={() => setOwnProfilePostSelected(null)} aria-label="Fechar publicação" style={{ position: "absolute", top: "12px", right: "12px", zIndex: 2, width: "38px", height: "38px", border: "1px solid rgba(201,181,138,.55)", borderRadius: "50%", background: "rgba(0,0,0,.72)", color: "#f4ead7", fontSize: "23px", cursor: "pointer" }}>×</button>
+                        {ownProfilePostSelected.image_url ? <img src={ownProfilePostSelected.image_url} alt="Imagem da publicação" style={{ display: "block", width: "100%", maxHeight: "62vh", objectFit: "contain", background: "#050505" }} /> : <div style={{ minHeight: "190px", display: "grid", placeItems: "center", padding: "28px", background: "radial-gradient(circle at 50% 35%, rgba(201,181,138,.13), transparent 48%), linear-gradient(145deg,#191711,#080808)", color: "#c9b58a" }}><span style={{ width: "58px", height: "58px", display: "grid", placeItems: "center", border: "1px solid rgba(201,181,138,.42)", borderRadius: "50%", fontSize: "27px" }}>☾</span></div>}
+                        <div style={{ padding: "18px" }}>
+                          <div style={{ color: "#77736b", fontSize: "10px", letterSpacing: "1px", marginBottom: "12px" }}>{ownProfilePostSelected.created_at ? new Date(ownProfilePostSelected.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Publicação MOON"}</div>
+                          <div style={{ color: "#f4ead7", fontSize: "14px", lineHeight: 1.8, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{ownProfilePostSelected.content || "Publicação sem legenda."}</div>
+                          <button type="button" onClick={() => deleteOwnProfilePost(ownProfilePostSelected)} style={{ marginTop: "20px", width: "100%", minHeight: "44px", border: "1px solid rgba(205,104,104,.55)", borderRadius: "10px", background: "rgba(150,40,40,.12)", color: "#e6a0a0", fontSize: "10px", fontWeight: 700, letterSpacing: "1.2px", cursor: "pointer" }}>EXCLUIR PUBLICAÇÃO</button>
+                        </div>
+                      </div>
+                    </div>}
 
-                      <button
-                        type="button"
-                        onClick={() => { setScreen("settings"); setMessage(""); }}
-                        style={{
-                          marginTop: "10px",
-                          width: "100%",
-                          height: "48px",
-                          background: "transparent",
-                          border: "1px solid #292929",
-                          borderRadius: "10px",
-                          color: "#c9b58a",
-                          fontSize: "10px",
-                          letterSpacing: "2px",
-                          fontWeight: "500",
-                          cursor: "pointer",
-                        }}
-                      >
-                        CONFIGURAÇÕES
-                      </button>
-
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", marginTop: "24px" }}>
+                      <button type="button" onClick={() => { setScreen("myBoosts"); setMessage(""); }} style={{ minHeight: "42px", border: "1px solid #29251f", borderRadius: "10px", background: "#0b0b0b", color: "#c9b58a", fontSize: "10px", letterSpacing: ".8px", cursor: "pointer" }}>MEUS BOOSTS</button>
+                      <button type="button" onClick={startBoostCheckout} disabled={boostPurchaseLoading} style={{ minHeight: "42px", border: "1px solid #c9b58a", borderRadius: "10px", background: "rgba(201,181,138,.08)", color: "#c9b58a", fontSize: "10px", letterSpacing: ".8px", cursor: boostPurchaseLoading ? "default" : "pointer", opacity: boostPurchaseLoading ? .6 : 1 }}>{boostPurchaseLoading ? "ABRINDO PAGAMENTO..." : "BOOST · R$ 10,00"}</button>
+                      <button type="button" onClick={() => { setLikesTab("quemviu"); setScreen("likes"); setMessage(""); }} style={{ minHeight: "42px", border: "1px solid #29251f", borderRadius: "10px", background: "#0b0b0b", color: "#c9b58a", fontSize: "10px", letterSpacing: ".8px", cursor: "pointer" }}>VIU VOCÊ · R$ 10,00</button>
+                      <button type="button" onClick={() => { setScreen("settings"); setMessage(""); }} style={{ minHeight: "42px", border: "1px solid #29251f", borderRadius: "10px", background: "#0b0b0b", color: "#c9b58a", fontSize: "10px", letterSpacing: ".8px", cursor: "pointer" }}>CONFIGURAÇÕES</button>
                     </div>
                   </div>
+                  </>
                 );
               })()}
 
@@ -15631,6 +16617,31 @@ const filteredConversations = conversations
 
 
 
+                    {selectedProfile.id !== currentUserId && (
+                      <div style={{ marginBottom: "18px" }}>
+                        <button type="button" disabled={followActionLoading} onClick={() => toggleFollowProfile(selectedProfile)} style={{
+                          width: "100%", minHeight: "44px", marginBottom: "12px",
+                          border: "1px solid #c9b58a", borderRadius: "10px",
+                          background: followStates[selectedProfile.id] ? "transparent" : "linear-gradient(135deg,#d6bf96,#b89a68)",
+                          color: followStates[selectedProfile.id] ? "#c9b58a" : "#090807",
+                          fontSize: "10px", fontWeight: 700, letterSpacing: "1.8px",
+                          cursor: followActionLoading ? "wait" : "pointer", opacity: followActionLoading ? 0.65 : 1,
+                        }}>
+                          {followActionLoading ? "ATUALIZANDO..." : followStates[selectedProfile.id] ? "✓ SEGUINDO" : "+ SEGUIR"}
+                        </button>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                          <button type="button" onClick={() => openFollowList(selectedProfile, "followers")} style={{ minHeight: "58px", border: "1px solid #28251f", borderRadius: "8px", background: "#0b0b0b", color: "#f4ead7", cursor: "pointer" }}>
+                            <strong style={{ display: "block", color: "#c9b58a", fontSize: "18px", fontWeight: 500 }}>{followCounts[selectedProfile.id]?.followers ?? "·"}</strong>
+                            <span style={{ display: "block", marginTop: "4px", color: "#918a7e", fontSize: "9px", letterSpacing: "1.4px" }}>SEGUIDORES</span>
+                          </button>
+                          <button type="button" onClick={() => openFollowList(selectedProfile, "following")} style={{ minHeight: "58px", border: "1px solid #28251f", borderRadius: "8px", background: "#0b0b0b", color: "#f4ead7", cursor: "pointer" }}>
+                            <strong style={{ display: "block", color: "#c9b58a", fontSize: "18px", fontWeight: 500 }}>{followCounts[selectedProfile.id]?.following ?? "·"}</strong>
+                            <span style={{ display: "block", marginTop: "4px", color: "#918a7e", fontSize: "9px", letterSpacing: "1.4px" }}>SEGUINDO</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", marginBottom: "18px" }}>
                       {selectedProfile.gender && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.gender}</span></div>}
                       {selectedProfile.sexuality && <div style={{ background: "#0b0b0b", padding: "14px", border: "1px solid #202020" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{selectedProfile.sexuality}</span></div>}
@@ -15725,6 +16736,43 @@ const filteredConversations = conversations
             </div>
           )}
 
+
+      {followListOpen && (
+        <div onClick={() => setFollowListOpen(null)} style={{ position: "fixed", inset: 0, zIndex: 1500, background: "rgba(0,0,0,.82)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "18px" }}>
+          <section onClick={(event) => event.stopPropagation()} style={{ width: "100%", maxWidth: "440px", maxHeight: "82vh", overflowY: "auto", background: "#090909", border: "1px solid rgba(201,181,138,.35)", borderRadius: "16px", padding: "18px", color: "#f4ead7" }}>
+            <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "16px" }}>
+              <div>
+                <div style={{ color: "#c9b58a", fontSize: "9px", letterSpacing: "2px", marginBottom: "6px" }}>CONEXÕES MOON</div>
+                <h2 style={{ margin: 0, fontSize: "17px", fontWeight: 400 }}>{followListOpen.listType === "followers" ? "Seguidores" : "Seguindo"}</h2>
+                <div style={{ color: "#77736b", fontSize: "10px", marginTop: "5px" }}>{followListOpen.profile.name || "Perfil"}</div>
+              </div>
+              <button type="button" onClick={() => setFollowListOpen(null)} aria-label="Fechar lista" style={{ width: "34px", height: "34px", border: "1px solid #292929", background: "transparent", color: "#c9b58a", cursor: "pointer", fontSize: "18px" }}>×</button>
+            </header>
+            {followListLoading ? <MoonSkeleton rows={4} compact /> : followListError ? (
+              <p style={{ color: "#d6a6a0", fontSize: "12px", lineHeight: 1.6 }}>{followListError}</p>
+            ) : followListUsers.length === 0 ? (
+              <div style={{ padding: "28px 12px", textAlign: "center", border: "1px solid #1d1b18", borderRadius: "10px" }}>
+                <div style={{ color: "#c9b58a", fontSize: "24px", marginBottom: "8px" }}>☾</div>
+                <div style={{ color: "#e9dfcd", fontSize: "12px" }}>Ainda não há ninguém nesta lista.</div>
+                <div style={{ color: "#77736b", fontSize: "10px", marginTop: "6px" }}>As conexões aparecerão aqui conforme forem acontecendo.</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {followListUsers.map((person) => (
+                  <button key={person.id} type="button" onClick={async () => { setFollowListOpen(null); await openProfileDetails(person); }} style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%", padding: "12px", textAlign: "left", border: "1px solid #24211c", borderRadius: "10px", background: "#0d0c0a", color: "#f4ead7", cursor: "pointer" }}>
+                    <div style={{ width: "38px", height: "38px", flexShrink: 0, borderRadius: "50%", border: "1px solid rgba(201,181,138,.4)", display: "grid", placeItems: "center", color: "#c9b58a", fontSize: "14px", background: "#15120d" }}>{(person.name || "M").trim().charAt(0).toUpperCase()}</div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: "12px", marginBottom: "4px" }}>{person.name || "Pessoa da MOON"}</div>
+                      <div style={{ color: "#817a6e", fontSize: "10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{person.city || person.bio || "Ver perfil"}</div>
+                    </div>
+                    <span style={{ color: "#c9b58a", fontSize: "16px" }}>›</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {screen === "filters" && (
         <section
@@ -16292,6 +17340,55 @@ const filteredConversations = conversations
         </section>
       )}
 
+      {screen === "notifications" && (
+        <section style={{ width: "100%", maxWidth: "760px", minHeight: "100vh", padding: "28px 18px 110px", boxSizing: "border-box", margin: "0 auto", color: "#f4ead7" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "28px" }}>
+            <button type="button" onClick={() => { setScreen("inside"); setMessage(""); }} style={{ border: 0, background: "transparent", color: "#c9b58a", padding: "8px 0", cursor: "pointer", fontSize: "11px", letterSpacing: "1px" }}>← VOLTAR</button>
+            <div style={{ textAlign: "center", flex: 1 }}><div className="moon-logo">MOON</div><div style={{ color: "#77736b", fontSize: "9px", letterSpacing: "2px", marginTop: "5px" }}>CENTRAL DE NOTIFICAÇÕES</div></div>
+            <button type="button" onClick={markAllNotificationsAsRead} disabled={!notifications.some((item) => !item.is_read)} style={{ border: "1px solid rgba(201,181,138,.3)", borderRadius: "10px", background: "rgba(201,181,138,.05)", color: notifications.some((item) => !item.is_read) ? "#c9b58a" : "#625d53", padding: "9px 10px", fontSize: "8px", letterSpacing: ".5px", cursor: notifications.some((item) => !item.is_read) ? "pointer" : "default", whiteSpace: "nowrap" }}>LER TUDO</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: "6px", padding: "5px", border: "1px solid #24211b", borderRadius: "13px", background: "#090909", marginBottom: "18px" }}>
+            {[ ["all","Todas"], ["unread","Não lidas"], ["social","Interações"], ["message","Mensagens"], ["match","Conexões"] ].map(([value,label]) => <button key={value} type="button" onClick={() => setNotificationFilter(value)} style={{ minHeight: "37px", border: notificationFilter === value ? "1px solid rgba(201,181,138,.5)" : "1px solid transparent", borderRadius: "9px", background: notificationFilter === value ? "rgba(201,181,138,.12)" : "transparent", color: notificationFilter === value ? "#e8d4a4" : "#817b71", fontSize: "9px", cursor: "pointer", padding: "4px 2px" }}>{label}</button>)}
+          </div>
+          {message && <p style={{ color: "#c9b58a", fontSize: "11px", lineHeight: 1.6 }}>{message}</p>}
+          {(() => {
+            const filtered = notifications.filter((item) => {
+              if (notificationFilter === "unread") return !item.is_read;
+              if (notificationFilter === "social") return ["like", "follow", "comment", "story_interaction", "screenshot"].includes(item.type);
+              if (notificationFilter === "message") return item.type === "message";
+              if (notificationFilter === "match") return item.type === "match";
+              return true;
+            });
+            const details = (item) => {
+              const customTitle = typeof item.title === "string" && item.title.trim() ? item.title : "";
+              const customBody = typeof item.body === "string" && item.body.trim() ? item.body : "";
+              const defaults = {
+                like: ["Alguém demonstrou interesse", "Uma pessoa curtiu seu perfil."],
+                message: ["Nova mensagem", "Você recebeu uma mensagem na MOON."],
+                match: ["Nova conexão 🌙", "Uma conexão aconteceu entre vocês."],
+                boost: ["Você recebeu um Boost", "Um benefício foi disponibilizado para seu perfil."],
+                screenshot: ["Aviso de captura de tela", "Houve uma captura de tela relacionada à sua atividade."],
+                profile_view_access: ["Viu Você liberado", "O recurso Viu Você está disponível."],
+                follow: ["Novo seguidor", "Alguém começou a seguir seu perfil."],
+                story_interaction: ["Interação em Conexões MOON", "Alguém interagiu com uma experiência sua."],
+              };
+              const fallback = defaults[item.type] || ["Novidade na MOON", "Há uma atualização na sua conta."];
+              return { title: customTitle || fallback[0], body: customBody || fallback[1] };
+            };
+            if (!filtered.length) return <div style={{ textAlign: "center", padding: "62px 20px", border: "1px solid #211f1a", borderRadius: "18px", background: "linear-gradient(160deg,#0c0b09,#080808)" }}><div style={{ fontSize: "30px", color: "#c9b58a", marginBottom: "14px" }}>☾</div><div style={{ color: "#f4ead7", fontSize: "13px", letterSpacing: "1.3px", marginBottom: "8px" }}>{notificationFilter === "unread" ? "TUDO EM DIA" : "AINDA NÃO HÁ NOTIFICAÇÕES"}</div><div style={{ color: "#77736b", fontSize: "11px", lineHeight: 1.7 }}>Quando algo acontecer na sua MOON, você verá aqui.</div></div>;
+            return <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>{filtered.map((item) => {
+              const detail = details(item);
+              const icons = { like: "♡", message: "✉", match: "☾", boost: "✦", screenshot: "▣", profile_view_access: "◉", follow: "+", story_interaction: "✧" };
+              const time = item.created_at ? new Date(item.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+              return <button key={item.id} type="button" onClick={() => activateNotification(item)} style={{ width: "100%", display: "flex", alignItems: "flex-start", gap: "12px", textAlign: "left", padding: "15px 13px", border: item.is_read ? "1px solid #211f1a" : "1px solid rgba(201,181,138,.32)", borderRadius: "14px", background: item.is_read ? "rgba(255,255,255,.012)" : "linear-gradient(110deg,rgba(201,181,138,.09),rgba(201,181,138,.025))", color: "#f4ead7", cursor: "pointer" }}>
+                <span style={{ width: "42px", height: "42px", flex: "0 0 42px", borderRadius: "50%", display: "grid", placeItems: "center", background: "rgba(201,181,138,.09)", color: "#d6bd80", fontSize: "21px", boxShadow: item.is_read ? "none" : "0 0 18px rgba(201,181,138,.07)" }}>{icons[item.type] || "☾"}</span>
+                <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}><strong style={{ fontSize: "12px", fontWeight: 600 }}>{detail.title}</strong>{!item.is_read && <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#d6bd80", boxShadow: "0 0 8px rgba(214,189,128,.5)" }} />}</span><span style={{ display: "block", marginTop: "5px", color: "#a49c8f", fontSize: "11px", lineHeight: 1.6 }}>{detail.body}</span><span style={{ display: "block", marginTop: "8px", color: "#716b61", fontSize: "9px", letterSpacing: ".3px" }}>{time}</span></span><span style={{ color: "#82765a", fontSize: "16px", paddingTop: "3px" }}>›</span>
+              </button>;
+            })}</div>;
+          })()}
+        </section>
+      )}
+
       {screen === "inside" && (
         <section
           style={{
@@ -16337,16 +17434,88 @@ const filteredConversations = conversations
                   "20px",
               }}
             >
-              PESSOAS PRÓXIMAS
+              {discoveryTab === "perto" ? "PERTO DE VOCÊ" : "SEU FEED"}
             </p>
 
           </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", maxWidth: "760px", margin: "-18px auto 18px" }}>
+            <button type="button" onClick={openNotificationCenter} aria-label="Abrir central de notificações" title="Notificações" style={{ position: "relative", width: "42px", height: "42px", border: "1px solid rgba(201,181,138,.24)", borderRadius: "50%", background: "rgba(201,181,138,.045)", color: "#c9b58a", cursor: "pointer", display: "grid", placeItems: "center" }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M10 21h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              {notifications.some((item) => !item.is_read) && <span style={{ position: "absolute", top: "-2px", right: "-2px", minWidth: "16px", height: "16px", padding: "0 4px", boxSizing: "border-box", borderRadius: "999px", background: "#d6bd80", color: "#080808", fontSize: "8px", fontWeight: 800, display: "grid", placeItems: "center", border: "2px solid #080808" }}>{notifications.filter((item) => !item.is_read).length > 99 ? "99+" : notifications.filter((item) => !item.is_read).length}</span>}
+            </button>
+          </div>
+
+          {/* ABAS PRINCIPAIS DO DISCOVERY */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", maxWidth: "520px", margin: "0 auto 22px", padding: "4px", border: "1px solid #25221c", borderRadius: "12px", background: "#090909" }}>
+            {[{ id: "perto", label: "PERTO", detail: "Descobrir pessoas" }, { id: "feed", label: "FEED", detail: "Quem você segue" }].map((item) => (
+              <button key={item.id} type="button" onClick={() => setDiscoveryTab(item.id)} style={{ border: discoveryTab === item.id ? "1px solid rgba(201,181,138,0.55)" : "1px solid transparent", borderRadius: "9px", padding: "12px 8px", background: discoveryTab === item.id ? "linear-gradient(135deg, rgba(201,181,138,0.16), rgba(201,181,138,0.04))" : "transparent", color: discoveryTab === item.id ? "#c9b58a" : "#77736b", cursor: "pointer", textAlign: "center" }}>
+                <span style={{ display: "block", fontSize: "11px", letterSpacing: "1.8px", fontWeight: 700 }}>{item.label}</span>
+                <span style={{ display: "block", marginTop: "4px", fontSize: "9px", letterSpacing: "0.3px", color: "#77736b" }}>{item.detail}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* BLOCO 5: STORIES MOON */}
+          <section style={{ maxWidth: '760px', margin: '0 auto 25px', padding: '10px 2px 12px', border: 0, borderRadius: 0, background: 'transparent' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '13px' }}>
+              <div>
+                <div style={{ color: '#c9b58a', fontSize: '10px', letterSpacing: '2px' }}>CONEXÕES MOON</div>
+                <div style={{ color: '#77736b', fontSize: '10px', marginTop: '4px' }}>Momentos que aproximam, por 24 horas</div>
+              </div>
+              <button type="button" onClick={() => { resetMoonStoryComposer(); loadMoonStoryConnections(); setMoonStoryComposerOpen(true); }} style={{ border: '1px solid rgba(201,181,138,.5)', borderRadius: '999px', padding: '9px 12px', color: '#c9b58a', background: 'rgba(201,181,138,.07)', fontSize: '9px', letterSpacing: '1px', cursor: 'pointer' }}>＋ SEU STORY</button>
+            </div>
+            <div style={{ display: 'flex', gap: '14px', overflowX: 'auto', padding: '2px 2px 7px', scrollbarWidth: 'thin' }}>
+              {(() => {
+                const allGroups = [];
+                [...moonStories].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).forEach((story) => {
+                  let group = allGroups.find((item) => item.user_id === story.user_id);
+                  if (!group) { group = { user_id: story.user_id, author: story.author, authorPhoto: story.authorPhoto, stories: [] }; allGroups.push(group); }
+                  group.stories.push(story);
+                });
+                allGroups.forEach((group) => group.stories.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+                const ownGroup = allGroups.find((group) => group.user_id === currentUserId);
+                const otherGroups = allGroups.filter((group) => group.user_id !== currentUserId);
+                const openGroup = (group) => {
+                  if (!group?.stories?.length) return;
+                  const firstUnseen = group.stories.find((story) => !moonStorySeenIds.includes(story.id));
+                  openMoonStory(firstUnseen || group.stories[0]);
+                };
+                return <>
+                  <div style={{ flex: '0 0 68px', width: '68px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                    <span role="button" tabIndex={0} aria-label={ownGroup ? 'Ver seus Stories' : 'Criar Story'} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); ownGroup ? openGroup(ownGroup) : (resetMoonStoryComposer(), loadMoonStoryConnections(), setMoonStoryComposerOpen(true)); } }} onClick={() => ownGroup ? openGroup(ownGroup) : (resetMoonStoryComposer(), loadMoonStoryConnections(), setMoonStoryComposerOpen(true))} style={{ display: 'block', flex: '0 0 auto', width: '60px', height: '60px', border: 0, padding: 0, background: 'transparent', cursor: 'pointer' }}>
+                      <span style={{ position: 'relative', width: '60px', height: '60px', display: 'grid', placeItems: 'center', borderRadius: '50%', background: 'radial-gradient(circle at 35% 28%, #29251e 0%, #11100e 54%, #080808 100%)', boxShadow: 'inset 0 0 14px rgba(201,181,138,.06)' }}>
+                        <span style={{ display: 'grid', placeItems: 'center', width: '54px', height: '54px', borderRadius: '50%', background: '#111', overflow: 'hidden', border: ownGroup && ownGroup.stories.every((story) => moonStorySeenIds.includes(story.id)) ? '2px solid #514a3b' : '2px solid rgba(201,181,138,.65)' }}>{ownGroup?.authorPhoto ? <img src={ownGroup.authorPhoto} alt="" {...protectedMediaProps} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : <span style={{ color: '#c9b58a', fontSize: '19px' }}>{(ownGroup?.author?.name || 'M').slice(0, 1).toUpperCase()}</span>}</span>
+                        {!ownGroup ? <svg aria-hidden="true" viewBox="0 0 58 58" width="58" height="58" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}><defs><filter id="moonStoryCrescentGlowOwn" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter><mask id="moonStoryCrescentMaskOwn"><rect width="58" height="58" fill="black"/><circle cx="29" cy="29" r="17" fill="white"/><circle cx="37" cy="23" r="15" fill="black"/></mask></defs><circle cx="29" cy="29" r="17" fill="#E8D4A4" mask="url(#moonStoryCrescentMaskOwn)" filter="url(#moonStoryCrescentGlowOwn)"/></svg> : null}
+                        <button type="button" aria-label="Adicionar Story" onClick={(event) => { event.stopPropagation(); resetMoonStoryComposer(); loadMoonStoryConnections(); setMoonStoryComposerOpen(true); }} style={{ position: 'absolute', right: '-2px', bottom: '-2px', width: '20px', height: '20px', display: 'grid', placeItems: 'center', borderRadius: '50%', background: '#d6bd80', color: '#100f0c', fontSize: '15px', lineHeight: 1, border: '2px solid #080808', boxShadow: '0 0 10px rgba(232,212,164,.3)', cursor: 'pointer' }}>＋</button>
+                      </span>
+                    </span>
+                    <span style={{ display: 'block', maxWidth: '68px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px', color: '#bcb5a8' }}>Seu Story</span>
+                  </div>
+                  {otherGroups.map((group) => {
+                    const allSeen = group.stories.every((story) => moonStorySeenIds.includes(story.id));
+                    return <button key={group.user_id} type="button" onClick={() => openGroup(group)} style={{ flex: '0 0 68px', width: '68px', border: 0, padding: 0, background: 'transparent', color: '#d8d0c3', cursor: 'pointer' }}>
+                      <span style={{ position: 'relative', display: 'grid', placeItems: 'center', width: '60px', height: '60px', margin: '0 auto 6px', borderRadius: '50%', background: allSeen ? 'rgba(120,112,96,.12)' : 'radial-gradient(circle at 50% 50%, rgba(201,181,138,.13), rgba(8,8,8,.2) 72%)', boxShadow: allSeen ? 'none' : '0 0 12px rgba(201,181,138,.12)' }}>
+                        <span style={{ display: 'grid', placeItems: 'center', width: '52px', height: '52px', borderRadius: '50%', background: '#111', overflow: 'hidden', border: allSeen ? '1.5px solid #514a3b' : '1.5px solid #d6bd80' }}>{group.authorPhoto ? <img src={group.authorPhoto} alt="" {...protectedMediaProps} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%', filter: allSeen ? 'saturate(.72)' : 'none' }} /> : <span style={{ color: '#c9b58a', fontSize: '19px' }}>{(group.author?.name || 'M').slice(0, 1).toUpperCase()}</span>}</span>
+                        {!allSeen ? <svg aria-hidden="true" viewBox="0 0 24 24" width="23" height="23" style={{ position: 'absolute', right: '-1px', bottom: '0px', overflow: 'visible', filter: 'drop-shadow(0 0 3px rgba(232,212,164,.75)) drop-shadow(0 0 7px rgba(201,181,138,.32))' }}><defs><mask id={`moonStoryCrescent-${group.user_id}`}><rect width="24" height="24" fill="black"/><circle cx="12" cy="12" r="10" fill="white"/><circle cx="17" cy="8" r="8.8" fill="black"/></mask></defs><circle cx="12" cy="12" r="10" fill="#E8D4A4" mask={`url(#moonStoryCrescent-${group.user_id})`}/></svg> : null}
+                      </span>
+                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px', color: allSeen ? '#77736b' : '#d8d0c3' }}>{group.author?.name || 'MOON'}</span>
+                      {group.stories.length > 1 ? <span style={{ color: '#81745a', fontSize: '8px' }}>{group.stories.length} Stories</span> : null}
+                    </button>;
+                  })}
+                </>;
+              })()}
+              {moonStoriesLoading ? <div style={{ alignSelf: 'center', color: '#77736b', fontSize: '10px', padding: '0 12px' }}>Carregando Stories...</div> : null}
+              {!moonStoriesLoading && moonStories.length === 0 ? <div style={{ alignSelf: 'center', minWidth: '170px', color: '#625f59', fontSize: '10px', lineHeight: 1.6 }}>Seu próximo momento pode começar aqui.</div> : null}
+            </div>
+            {moonStoryFeedback && !moonStoryComposerOpen && !moonStoryViewer ? <div role="status" style={{ color: '#c9b58a', fontSize: '10px', lineHeight: 1.5, marginTop: '8px' }}>{moonStoryFeedback}</div> : null}
+          </section>
 
           {/* AÇÕES RÁPIDAS */}
 
           <div
             style={{
-              display: "flex",
+              display: discoveryTab === "perto" ? "flex" : "none",
               justifyContent: "center",
               alignItems: "center",
               gap: "8px",
@@ -16390,7 +17559,7 @@ const filteredConversations = conversations
             </span>
           </div>
 
-          {!locationSaved && (
+          {discoveryTab === "perto" && !locationSaved && (
             <div
               style={{
                 maxWidth: "820px",
@@ -16617,7 +17786,86 @@ const filteredConversations = conversations
 
           {/* RESULTADOS */}
 
-          {discoveryLoading ? (
+          {discoveryTab === "feed" ? (
+            <div style={{ width: "100%", maxWidth: "820px", margin: "0 auto", paddingBottom: "115px", display: "grid", gap: "18px" }}>
+              <form onSubmit={(event) => { event.preventDefault(); publishMoonPost(); }} style={{ border: "1px solid rgba(201,181,138,0.2)", borderRadius: "16px", padding: "16px", background: "#0b0b0b" }}>
+                <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "1.6px", marginBottom: "10px" }}>COMPARTILHE COM SUA LUA</div>
+                <textarea value={newMoonPost} onChange={(event) => setNewMoonPost(event.target.value)} maxLength={2000} rows={3} placeholder="O que você quer compartilhar?" style={{ display: "block", width: "100%", resize: "vertical", boxSizing: "border-box", border: "1px solid #29251e", borderRadius: "10px", padding: "12px", background: "#080808", color: "#f4ead7", outline: "none", font: "inherit", fontSize: "13px" }} />
+                {newMoonPostImagePreview ? <div style={{ position: "relative", marginTop: "12px", border: "1px solid #29251e", borderRadius: "12px", overflow: "hidden", background: "#050505" }}>
+                  <img src={newMoonPostImagePreview} alt="Prévia da foto da publicação" style={{ display: "block", width: "100%", maxHeight: "360px", objectFit: "contain" }} />
+                  <button type="button" onClick={() => { setNewMoonPostImage(null); setNewMoonPostImagePreview(""); }} aria-label="Remover foto" style={{ position: "absolute", top: "8px", right: "8px", border: "1px solid rgba(255,255,255,.2)", borderRadius: "50%", width: "34px", height: "34px", background: "rgba(0,0,0,.8)", color: "#fff", fontSize: "18px", cursor: "pointer" }}>×</button>
+                </div> : null}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap", marginTop: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: "7px", border: "1px solid #3a3326", borderRadius: "9px", padding: "9px 12px", color: "#c9b58a", fontSize: "10px", letterSpacing: ".5px", cursor: "pointer" }}>
+                      <span aria-hidden="true">＋</span> ADICIONAR FOTO
+                      <input type="file" accept="image/*" disabled={moonPostSubmitting} onChange={(event) => {
+                        const file = event.target.files?.[0] || null;
+                        event.target.value = "";
+                        if (!file) return;
+                        if (!file.type?.startsWith("image/")) { setMessage("Escolha um arquivo de imagem válido."); return; }
+                        if (file.size > 8 * 1024 * 1024) { setMessage("A foto deve ter no máximo 8 MB."); return; }
+                        setNewMoonPostImage(file);
+                        setNewMoonPostImagePreview(URL.createObjectURL(file));
+                      }} style={{ display: "none" }} />
+                    </label>
+                    <span style={{ color: "#625f59", fontSize: "10px" }}>{newMoonPost.length}/2000 · Foto até 8 MB</span>
+                  </div>
+                  <button type="submit" disabled={(!newMoonPost.trim() && !newMoonPostImage) || moonPostSubmitting} style={{ border: "1px solid #c9b58a", borderRadius: "9px", padding: "10px 16px", background: (newMoonPost.trim() || newMoonPostImage) ? "#c9b58a" : "#211f1a", color: (newMoonPost.trim() || newMoonPostImage) ? "#111" : "#77736b", fontSize: "10px", letterSpacing: "1px", fontWeight: 700, cursor: (newMoonPost.trim() || newMoonPostImage) ? "pointer" : "not-allowed", opacity: moonPostSubmitting ? .65 : 1 }}>{moonPostSubmitting ? "PUBLICANDO..." : "PUBLICAR"}</button>
+                </div>
+              </form>
+              {moonFeedLoading ? (
+                <div style={{ textAlign: "center", padding: "50px 20px", color: "#77736b", fontSize: "11px", letterSpacing: "1.5px" }}>CARREGANDO SEU FEED...</div>
+              ) : moonFeedError ? (
+                <div style={{ textAlign: "center", padding: "28px 20px", border: "1px solid #3a2925", borderRadius: "14px", background: "#0b0b0b", color: "#d6a79b", fontSize: "12px", lineHeight: 1.7 }}>{moonFeedError}</div>
+              ) : moonFeedPosts.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "48px 24px", border: "1px solid #191919", borderRadius: "16px", background: "#0b0b0b" }}>
+                  <div style={{ color: "#c9b58a", fontSize: "13px", letterSpacing: "2px", marginBottom: "10px" }}>SUA LUA AINDA ESTÁ COMEÇANDO</div>
+                  <div style={{ color: "#77736b", fontSize: "12px", lineHeight: 1.7, maxWidth: "420px", margin: "0 auto 18px" }}>Siga perfis na aba Perto para ver as publicações deles aqui. Você também pode compartilhar sua primeira publicação acima.</div>
+                  <button type="button" onClick={() => setDiscoveryTab("perto")} style={{ border: "1px solid #c9b58a", borderRadius: "9px", background: "transparent", color: "#c9b58a", padding: "11px 16px", fontSize: "10px", letterSpacing: "1px", cursor: "pointer" }}>DESCOBRIR PESSOAS</button>
+                </div>
+              ) : moonFeedPosts.map((post) => {
+                const author = post.author || {};
+                const authorPhoto = author.photoUrl || "";
+                const onlineStatus = getOnlineStatus(author.last_active_at);
+                const postComments = post.comments || [];
+                return <article key={post.id} style={{ border: "1px solid rgba(201,181,138,0.16)", borderRadius: "16px", overflow: "hidden", background: "#0b0b0b" }}>
+                  <button type="button" onClick={() => openProfileDetails({ ...author, id: post.user_id })} style={{ display: "flex", alignItems: "center", gap: "11px", width: "100%", padding: "14px 16px", textAlign: "left", border: 0, borderBottom: "1px solid #1d1a15", background: "transparent", color: "#f4ead7", cursor: "pointer" }}>
+                    {authorPhoto ? <img src={authorPhoto} alt="" {...protectedMediaProps} style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover", border: "1px solid #554a32" }} /> : <span style={{ width: "42px", height: "42px", borderRadius: "50%", display: "grid", placeItems: "center", background: "#211e18", color: "#c9b58a", fontSize: "14px" }}>{(author.name || "M").slice(0,1).toUpperCase()}</span>}
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <strong style={{ display: "block", fontSize: "13px", fontWeight: 600 }}>{author.name || "Perfil MOON"}</strong>
+                      <span style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "4px", color: "#77736b", fontSize: "10px" }}>
+                        <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: onlineStatus === "ONLINE" ? "#45c982" : "#666", display: "inline-block" }} />
+                        {onlineStatus === "ONLINE" ? "Online agora" : onlineStatus || "Offline"} · {post.created_at ? new Date(post.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) : "Agora"}
+                      </span>
+                    </span>
+                    <span style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "1px" }}>VER PERFIL ↗</span>
+                  </button>
+                  {post.image_url ? <img src={post.image_url} alt="Publicação" {...protectedMediaProps} style={{ display: "block", width: "100%", maxHeight: "620px", objectFit: "contain", background: "#050505" }} /> : null}
+                  {post.content ? <div style={{ padding: "15px 16px 8px", color: "#e4ded3", fontSize: "14px", lineHeight: 1.7, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><button type="button" onClick={() => openProfileDetails({ ...author, id: post.user_id })} style={{ padding: 0, marginRight: "6px", border: 0, background: "transparent", color: "#c9b58a", font: "inherit", fontWeight: 700, cursor: "pointer" }}>{author.name || "Perfil MOON"}</button>{post.content}</div> : null}
+                  <div style={{ padding: "10px 16px 14px", display: "flex", alignItems: "center", gap: "18px", borderBottom: "1px solid #1d1a15" }}>
+                    <button type="button" disabled={Boolean(moonPostLikeLoading[post.id])} onClick={() => toggleMoonPostLike(post)} aria-pressed={Boolean(post.likedByMe)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", border: 0, background: "transparent", color: post.likedByMe ? "#e99a9a" : "#c9b58a", padding: "4px 0", cursor: "pointer", fontSize: "12px" }}>
+                      <span style={{ fontSize: "20px", lineHeight: 1 }}>{post.likedByMe ? "♥" : "♡"}</span> {post.likesCount || 0} curtidas
+                    </button>
+                    <button type="button" onClick={() => setMoonPostCommentsOpen((current) => ({ ...current, [post.id]: !current[post.id] }))} style={{ display: "inline-flex", alignItems: "center", gap: "7px", border: 0, background: "transparent", color: "#c9b58a", padding: "4px 0", cursor: "pointer", fontSize: "12px" }}>
+                      <icon name="message-circle" size="md" /> {postComments.length} comentários
+                    </button>
+                  </div>
+                  {moonPostCommentsOpen[post.id] ? <div style={{ padding: "12px 16px 16px", display: "grid", gap: "12px" }}>
+                    {postComments.length ? <div style={{ display: "grid", gap: "10px" }}>
+                      {postComments.map((comment) => <div key={comment.id} style={{ color: "#d9d1c3", fontSize: "12px", lineHeight: 1.6, overflowWrap: "anywhere" }}>
+                        <button type="button" onClick={() => openProfileDetails({ ...comment.author, id: comment.user_id })} style={{ border: 0, padding: 0, marginRight: "6px", background: "transparent", color: "#c9b58a", fontWeight: 700, cursor: "pointer" }}>{comment.author?.name || "Perfil MOON"}</button>{comment.content}
+                      </div>)}
+                    </div> : <div style={{ color: "#77736b", fontSize: "11px" }}>Ainda não há comentários. Seja o primeiro.</div>}
+                    <form onSubmit={(event) => { event.preventDefault(); submitMoonPostComment(post); }} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <input value={moonPostCommentDrafts[post.id] || ""} onChange={(event) => setMoonPostCommentDrafts((current) => ({ ...current, [post.id]: event.target.value }))} maxLength={1000} placeholder="Escreva um comentário..." style={{ flex: 1, minWidth: 0, border: "1px solid #302a20", borderRadius: "9px", padding: "11px", background: "#080808", color: "#f4ead7", font: "inherit", fontSize: "12px" }} />
+                      <button type="submit" disabled={!(moonPostCommentDrafts[post.id] || "").trim() || Boolean(moonPostCommentLoading[post.id])} style={{ border: "1px solid #c9b58a", borderRadius: "9px", padding: "10px 12px", background: "#c9b58a", color: "#111", fontSize: "10px", fontWeight: 700, cursor: "pointer", opacity: moonPostCommentLoading[post.id] ? .6 : 1 }}>{moonPostCommentLoading[post.id] ? "..." : "ENVIAR"}</button>
+                    </form>
+                  </div> : null}
+                </article>;
+              })}
+            </div>
+          ) : discoveryLoading ? (
             <div
               style={{
                 textAlign: "center",
@@ -16832,6 +18080,11 @@ const filteredConversations = conversations
 
                         <div
                           className="moon-discovery-photo-stage"
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Abrir perfil de ${profile.name || "usuário"}`}
+                          onClick={() => openProfileDetails(profile)}
+                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProfileDetails(profile); } }}
                           onTouchStart={(event) => {
                             if (photosForPost.length <= 1) return;
                             const touch = event.touches?.[0];
@@ -16931,7 +18184,8 @@ const filteredConversations = conversations
                           )}
                         </div>
 
-                        <div className="moon-discovery-action-row">
+                        <div className="moon-discovery-action-row" style={{ flexWrap: "wrap" }}>
+                          <button type="button" onClick={() => toggleFollowProfile(profile)} disabled={followActionLoading || profile.id === currentUserId} aria-label={followStates[profile.id] ? "Deixar de seguir perfil" : "Seguir perfil"} style={{ minHeight: "36px", border: followStates[profile.id] ? "1px solid #c9b58a" : "1px solid rgba(201,181,138,0.45)", borderRadius: "9px", padding: "0 14px", background: followStates[profile.id] ? "transparent" : "#c9b58a", color: followStates[profile.id] ? "#c9b58a" : "#111", fontSize: "10px", fontWeight: 700, letterSpacing: "0.8px", cursor: followActionLoading ? "wait" : "pointer", opacity: followActionLoading ? 0.65 : 1 }}>{followStates[profile.id] ? "✓ SEGUINDO" : (followsMeStates[profile.id] ? "SEGUIR DE VOLTA" : "+ SEGUIR")}</button>
                           <button
                             type="button"
                             className="moon-discovery-action"
@@ -17471,7 +18725,7 @@ const filteredConversations = conversations
                 ) : (
                   <ol style={{ paddingLeft: "20px", color: "#c9b58a", fontSize: "11px", lineHeight: 1.9 }}><li>Abra a MOON no Chrome.</li><li>Toque no menu ⋮ no canto superior.</li><li>Escolha “Instalar app” ou “Adicionar à tela inicial”.</li><li>Confirme a instalação.</li></ol>
                 )}
-                <div style={{ display: "flex", gap: "8px", marginTop: "18px" }}>
+                <div style={{ display: discoveryTab === "perto" ? "flex" : "none", gap: "8px", marginTop: "18px" }}>
                   {installGuidePlatform !== "choose" && <button type="button" onClick={() => setInstallGuidePlatform("choose")} style={{ flex: 1, minHeight: "40px", border: "1px solid #292929", borderRadius: "10px", background: "transparent", color: "#99938a", cursor: "pointer" }}>VOLTAR</button>}
                   <button type="button" onClick={() => { setInstallGuidePlatform(null); if (pwaInstallAvailable || pwaIosInstallAvailable) handleInstallMoon(); }} style={{ flex: 1, minHeight: "40px", border: "1px solid #c9b58a", borderRadius: "10px", background: "#c9b58a", color: "#080706", cursor: "pointer", fontWeight: 700 }}>ENTENDI</button>
                 </div>
@@ -17485,3 +18739,200 @@ const filteredConversations = conversations
 }
 
 export default App;
+
+
+/* BACKUP DO JSX ANTERIOR DA VISUALIZAÇÃO DE PERFIL, PRESERVADO PARA REFERÊNCIA:
+              {(() => {
+                const primaryPhoto = photos.find((photo) => photo.is_primary) || photos[0];
+                return (
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: "430px",
+                      margin: "0 auto",
+                      border: "1px solid #242424",
+                      background: "#0b0b0b",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "100%",
+                        aspectRatio: "4 / 5",
+                        background: "#101010",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {primaryPhoto?.publicUrl ? (
+                        <img
+                          src={primaryPhoto.publicUrl}
+                          alt={profileDisplayName || "Meu perfil"}
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#3b3832", letterSpacing: "3px" }}>
+                          MOON
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ padding: "22px" }}>
+                      <div style={{ color: "#f4ead7", fontSize: "24px", letterSpacing: "1px" }}>
+                        {profileDisplayName || "Seu nome"}{profileBirthDate ? `, ${calculateAge(profileBirthDate)}` : ""}
+                      </div>
+
+                      {profileForm.bio && (
+                        <p style={{ color: "#aaa59b", fontSize: "13px", lineHeight: "1.7", margin: "20px 0 0" }}>
+                          {profileForm.bio}
+                        </p>
+                      )}
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "22px" }}>
+                        <button type="button" onClick={() => openFollowList({ id: currentUserId, name: profileDisplayName || "Seu perfil" }, "followers")} style={{ minHeight: "62px", border: "1px solid #29251f", borderRadius: "8px", background: "#090909", color: "#f4ead7", cursor: "pointer" }}>
+                          <strong style={{ display: "block", color: "#c9b58a", fontSize: "19px", fontWeight: 500 }}>{followCounts[currentUserId]?.followers ?? "·"}</strong>
+                          <span style={{ display: "block", marginTop: "4px", color: "#918a7e", fontSize: "9px", letterSpacing: "1.3px" }}>SEGUIDORES</span>
+                        </button>
+                        <button type="button" onClick={() => openFollowList({ id: currentUserId, name: profileDisplayName || "Seu perfil" }, "following")} style={{ minHeight: "62px", border: "1px solid #29251f", borderRadius: "8px", background: "#090909", color: "#f4ead7", cursor: "pointer" }}>
+                          <strong style={{ display: "block", color: "#c9b58a", fontSize: "19px", fontWeight: 500 }}>{followCounts[currentUserId]?.following ?? "·"}</strong>
+                          <span style={{ display: "block", marginTop: "4px", color: "#918a7e", fontSize: "9px", letterSpacing: "1.3px" }}>SEGUINDO</span>
+                        </button>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", marginTop: "22px", background: "#242424", border: "1px solid #242424" }}>
+                        {profileForm.gender && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>IDENTIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.gender}</span></div>}
+                        {profileForm.sexuality && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>SEXUALIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.sexuality}</span></div>}
+                        {profileForm.position && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>POSIÇÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.position}</span></div>}
+                        {profileForm.availability && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>DISPONIBILIDADE</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.availability}</span></div>}
+                        {profileForm.profession && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>PROFISSÃO</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.profession}</span></div>}
+                        {profileForm.education && <div style={{ background: "#0b0b0b", padding: "14px" }}><span style={{ display: "block", color: "#c9b58a", fontSize: "9px", letterSpacing: "1.5px", marginBottom: "5px" }}>EDUCAÇÃO / ESTUDOS</span><span style={{ color: "#e9dfcd", fontSize: "12px" }}>{profileForm.education}</span></div>}
+                      </div>
+
+
+                      <button
+                        type="button"
+                        onClick={() => { setScreen("inside"); setMessage(""); }}
+                        style={{
+                          marginTop: "22px",
+                          width: "100%",
+                          height: "48px",
+                          background: "#15130f",
+                          border: "1px solid #c9b58a",
+                          borderRadius: "10px",
+                          color: "#f4ead7",
+                          fontSize: "10px",
+                          letterSpacing: "2px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                        }}
+                      >
+                        IR PARA DISCOVERY
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setProfileOnboarding(false); setProfileEditMode(true); setMessage(""); }}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          height: "48px",
+                          background: "rgba(201, 181, 138, 0.04)",
+                          border: "1px solid #c9b58a",
+                          borderRadius: "10px",
+                          color: "#c9b58a",
+                          fontSize: "10px",
+                          letterSpacing: "2px",
+                          fontWeight: "500",
+                          cursor: "pointer",
+                        }}
+                      >
+                        EDITAR PERFIL
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setScreen("myBoosts"); setMessage(""); }}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          height: "48px",
+                          background: "rgba(201, 181, 138, 0.02)",
+                          border: "1px solid #292929",
+                          borderRadius: "10px",
+                          color: "#c9b58a",
+                          fontSize: "10px",
+                          letterSpacing: "2px",
+                          fontWeight: "500",
+                          cursor: "pointer",
+                        }}
+                      >
+                        MEUS BOOSTS
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={startBoostCheckout}
+                        disabled={boostPurchaseLoading}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          height: "48px",
+                          background: "rgba(201, 181, 138, 0.08)",
+                          border: "1px solid #c9b58a",
+                          borderRadius: "10px",
+                          color: "#c9b58a",
+                          fontSize: "10px",
+                          letterSpacing: "1.7px",
+                          fontWeight: "600",
+                          cursor: boostPurchaseLoading ? "default" : "pointer",
+                          opacity: boostPurchaseLoading ? .55 : 1,
+                        }}
+                      >
+                        {boostPurchaseLoading ? "ABRINDO PAGAMENTO..." : "BOOST • 3 HORAS • R$ 10,00"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setLikesTab("quemviu"); setScreen("likes"); setMessage(""); }}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          minHeight: "48px",
+                          padding: "10px 14px",
+                          background: "rgba(201, 181, 138, 0.02)",
+                          border: "1px solid #292929",
+                          borderRadius: "10px",
+                          color: "#c9b58a",
+                          fontSize: "10px",
+                          letterSpacing: "1.7px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                        }}
+                      >
+                        👁 VIU VOCÊ • R$ 10,00
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setScreen("settings"); setMessage(""); }}
+                        style={{
+                          marginTop: "10px",
+                          width: "100%",
+                          height: "48px",
+                          background: "transparent",
+                          border: "1px solid #292929",
+                          borderRadius: "10px",
+                          color: "#c9b58a",
+                          fontSize: "10px",
+                          letterSpacing: "2px",
+                          fontWeight: "500",
+                          cursor: "pointer",
+                        }}
+                      >
+                        CONFIGURAÇÕES
+                      </button>
+
+                    </div>
+                  </div>
+                );
+              })()}
+*/
