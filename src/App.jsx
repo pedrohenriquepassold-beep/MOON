@@ -4383,11 +4383,11 @@ function App() {
           isBoosted: activeBoostIds.has(profile.id),
         }))
         .sort((a, b) => {
+          // Primeiro perfis impulsionados; em cada grupo, menor distância primeiro.
+          if (a.isBoosted !== b.isBoosted) return a.isBoosted ? -1 : 1;
           const aDistance = Number.isFinite(a.distance_km) ? a.distance_km : Number.POSITIVE_INFINITY;
           const bDistance = Number.isFinite(b.distance_km) ? b.distance_km : Number.POSITIVE_INFINITY;
-          if (aDistance !== bDistance) return aDistance - bDistance;
-          if (a.isBoosted === b.isBoosted) return 0;
-          return a.isBoosted ? -1 : 1;
+          return aDistance - bDistance;
         });
 
       const { data: advertisementData, error: advertisementError } = await supabase
@@ -4643,6 +4643,7 @@ function App() {
       const { error } = await supabase
         .from("profiles")
         .update({
+          is_active: true,
           last_active_at: activeAt,
         })
         .eq("id", currentUserId);
@@ -9230,7 +9231,7 @@ const filteredConversations = conversations
       const activeAt = new Date().toISOString();
       const { error } = await supabase
         .from("profiles")
-        .update({ last_active_at: activeAt })
+        .update({ is_active: true, last_active_at: activeAt })
         .eq("id", userId);
       if (error) {
         console.error("ERRO AO ATUALIZAR ATIVIDADE DO USUÁRIO:", error);
