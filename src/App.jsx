@@ -8933,27 +8933,50 @@ function App() {
   async function handleSignupLocation() {
     setMessage("");
 
+    if (!window.isSecureContext) {
+      setMessage("A localização precisa de uma conexão segura (HTTPS). Abra https://moonsite.com.br diretamente no navegador.");
+      return;
+    }
+
     if (!navigator.geolocation) {
-      setMessage("Este navegador não oferece localização. Abra o MOON em um navegador compatível para continuar.");
+      setMessage("Este navegador não disponibiliza localização. Copie o endereço do MOON e abra no Chrome ou Safari, fora do Instagram.");
       return;
     }
 
     setLocationLoading(true);
 
-    try {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 0,
-        });
+    const getPosition = (options) =>
+      new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
       });
 
-      const latitude = position.coords.latitude;
-      const longitude = position.coords.longitude;
+    try {
+      let position;
+
+      try {
+        // Primeira tentativa: localização aproximada, geralmente mais rápida em navegadores internos.
+        position = await getPosition({
+          enableHighAccuracy: false,
+          timeout: 15000,
+          maximumAge: 120000,
+        });
+      } catch (firstError) {
+        // Permissão negada não melhora com uma segunda tentativa.
+        if (firstError?.code === 1) throw firstError;
+
+        // Segunda tentativa: solicita uma posição mais precisa e dá mais tempo ao GPS.
+        position = await getPosition({
+          enableHighAccuracy: true,
+          timeout: 25000,
+          maximumAge: 0,
+        });
+      }
+
+      const latitude = position?.coords?.latitude;
+      const longitude = position?.coords?.longitude;
 
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        throw new Error("Não foi possível confirmar sua localização. Tente novamente.");
+        throw new Error("O navegador retornou uma localização inválida. Tente novamente.");
       }
 
       setSignupLocation({ latitude, longitude });
@@ -8964,14 +8987,28 @@ function App() {
     } catch (error) {
       console.error("ERRO NA LOCALIZAÇÃO OBRIGATÓRIA DO CADASTRO:", error);
 
+      const insideInstagram = /Instagram/i.test(navigator.userAgent);
+
       if (error?.code === 1) {
-        setMessage("A localização é obrigatória para criar sua conta. Permita o acesso à localização nas configurações do navegador e tente novamente.");
+        setMessage(
+          insideInstagram
+            ? "O acesso à localização foi bloqueado. Abra o menu do Instagram e escolha “Abrir no navegador”. Depois, permita a localização para o site MOON."
+            : "A permissão de localização foi negada. Nas configurações do navegador, permita que moonsite.com.br acesse sua localização e tente novamente."
+        );
       } else if (error?.code === 2) {
-        setMessage("Não foi possível encontrar sua localização. Confira se o serviço de localização está ativado e tente novamente.");
+        setMessage(
+          insideInstagram
+            ? "O Instagram não conseguiu obter o GPS deste aparelho. Abra moonsite.com.br diretamente no Chrome e tente novamente, com a localização do celular ativada."
+            : "Não foi possível obter o sinal de localização. Ative a localização do celular, confira a permissão do navegador e tente novamente."
+        );
       } else if (error?.code === 3) {
-        setMessage("A localização demorou demais para responder. Tente novamente em um local com melhor sinal.");
+        setMessage(
+          insideInstagram
+            ? "A localização demorou para responder. Para continuar, abra moonsite.com.br diretamente no Chrome, fora do Instagram, e tente novamente."
+            : "A localização demorou para responder. Tente novamente em alguns segundos, com o GPS ativado."
+        );
       } else {
-        setMessage(error?.message || "Não foi possível obter sua localização. Tente novamente.");
+        setMessage(error?.message || "Não foi possível obter sua localização. Abra o MOON no Chrome ou Safari e tente novamente.");
       }
     } finally {
       setLocationLoading(false);
@@ -10644,6 +10681,12 @@ const filteredConversations = conversations
           <p style={{ maxWidth: "360px", color: "#77736b", fontSize: "10px", lineHeight: 1.7, marginTop: "16px" }}>
             A permissão será solicitada pelo navegador. É necessário permitir e obter a localização para continuar o cadastro.
           </p>
+
+          {/Instagram/i.test(navigator.userAgent) && (
+            <p style={{ maxWidth: "360px", color: "#c9b58a", fontSize: "10px", lineHeight: 1.7, margin: "12px auto 0" }}>
+              Está acessando pelo Instagram? Se a localização falhar, abra o menu ⋮ e escolha “Abrir no navegador” para continuar pelo Chrome.
+            </p>
+          )}
 
           {message && (
             <p role="alert" className="form-subtitle" style={{ maxWidth: "390px", color: "#d9a7a7", lineHeight: 1.7 }}>
