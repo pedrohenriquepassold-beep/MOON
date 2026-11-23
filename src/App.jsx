@@ -17384,7 +17384,7 @@ const filteredConversations = conversations
                           <button type="button" onClick={() => { handleLike(selectedProfile.id, selectedProfile); setLikedDiscoveryProfileIds((current) => current.includes(selectedProfile.id) ? current : [...current, selectedProfile.id]); }} style={{ minHeight: "44px", border: "1px solid #c9b58a", borderRadius: "10px", background: likedDiscoveryProfileIds.includes(selectedProfile.id) ? "rgba(201,181,138,.18)" : "transparent", color: "#c9b58a", fontSize: "10px", fontWeight: 700, letterSpacing: "1.5px", cursor: "pointer" }}>
                           {likedDiscoveryProfileIds.includes(selectedProfile.id) ? "♥ CURTIDO" : "♡ CURTIR"}
                         </button>
-                        <button type="button" onClick={() => handleChat(selectedProfile, "profile")} style={{ minHeight: "44px", border: "1px solid #28251f", borderRadius: "10px", background: "#171717", color: "#f4ead7", fontSize: "10px", fontWeight: 700, letterSpacing: "1.5px", cursor: "pointer" }}>
+                        <button type="button" onClick={() => { const profileToMessage = selectedProfile; setSelectedProfile(null); handleChat(profileToMessage, "conversations"); }} style={{ minHeight: "44px", border: "1px solid #28251f", borderRadius: "10px", background: "#171717", color: "#f4ead7", fontSize: "10px", fontWeight: 700, letterSpacing: "1.5px", cursor: "pointer" }}>
                           ✉ MENSAGEM
                         </button>
                         </div>
