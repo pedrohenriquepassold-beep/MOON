@@ -200,6 +200,8 @@ function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatUnreadDividerMessageId, setChatUnreadDividerMessageId] = useState(null);
   const [chatText, setChatText] = useState("");
+  const chatTextSendLockRef = useRef(false);
+  const [chatTextSending, setChatTextSending] = useState(false);
   const [chatSourceStoryId, setChatSourceStoryId] = useState(null);
   const [moonStoryLikedIds, setMoonStoryLikedIds] = useState([]);
   const [moonStoryLikeBusy, setMoonStoryLikeBusy] = useState(false);
@@ -682,6 +684,9 @@ function App() {
   const [followListUsers, setFollowListUsers] = useState([]);
   const [followListLoading, setFollowListLoading] = useState(false);
   const [followListError, setFollowListError] = useState("");
+  const [showFollowSuggestions, setShowFollowSuggestions] = useState(false);
+  const [followSuggestionCycle, setFollowSuggestionCycle] = useState(0);
+  const [followSuggestionProfileIds, setFollowSuggestionProfileIds] = useState([]);
 
   // BLOCO SOCIAL: abas Perto e Feed.
   const [discoveryTab, setDiscoveryTab] = useState("perto");
@@ -1422,6 +1427,13 @@ function App() {
             showToast({
               title: "Vocês se conectaram",
               body: "Você tem um novo Match na MOON.",
+            });
+          } else if (notification.type === "follow") {
+            sendBrowserNotification(notification.title || "Novo seguidor na MOON", notification.body || "Alguém começou a seguir você.", `moon-follow-${notification.id}`);
+            playNotificationSound();
+            showToast({
+              title: notification.title || "NOVO SEGUIDOR",
+              body: notification.body || "Alguém começou a seguir você.",
             });
           } else if (notification.type === "screenshot") {
             playNotificationSound();
@@ -3388,10 +3400,33 @@ function App() {
           .eq("follower_id", currentUserId).eq("following_id", profile.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("moon_follows").insert({
+        const { data: insertedFollow, error } = await supabase.from("moon_follows").insert({
           follower_id: currentUserId, following_id: profile.id,
-        });
+        }).select("id, follower_id, following_id").maybeSingle();
         if (error && error.code !== "23505") throw error;
+
+        // Notifica o perfil seguido, sem duplicar notificações em tentativas repetidas.
+        if (!error && insertedFollow?.id) {
+          const actorName = (profileDisplayName || "Alguém").trim();
+          const { data: followNotification, error: notificationError } = await supabase
+            .from("notifications")
+            .insert({
+              user_id: profile.id,
+              actor_id: currentUserId,
+              type: "follow",
+              title: `${actorName} começou a seguir você`,
+              body: `${actorName} começou a acompanhar seu perfil na MOON.`,
+              is_read: false,
+            })
+            .select("id")
+            .maybeSingle();
+          if (notificationError) {
+            console.error("ERRO AO CRIAR NOTIFICAÇÃO DE NOVO SEGUIDOR:", notificationError);
+          } else if (followNotification?.id) {
+            // A função Edge precisa reconhecer o evento follow para enviar push externo.
+            await triggerMoonPush("follow", followNotification.id);
+          }
+        }
       }
       await loadFollowData(profile.id);
       await loadFollowData(currentUserId);
@@ -4030,11 +4065,22 @@ function App() {
     setMoonFeedLoading(true);
     setMoonFeedError("");
     try {
-      // O feed social mostra as publicações recentes de todos os perfis visíveis
-      // para a sessão, não apenas de perfis que o usuário já segue.
+      // O feed deve carregar publicações de quem o usuário segue e também as próprias,
+      // sem depender de o usuário criar uma publicação para disparar o carregamento.
+      const { data: followRows, error: followsError } = await supabase
+        .from("moon_follows")
+        .select("following_id")
+        .eq("follower_id", currentUserId);
+      if (followsError) throw followsError;
+      const feedAuthorIds = [...new Set([
+        currentUserId,
+        ...(followRows || []).map((row) => row.following_id).filter(Boolean),
+      ])];
+
       const { data: posts, error: postsError } = await supabase
         .from("moon_posts")
         .select("id, user_id, content, image_url, created_at")
+        .in("user_id", feedAuthorIds)
         .order("created_at", { ascending: false })
         .limit(100);
       if (postsError) throw postsError;
@@ -4253,8 +4299,61 @@ function App() {
   }
 
   useEffect(() => {
-    if (screen === "home" && discoveryTab === "feed" && currentUserId) loadMoonFeed();
+    // A área de descoberta (PERTO/FEED) é renderizada em screen="inside".
+    // Carrega ao entrar no Feed, sem depender de publicar algo.
+    if (screen === "inside" && discoveryTab === "feed" && currentUserId) loadMoonFeed();
   }, [screen, discoveryTab, currentUserId]);
+
+
+  // Mantém o Feed atualizado quando o usuário retorna à aba e em intervalos regulares.
+  useEffect(() => {
+    if (screen !== "inside" || discoveryTab !== "feed" || !currentUserId) return;
+    const refreshFeedWhenVisible = () => {
+      if (document.visibilityState === "visible") loadMoonFeed();
+    };
+    const intervalId = window.setInterval(refreshFeedWhenVisible, 45000);
+    document.addEventListener("visibilitychange", refreshFeedWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshFeedWhenVisible);
+    };
+  }, [screen, discoveryTab, currentUserId]);
+
+  // Sugestões do Feed: aparições periódicas, temporárias e estáveis (sem piscar a cada render).
+  useEffect(() => {
+    if (screen !== "inside" || discoveryTab !== "feed" || !currentUserId) {
+      setShowFollowSuggestions(false);
+      return;
+    }
+    let firstTimer = null;
+    let hideTimer = null;
+    let nextTimer = null;
+    const startCycle = () => {
+      setFollowSuggestionCycle((cycle) => cycle + 1);
+      setShowFollowSuggestions(true);
+      hideTimer = window.setTimeout(() => {
+        setShowFollowSuggestions(false);
+        nextTimer = window.setTimeout(startCycle, 165000);
+      }, 35000);
+    };
+    firstTimer = window.setTimeout(startCycle, 20000);
+    return () => {
+      if (firstTimer) window.clearTimeout(firstTimer);
+      if (hideTimer) window.clearTimeout(hideTimer);
+      if (nextTimer) window.clearTimeout(nextTimer);
+    };
+  }, [screen, discoveryTab, currentUserId]);
+
+  // Seleciona 2 ou 3 perfis reais e não seguidos a cada nova aparição.
+  useEffect(() => {
+    if (!followSuggestionCycle || !showFollowSuggestions) return;
+    const eligible = (nearbyProfiles || []).filter((profile) =>
+      profile?.id && profile.id !== currentUserId && !followStates[profile.id]
+    );
+    const shuffled = [...eligible].sort(() => Math.random() - 0.5);
+    const count = Math.min(shuffled.length, shuffled.length > 2 && Math.random() > 0.5 ? 3 : 2);
+    setFollowSuggestionProfileIds(shuffled.slice(0, count).map((profile) => profile.id));
+  }, [followSuggestionCycle, showFollowSuggestions, nearbyProfiles, followStates, currentUserId]);
 
   async function openChatProfile(profile) {
     if (!profile?.id) {
@@ -7543,6 +7642,15 @@ function App() {
       setScreen("home");
       setDiscoveryTab("feed");
       await loadMoonFeed();
+    } else if (notification.type === "follow" && notification.actor_id) {
+      const { data: followerProfile, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", notification.actor_id)
+        .maybeSingle();
+      if (error) console.error("ERRO AO ABRIR PERFIL DO NOVO SEGUIDOR:", error);
+      if (followerProfile) await openProfileDetails(followerProfile);
+      else setScreen("inside");
     } else {
       setScreen("inside");
     }
@@ -8110,10 +8218,14 @@ function App() {
   }
 
   async function sendChatTextMessage(content) {
-    if (!content || !chatTarget?.id) return;
-    if (!(await ensureChatInteractionAllowed())) return;
+    if (!content || !chatTarget?.id || chatTextSendLockRef.current) return;
+    chatTextSendLockRef.current = true;
+    setChatTextSending(true);
+    setChatText("");
+    let sendSucceeded = false;
 
     try {
+      if (!(await ensureChatInteractionAllowed())) return;
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -8170,6 +8282,7 @@ function App() {
       if (error) {
         throw error;
       }
+      sendSucceeded = true;
 
       if (insertedMessage?.id) await triggerMoonPush("message", insertedMessage.id);
       setChatSourceStoryId(null);
@@ -8213,6 +8326,10 @@ function App() {
         error.message ||
         "Não foi possível enviar a mensagem."
       );
+    } finally {
+      if (!sendSucceeded && !chatText.trim()) setChatText(content);
+      chatTextSendLockRef.current = false;
+      setChatTextSending(false);
     }
   }
 
@@ -17118,17 +17235,17 @@ const filteredConversations = conversations
 
             <button
               type="submit"
-              disabled={!chatText.trim() || Boolean(chatConversation?.ended_by_interest_at) || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
+              disabled={!chatText.trim() || chatTextSending || Boolean(chatConversation?.ended_by_interest_at) || Boolean(abusiveRestrictionUntil && abusiveRestrictionUntil > Date.now())}
               style={{
                 width: "58px",
                 height: "48px",
                 border: "1px solid #c9b58a",
                 background: "transparent",
                 color: "#f4ead7",
-                cursor: chatText.trim()
+                cursor: chatText.trim() && !chatTextSending
                   ? "pointer"
                   : "not-allowed",
-                opacity: chatText.trim()
+                opacity: chatText.trim() && !chatTextSending
                   ? 1
                   : 0.45,
                 fontSize: "18px",
@@ -18449,6 +18566,31 @@ const filteredConversations = conversations
                   <button type="submit" disabled={(!newMoonPost.trim() && !newMoonPostImage) || moonPostSubmitting} style={{ border: "1px solid #c9b58a", borderRadius: "9px", padding: "10px 16px", background: (newMoonPost.trim() || newMoonPostImage) ? "#c9b58a" : "#211f1a", color: (newMoonPost.trim() || newMoonPostImage) ? "#111" : "#77736b", fontSize: "10px", letterSpacing: "1px", fontWeight: 700, cursor: (newMoonPost.trim() || newMoonPostImage) ? "pointer" : "not-allowed", opacity: moonPostSubmitting ? .65 : 1 }}>{moonPostSubmitting ? "PUBLICANDO..." : "PUBLICAR"}</button>
                 </div>
               </form>
+              {showFollowSuggestions && nearbyProfiles.filter((profile) => profile?.id && profile.id !== currentUserId && !followStates[profile.id] && followSuggestionProfileIds.includes(profile.id)).length > 0 ? (
+                <section style={{ border: "1px solid rgba(201,181,138,.16)", borderRadius: "14px", padding: "14px", background: "#0b0b0b" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", marginBottom: "12px" }}>
+                    <div>
+                      <div style={{ color: "#c9b58a", fontSize: "10px", letterSpacing: "1.5px" }}>PESSOAS PARA CONHECER</div>
+                      <div style={{ color: "#77736b", fontSize: "10px", marginTop: "4px" }}>Novas conexões para descobrir</div>
+                    </div>
+                    <button type="button" onClick={() => setShowFollowSuggestions(false)} aria-label="Ocultar sugestões por enquanto" style={{ width: "30px", height: "30px", border: "1px solid #29251e", borderRadius: "50%", background: "transparent", color: "#77736b", cursor: "pointer", fontSize: "16px" }}>×</button>
+                  </div>
+                  <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "3px" }}>
+                    {nearbyProfiles.filter((profile) => profile?.id && profile.id !== currentUserId && !followStates[profile.id] && followSuggestionProfileIds.includes(profile.id)).slice(0, 3).map((profile) => (
+                      <div key={profile.id} style={{ flex: "0 0 142px", width: "142px", minWidth: "0", border: "1px solid #24211b", borderRadius: "11px", overflow: "hidden", background: "#080808" }}>
+                        <button type="button" onClick={() => openProfileDetails(profile)} style={{ display: "block", width: "100%", border: 0, padding: 0, background: "transparent", color: "#f4ead7", cursor: "pointer", textAlign: "left" }}>
+                          {profile.photoUrl || profile.photoUrls?.[0] ? <img src={profile.photoUrl || profile.photoUrls?.[0]} alt="" {...protectedMediaProps} style={{ width: "100%", height: "118px", objectFit: "cover", display: "block" }} /> : <div style={{ width: "100%", height: "118px", display: "grid", placeItems: "center", background: "#17140f", color: "#c9b58a", fontSize: "30px" }}>{(profile.name || "M").slice(0, 1).toUpperCase()}</div>}
+                          <div style={{ padding: "9px 9px 4px" }}>
+                            <strong style={{ display: "block", fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(profile.name || "Perfil").split(" ")[0]}{Number.isInteger(calculateAge(profile.birth_date)) ? `, ${calculateAge(profile.birth_date)}` : ""}</strong>
+                            <span style={{ display: "block", marginTop: "4px", color: "#77736b", fontSize: "9px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.city || "Conheça este perfil"}</span>
+                          </div>
+                        </button>
+                        <button type="button" disabled={followActionLoading} onClick={() => toggleFollowProfile(profile)} style={{ display: "block", width: "calc(100% - 18px)", margin: "8px 9px 9px", border: "1px solid rgba(201,181,138,.45)", borderRadius: "8px", padding: "8px 5px", background: "#c9b58a", color: "#111", fontSize: "9px", fontWeight: 700, letterSpacing: ".6px", cursor: followActionLoading ? "wait" : "pointer", opacity: followActionLoading ? .65 : 1 }}>+ SEGUIR</button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               {moonFeedLoading ? (
                 <div style={{ textAlign: "center", padding: "50px 20px", color: "#77736b", fontSize: "11px", letterSpacing: "1.5px" }}>CARREGANDO SEU FEED...</div>
               ) : moonFeedError ? (
