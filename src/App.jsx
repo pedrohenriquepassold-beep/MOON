@@ -3402,11 +3402,11 @@ function App() {
       } else {
         const { data: insertedFollow, error } = await supabase.from("moon_follows").insert({
           follower_id: currentUserId, following_id: profile.id,
-        }).select("id, follower_id, following_id").maybeSingle();
+        }).select("follower_id, following_id").maybeSingle();
         if (error && error.code !== "23505") throw error;
 
         // Notifica o perfil seguido, sem duplicar notificações em tentativas repetidas.
-        if (!error && insertedFollow?.id) {
+        if (!error && insertedFollow?.following_id) {
           const actorName = (profileDisplayName || "Alguém").trim();
           const { data: followNotification, error: notificationError } = await supabase
             .from("notifications")
